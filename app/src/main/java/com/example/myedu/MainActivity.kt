@@ -27,7 +27,7 @@ import java.util.Locale
 
 class MainViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
-    var logText by mutableStateOf("Ready (V10: Double-Lock Bypass)\n")
+    var logText by mutableStateOf("Ready (V11: The Mirror)\n")
 
     fun appendLog(msg: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -37,7 +37,7 @@ class MainViewModel : ViewModel() {
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
-            appendLog("--- STARTING V10 ---")
+            appendLog("--- STARTING V11 ---")
             
             try {
                 // 1. LOGIN
@@ -50,13 +50,12 @@ class MainViewModel : ViewModel() {
                     appendLog("Login Failed: No token")
                     return@launch
                 }
-                
-                // SAVE TOKEN GLOBALLY SO INTERCEPTOR CAN USE IT
                 TokenStore.jwtToken = token
-                appendLog("Token Saved. Injecting into Cookies...")
+                appendLog("Token Saved.")
 
-                // 2. GET USER (Interceptor will add headers automatically)
-                appendLog("Fetching '/user'...")
+                // 2. GET USER
+                appendLog("Sending /user request...")
+                appendLog("Injecting 'my_edu_update' cookie...")
                 
                 val rawJson = withContext(Dispatchers.IO) {
                     NetworkClient.api.getUser().string()
@@ -74,7 +73,10 @@ class MainViewModel : ViewModel() {
                 
             } catch (e: retrofit2.HttpException) {
                 appendLog("HTTP ERROR: ${e.code()}")
-                if(e.code() == 401) appendLog("Still blocked. Check token format.")
+                if (e.code() == 401) {
+                    appendLog("Check the Logcat for EXACT headers sent!")
+                    appendLog("Compare 'Cookie' header with Curl.")
+                }
             } catch (e: Exception) {
                 appendLog("ERROR: ${e.message}")
                 e.printStackTrace()
@@ -95,7 +97,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LoggerScreen(vm: MainViewModel = viewModel()) {
     Column(Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
-        Text("INJECTOR V10", color = Color.Green, style = MaterialTheme.typography.titleLarge)
+        Text("MIRROR MODE V11", color = Color.Cyan, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(16.dp))
 
         var e by remember { mutableStateOf("") }
@@ -105,18 +107,18 @@ fun LoggerScreen(vm: MainViewModel = viewModel()) {
             OutlinedTextField(
                 value = e, onValueChange = { e = it }, label = { Text("Email") },
                 modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Green, unfocusedBorderColor = Color.Gray)
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Cyan, unfocusedBorderColor = Color.Gray)
             )
             OutlinedTextField(
                 value = p, onValueChange = { p = it }, label = { Text("Pass") },
                 modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Green, unfocusedBorderColor = Color.Gray)
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Cyan, unfocusedBorderColor = Color.Gray)
             )
         }
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { vm.login(e, p) }, enabled = !vm.isLoading,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (vm.isLoading) "CONNECTING..." else "LOGIN")

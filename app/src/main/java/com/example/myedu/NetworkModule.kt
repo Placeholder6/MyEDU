@@ -1,6 +1,10 @@
 package com.example.myedu
 
 import java.util.concurrent.TimeUnit
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -27,29 +31,36 @@ interface OshSuApi {
     suspend fun getUser(): ResponseBody
 }
 
-// SINGLETON TO HOLD THE TOKEN GLOBALLY
 object TokenStore {
     var jwtToken: String? = null
 }
 
-// INTERCEPTOR: Adds the Token to BOTH Header and Cookie
+// INTERCEPTOR: The "Mirror" Logic
 class AuthInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val builder = original.newBuilder()
 
-        // Always pretend to be Chrome
+        // 1. STANDARD BROWSER FINGERPRINT
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Referer", "https://myedu.oshsu.kg/#/main")
         builder.header("Accept", "application/json, text/plain, */*")
-
-        // If we have a token, inject it EVERYWHERE
+        builder.header("Accept-Language", "en-US,en;q=0.9,ru;q=0.8") // New!
+        builder.header("Connection", "keep-alive") // New!
+        
+        // 2. INJECT TOKEN & COOKIES
         TokenStore.jwtToken?.let { token ->
-            // 1. Standard Header
+            // A. Header Token
             builder.header("Authorization", "Bearer $token")
             
-            // 2. Cookie Header (The Missing Piece!)
-            builder.header("Cookie", "myedu-jwt-token=$token")
+            // B. Generate Timestamp for Cookie (e.g. 2025-11-03T17:41:25.000000Z)
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
+            sdf.timeZone = TimeZone.getTimeZone("UTC")
+            val timestamp = sdf.format(Date())
+            
+            // C. Construct EXACT Cookie String
+            val cookieString = "myedu-jwt-token=$token; my_edu_update=$timestamp"
+            builder.header("Cookie", cookieString)
         }
 
         return chain.proceed(builder.build())
@@ -62,8 +73,8 @@ object NetworkClient {
     private val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
-        .addInterceptor(AuthInterceptor()) // Add our custom injector
-        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY })
+        .addInterceptor(AuthInterceptor())
+        .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.HEADERS }) // Log Headers!
         .build()
 
     val api: OshSuApi = Retrofit.Builder()
