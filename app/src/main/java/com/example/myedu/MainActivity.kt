@@ -14,6 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext 
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -30,11 +32,8 @@ class MainViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
     var status by mutableStateOf("Ready (V21: The Mixer)")
     var userName by mutableStateOf("")
-    
-    // Scanner Data
     var scanResults by mutableStateOf("Waiting for scan...")
     
-    // 1. AUTO-LOGIN CHECK
     fun checkSavedToken(context: Context) {
         val prefs = context.getSharedPreferences("MyEduPrefs", Context.MODE_PRIVATE)
         val savedToken = prefs.getString("jwt_token", null)
@@ -44,30 +43,28 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // 2. NATIVE LOGIN (METHOD 1)
     fun login(email: String, pass: String, context: Context) {
         viewModelScope.launch {
             isLoading = true
-            status = "Logging in via API..."
+            status = "Logging in..."
             try {
-                // A. Get Token
+                // 1. API Login
                 val resp = withContext(Dispatchers.IO) {
                     NetworkClient.api.login(LoginRequest(email, pass))
                 }
                 
                 val token = resp.authorisation?.token
                 if (token != null) {
-                    // B. Save Token Globally (Interceptor picks it up - METHOD 2)
+                    // 2. Set Global Token (Interceptor will inject it as Cookie)
                     TokenStore.jwtToken = token
                     
-                    // C. Save to Disk
                     context.getSharedPreferences("MyEduPrefs", Context.MODE_PRIVATE)
                         .edit().putString("jwt_token", token).apply()
                         
                     status = "Token Acquired. Verifying..."
                     verifyToken()
                 } else {
-                    status = "Login Failed: No token returned."
+                    status = "Login Failed: No token."
                 }
             } catch (e: Exception) {
                 status = "Login Error: ${e.message}"
@@ -80,7 +77,6 @@ class MainViewModel : ViewModel() {
     private fun verifyToken() {
         viewModelScope.launch {
             try {
-                // Try to fetch User Profile using the new token
                 val raw = withContext(Dispatchers.IO) { NetworkClient.api.getUser().string() }
                 val json = JSONObject(raw)
                 val user = json.optJSONObject("user")
@@ -99,7 +95,6 @@ class MainViewModel : ViewModel() {
         }
     }
     
-    // 3. SCANNER ACTION
     fun scanForGrades() {
         viewModelScope.launch {
             scanResults = "Scanning..."
@@ -118,7 +113,7 @@ class MainViewModel : ViewModel() {
         return try {
             val res = withContext(Dispatchers.IO) { call().string() }
             if (res.length > 50 && res.contains("{")) "✅ $name: SUCCESS (${res.length}B)\n" 
-            else "❌ $name: Empty/Invalid\n"
+            else "❌ $name: Empty\n"
         } catch (e: Exception) { "❌ $name: Error\n" }
     }
     
@@ -189,18 +184,12 @@ fun DashboardScreen(vm: MainViewModel, context: Context) {
         }
         Divider(Modifier.padding(vertical = 16.dp))
         
-        Text("Grade Scanner", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        
         Button(onClick = { vm.scanForGrades() }, modifier = Modifier.fillMaxWidth()) {
-            Text("FIND GRADES URL")
+            Text("SCAN SERVER")
         }
         Spacer(Modifier.height(16.dp))
         
-        Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF212121)),
-            modifier = Modifier.fillMaxWidth().weight(1f)
-        ) {
+        Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF212121)), modifier = Modifier.fillMaxWidth().weight(1f)) {
             Text(vm.scanResults, color = Color.Green, modifier = Modifier.padding(16.dp))
         }
     }

@@ -12,18 +12,15 @@ import retrofit2.http.GET
 import retrofit2.http.Headers
 import retrofit2.http.POST
 
-// 1. API DEFINITION
 data class LoginRequest(val email: String, val password: String)
 data class LoginResponse(val status: String?, val authorisation: AuthData?)
 data class AuthData(val token: String?, val is_student: Boolean?)
 
 interface OshSuApi {
-    // Method 1: Native Login
     @Headers("Content-Type: application/json", "Accept: application/json")
     @POST("public/api/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 
-    // Method 2: Data endpoints (Authorized via Interceptor)
     @GET("public/api/user")
     suspend fun getUser(): ResponseBody
 
@@ -41,27 +38,23 @@ interface OshSuApi {
     suspend fun scanTranscript(): ResponseBody
 }
 
-// 2. GLOBAL TOKEN STORE
 object TokenStore {
     var jwtToken: String? = null
 }
 
-// 3. INTERCEPTOR (The "God Mode" Logic)
 class MixerInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val builder = original.newBuilder()
 
-        // Always look like Chrome (Matches your Curl)
+        // Mimic Chrome
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Referer", "https://myedu.oshsu.kg/#/main")
         builder.header("Accept", "application/json, text/plain, */*")
 
-        // Inject the token if we have it (from API Login)
+        // Inject Token into BOTH Header and Cookie
         TokenStore.jwtToken?.let { token ->
-            // 1. Header Lock
             builder.header("Authorization", "Bearer $token")
-            // 2. Cookie Lock (Crucial!)
             builder.header("Cookie", "myedu-jwt-token=$token")
         }
 
