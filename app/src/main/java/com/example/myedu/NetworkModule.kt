@@ -8,24 +8,33 @@ import retrofit2.http.Body
 import retrofit2.http.Headers
 import retrofit2.http.POST
 
-// 1. Define the JSON Structure for Login
+// --- DATA MODELS (Matched to your JSON) ---
+
 data class LoginRequest(
     val email: String,
     val password: String
 )
 
-// We don't know the exact response yet, so we use a generic Map to inspect it safely
 data class LoginResponse(
-    val token: String?, 
-    val access_token: String?,
-    val message: String?
+    val status: String,         // "success"
+    val authorisation: AuthData // The nested object
 )
+
+data class AuthData(
+    val token: String,          // The actual key we need
+    val type: String,           // "bearer"
+    val is_student: Boolean
+)
+
+// --- API DEFINITION ---
 
 interface OshSuApi {
     @Headers("Content-Type: application/json", "Accept: application/json")
     @POST("public/api/login")
     suspend fun login(@Body request: LoginRequest): LoginResponse
 }
+
+// --- CLIENT ---
 
 object NetworkClient {
     private const val BASE_URL = "https://api.myedu.oshsu.kg/" 

@@ -29,15 +29,15 @@ class MainViewModel : ViewModel() {
                 val request = LoginRequest(email, pass)
                 val response = NetworkClient.api.login(request)
                 
-                // Check what key the server uses for the token
-                val receivedToken = response.token ?: response.access_token
+                // FIX: Access the token inside 'authorisation' object
+                val receivedToken = response.authorisation.token
                 
-                if (receivedToken != null) {
+                if (receivedToken.isNotEmpty()) {
                     token = receivedToken
-                    statusMessage = "Login Success! Token: ${receivedToken.take(10)}..."
+                    statusMessage = "Login Success! Student: ${response.authorisation.is_student}"
                     Log.d("API_SUCCESS", "Token: $receivedToken")
                 } else {
-                    statusMessage = "Login Failed: ${response.message ?: "Unknown error"}"
+                    statusMessage = "Login Failed: Token empty"
                 }
             } catch (e: Exception) {
                 statusMessage = "Error: ${e.message}"
@@ -63,20 +63,20 @@ fun OshSuApp(vm: MainViewModel = viewModel()) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("MyEDU API v2", style = MaterialTheme.typography.headlineMedium)
+        Text("MyEDU Login Fixed", style = MaterialTheme.typography.headlineMedium)
         
         Spacer(Modifier.height(24.dp))
         
-        var e by remember { mutableStateOf("") }
-        var p by remember { mutableStateOf("") }
+        var e by remember { mutableStateOf("") } // Default empty
+        var p by remember { mutableStateOf("") } // Default empty
 
-        OutlinedTextField(value = e, onValueChange = { e = it }, label = { Text("Email (@oshsu.kg)") }, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = e, onValueChange = { e = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = p, onValueChange = { p = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth())
         
         Spacer(Modifier.height(16.dp))
         
-        Text(vm.statusMessage, color = if (vm.token != null) Color.Green else Color.Gray)
+        Text(vm.statusMessage, color = if (vm.token != null) Color.Green else Color.Red)
 
         Spacer(Modifier.height(24.dp))
         
