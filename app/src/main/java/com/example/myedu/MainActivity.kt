@@ -4,7 +4,6 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -25,17 +24,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import okhttp3.ResponseBody
 
 class MainViewModel : ViewModel() {
     var appState by mutableStateOf("LOGIN") 
     var isLoading by mutableStateOf(false)
     var status by mutableStateOf("Ready")
     var userName by mutableStateOf("")
-    
-    // Scanner Data
     var scanResults by mutableStateOf("")
     
-    // 1. AUTO-LOGIN
     fun checkSavedToken(context: Context) {
         val prefs = context.getSharedPreferences("MyEduPrefs", Context.MODE_PRIVATE)
         val savedToken = prefs.getString("jwt_token", null)
@@ -45,23 +42,18 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // 2. NATIVE LOGIN ACTION
     fun login(email: String, pass: String, context: Context) {
         viewModelScope.launch {
             isLoading = true
             status = "Authenticating..."
             try {
-                // Step A: POST Credentials
                 val resp = withContext(Dispatchers.IO) {
                     NetworkClient.api.login(LoginRequest(email, pass))
                 }
                 
                 val token = resp.authorisation?.token
                 if (token != null) {
-                    // Step B: Save Token Globally (Interceptor picks it up)
                     TokenStore.jwtToken = token
-                    
-                    // Step C: Save to Disk
                     context.getSharedPreferences("MyEduPrefs", Context.MODE_PRIVATE)
                         .edit().putString("jwt_token", token).apply()
                         
@@ -94,36 +86,38 @@ class MainViewModel : ViewModel() {
                 }
             } catch (e: Exception) {
                 status = "Verification Error: ${e.message}"
-                appState = "LOGIN" // Fallback to login on error
+                appState = "LOGIN"
             }
         }
     }
     
-    // 3. SCANNER ACTION
+    // --- FIXED SCANNER ---
     fun scanForGrades() {
         viewModelScope.launch {
             scanResults = "Scanning..."
             var log = ""
-            val endpoints = mapOf(
-                "studentSession" to { NetworkClient.api.scanSession() },
-                "studentCurricula" to { NetworkClient.api.scanCurricula() },
-                "student_mark_list" to { NetworkClient.api.scanMarkList() },
-                "student/transcript" to { NetworkClient.api.scanTranscript() }
-            )
             
-            endpoints.forEach { (name, call) ->
-                try {
-                    val res = withContext(Dispatchers.IO) { call().string() }
-                    if (res.length > 100 && res.contains("{")) {
-                        log += "✅ $name: SUCCESS (${res.length} bytes)\n"
-                    } else {
-                        log += "❌ $name: Invalid\n"
-                    }
-                } catch (e: Exception) {
-                    log += "❌ $name: ${e.message}\n"
-                }
-            }
+            // We call them sequentially using a helper to handle the 'suspend' keyword correctly
+            log += checkEndpoint("studentSession") { NetworkClient.api.scanSession() }
+            log += checkEndpoint("studentCurricula") { NetworkClient.api.scanCurricula() }
+            log += checkEndpoint("student_mark_list") { NetworkClient.api.scanMarkList() }
+            log += checkEndpoint("student/transcript") { NetworkClient.api.scanTranscript() }
+            
             scanResults = log
+        }
+    }
+
+    // Helper function explicitly marked as suspend
+    private suspend fun checkEndpoint(name: String, apiCall: suspend () -> ResponseBody): String {
+        return try {
+            val res = withContext(Dispatchers.IO) { apiCall().string() }
+            if (res.length > 100 && res.contains("{")) {
+                "✅ $name: SUCCESS (${res.length} bytes)\n"
+            } else {
+                "❌ $name: Empty/Invalid\n"
+            }
+        } catch (e: Exception) {
+            "❌ $name: ${e.message}\n"
         }
     }
 
@@ -161,29 +155,18 @@ fun LoginScreen(vm: MainViewModel, context: Context) {
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("MyEDU Portal", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold, color = Color(0xFF1565C0))
-        Text("Native Android Client", color = Color.Gray)
-        
         Spacer(Modifier.height(32.dp))
         
         var e by remember { mutableStateOf("") }
         var p by remember { mutableStateOf("") }
         
         OutlinedTextField(
-            value = e, 
-            onValueChange = { e = it }, 
-            label = { Text("Email (@oshsu.kg)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            value = e, onValueChange = { e = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(12.dp))
         OutlinedTextField(
-            value = p, 
-            onValueChange = { p = it }, 
-            label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            value = p, onValueChange = { p = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth()
         )
-        
         Spacer(Modifier.height(24.dp))
         
         Button(
@@ -194,7 +177,6 @@ fun LoginScreen(vm: MainViewModel, context: Context) {
         ) {
             Text(if (vm.isLoading) "Connecting..." else "Log In")
         }
-        
         Spacer(Modifier.height(16.dp))
         Text(vm.status, color = if(vm.status.contains("Error")) Color.Red else Color.DarkGray)
     }
@@ -202,33 +184,28 @@ fun LoginScreen(vm: MainViewModel, context: Context) {
 
 @Composable
 fun DashboardScreen(vm: MainViewModel, context: Context) {
+    val scrollState = rememberScrollState()
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column {
-                Text("Student", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
-                Text(vm.userName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            }
-            IconButton(onClick = { vm.logout(context) }) {
-                Text("X", fontWeight = FontWeight.Bold, color = Color.Red)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(vm.userName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Button(onClick = { vm.logout(context) }, colors = ButtonDefaults.buttonColors(containerColor = Color.Red)) {
+                Text("LOGOUT")
             }
         }
-        
         Divider(Modifier.padding(vertical = 16.dp))
         
-        Text("Grades Module", style = MaterialTheme.typography.titleMedium)
+        Text("Grade Scanner", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
+        Button(onClick = { vm.scanForGrades() }, modifier = Modifier.fillMaxWidth()) {
+            Text("SCAN SERVER")
+        }
+        Spacer(Modifier.height(16.dp))
         
         Card(
             colors = CardDefaults.cardColors(containerColor = Color(0xFFE3F2FD)),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier.fillMaxWidth().weight(1f)
         ) {
-            Column(Modifier.padding(16.dp)) {
-                Text("We need to find the grades URL.", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { vm.scanForGrades() }) {
-                    Text("SCAN SERVER")
-                }
-                Spacer(Modifier.height(8.dp))
+            Column(Modifier.padding(16.dp).verticalScroll(scrollState)) {
                 Text(vm.scanResults, style = MaterialTheme.typography.bodySmall, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
             }
         }
