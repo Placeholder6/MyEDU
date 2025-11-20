@@ -28,7 +28,7 @@ import java.util.Locale
 
 class MainViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
-    var logText by mutableStateOf("Stealth Mode Ready.\n")
+    var logText by mutableStateOf("Ready (V8: Header Clone)\n")
 
     fun appendLog(msg: String) {
         val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
@@ -38,55 +38,51 @@ class MainViewModel : ViewModel() {
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
-            appendLog("--- LOGIN V7 (STEALTH) ---")
+            appendLog("--- LOGIN START ---")
             
             try {
                 // 1. LOGIN
-                appendLog("Logging in as Chrome...")
                 val loginResp = withContext(Dispatchers.IO) {
                     NetworkClient.api.login(LoginRequest(email, pass))
                 }
                 
                 val token = loginResp.authorisation?.token
                 if (token == null) {
-                    appendLog("FAIL: No token returned.")
+                    appendLog("Login Failed: No token")
                     return@launch
                 }
-                
-                appendLog("Token OK: ${token.take(10)}...")
-                
-                // 2. PROFILE (The step that failed before)
-                appendLog("Requesting Profile...")
+                appendLog("Token OK.")
+
+                // 2. GET USER (The one that works in Browser)
+                appendLog("Fetching '/public/api/user'...")
                 val bearer = "Bearer $token"
-                appendLog("Header: $bearer") // VISUAL CHECK
                 
                 val rawJson = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getStudentInfo(bearer).string()
+                    NetworkClient.api.getUser(bearer).string()
                 }
                 
-                // If we get here, 401 is fixed!
-                appendLog("SUCCESS (200 OK)")
-                appendLog("Bytes read: ${rawJson.length}")
+                appendLog("RESPONSE 200 OK!")
                 
-                // 3. PARSE
-                val jsonObj = JSONObject(rawJson)
-                val movement = jsonObj.optJSONObject("studentMovement")
-                val group = movement?.optString("avn_group_name") ?: "Unknown"
-                val spec = movement?.optJSONObject("speciality")
-                val major = spec?.optString("name_en") ?: "Unknown"
-
-                appendLog("--- RESULT ---")
-                appendLog("Group: $group")
-                appendLog("Major: $major")
+                // 3. EXTRACT NAME
+                val json = JSONObject(rawJson)
+                val userObj = json.optJSONObject("user")
+                val name = userObj?.optString("name") ?: "Unknown"
+                val emailResp = userObj?.optString("email")
+                
+                appendLog("========================")
+                appendLog("WELCOME: $name")
+                appendLog("Email: $emailResp")
+                appendLog("========================")
                 
             } catch (e: retrofit2.HttpException) {
-                appendLog("HTTP ERROR: ${e.code()} ${e.message()}")
+                appendLog("HTTP ERROR: ${e.code()}")
+                if(e.code() == 401) appendLog("Server blocked us (Auth)")
+                if(e.code() == 403) appendLog("Server blocked us (Forbidden)")
             } catch (e: Exception) {
-                appendLog("CRASH: ${e.message}")
+                appendLog("ERROR: ${e.message}")
                 e.printStackTrace()
             } finally {
                 isLoading = false
-                appendLog("--- END ---")
             }
         }
     }
@@ -102,7 +98,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun LoggerScreen(vm: MainViewModel = viewModel()) {
     Column(Modifier.fillMaxSize().background(Color.Black).padding(16.dp)) {
-        Text("STEALTH MODE V7", color = Color.Cyan, style = MaterialTheme.typography.titleLarge)
+        Text("CLONE MODE V8", color = Color.Yellow, style = MaterialTheme.typography.titleLarge)
         Spacer(Modifier.height(16.dp))
 
         var e by remember { mutableStateOf("") }
@@ -112,21 +108,21 @@ fun LoggerScreen(vm: MainViewModel = viewModel()) {
             OutlinedTextField(
                 value = e, onValueChange = { e = it }, label = { Text("Email") },
                 modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Cyan, unfocusedBorderColor = Color.Gray)
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Yellow, unfocusedBorderColor = Color.Gray)
             )
             OutlinedTextField(
                 value = p, onValueChange = { p = it }, label = { Text("Pass") },
                 modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Cyan, unfocusedBorderColor = Color.Gray)
+                colors = OutlinedTextFieldDefaults.colors(focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedBorderColor = Color.Yellow, unfocusedBorderColor = Color.Gray)
             )
         }
         Spacer(Modifier.height(8.dp))
         Button(
             onClick = { vm.login(e, p) }, enabled = !vm.isLoading,
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Cyan, contentColor = Color.Black),
+            colors = ButtonDefaults.buttonColors(containerColor = Color.Yellow, contentColor = Color.Black),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (vm.isLoading) "RUNNING..." else "TEST CONNECTION")
+            Text(if (vm.isLoading) "CONNECTING..." else "LOGIN")
         }
 
         Spacer(Modifier.height(16.dp))
