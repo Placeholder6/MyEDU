@@ -10,7 +10,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 import retrofit2.http.Headers
 
-// API DEFINITION (Only Data Endpoints)
+// API DEFINITION (Notice: NO login function here, WebView handles it)
 interface OshSuApi {
     @GET("public/api/user")
     suspend fun getUser(): ResponseBody
@@ -29,6 +29,7 @@ interface OshSuApi {
     suspend fun scanTranscript(): ResponseBody
 }
 
+// GLOBAL STORE FOR STOLEN COOKIES
 object TokenStore {
     var cookies: String? = null
     var userAgent: String? = null
@@ -39,11 +40,11 @@ class GhostInterceptor : Interceptor {
         val original = chain.request()
         val builder = original.newBuilder()
 
-        // Use the credentials stolen by the Ghost Browser
+        // INJECT STOLEN CREDENTIALS
         TokenStore.userAgent?.let { builder.header("User-Agent", it) }
         TokenStore.cookies?.let { builder.header("Cookie", it) }
         
-        // Extract Bearer Token from cookies for Double-Lock
+        // If we found the JWT inside the cookie, add it as Bearer too (Double-Lock)
         TokenStore.cookies?.let {
             val jwt = it.split(";").find { c -> c.trim().startsWith("myedu-jwt-token=") }
             if (jwt != null) {
