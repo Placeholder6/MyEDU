@@ -22,13 +22,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.text.SimpleDateFormat
@@ -36,7 +31,7 @@ import java.util.Date
 import java.util.Locale
 
 class DebugViewModel : ViewModel() {
-    var logs by mutableStateOf("Ready. Paste Token and click Run.\n")
+    var logs by mutableStateOf("Ready. Paste Token and click Fetch.\n")
     var isRunning by mutableStateOf(false)
 
     fun log(msg: String) {
@@ -56,7 +51,7 @@ class DebugViewModel : ViewModel() {
         }
     }
 
-    fun runDebug(tokenString: String) {
+    fun fetchData(tokenString: String) {
         if (tokenString.isBlank()) {
             log("Error: Token is empty.")
             return
@@ -66,88 +61,53 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING AUTO-FETCH SEQUENCE (MULTIPART) ---")
+            logs = "" // Clear previous logs
+            log("--- STARTING DATA FETCH ---")
             
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
             log("Cookies & Headers Configured.")
 
             try {
-                // --- STEP 0: AUTO-FETCH IDS ---
-                log(">>> STEP 0: Extracting Student ID...")
+                // --- PRE-STEP: DECODE TOKEN ---
+                log(">>> EXTRACTING STUDENT ID...")
                 val studentId = getStudentIdFromToken(token)
-                if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
+                if (studentId == 0L) { log("!!! FAIL: Could not decode Token"); return@launch }
                 log("✔ Student ID: $studentId")
 
-                log(">>> STEP 0.5: Fetching Movement ID...")
+                // --- STEP 1: FETCH STUDENT DETAILS ---
+                log("\n>>> STEP 1: Fetching Details (searchstudentinfo)...")
                 val infoRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getStudentInfo(studentId).string()
                 }
-                val infoJson = JSONObject(infoRaw)
+                log("RESPONSE 1 (Snippet): ${infoRaw.take(100)}...")
+                
+                val infoJson = try { JSONObject(infoRaw) } catch(e:Exception) {
+                     log("!!! FAIL: Step 1 is not JSON"); return@launch
+                }
+                
+                // Extract Movement ID
                 val movementObj = infoJson.optJSONObject("lastStudentMovement")
                 val movementId = movementObj?.optLong("id") ?: 0L
 
-                if (movementId == 0L) { log("!!! FAIL: No Movement ID"); return@launch }
-                log("✔ Movement ID: $movementId")
+                if (movementId == 0L) { log("!!! FAIL: No 'lastStudentMovement.id' found."); return@launch }
+                log("✔ Movement ID Found: $movementId")
 
-                // --- STEP 1: GET KEY & LINK ID ---
-                log(">>> STEP 1: Requesting Key...")
-                val step1Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
+                // --- STEP 2: FETCH TRANSCRIPT ---
+                log("\n>>> STEP 2: Fetching Transcript (studenttranscript)...")
+                val transcriptRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptData(studentId, movementId).string()
                 }
-                log("RAW 1: $step1Raw")
-
-                val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
-                    log("!!! FAIL: Step 1 not JSON"); return@launch 
-                }
-                val key = keyJson.optString("key")
-                val linkId = keyJson.optLong("id") 
                 
-                if (key.isEmpty() || linkId == 0L) { log("!!! FAIL: Missing key/id"); return@launch }
-                log("✔ Key: $key | Link ID: $linkId")
-
-                // --- STEP 2: TRIGGER GENERATION (MULTIPART) ---
-                log(">>> STEP 2: Triggering Generation (Multipart)...")
-                
-                // FIX: Use Kotlin Extension functions for OkHttp
-                val textType = "text/plain".toMediaTypeOrNull()
-                val idBody = linkId.toString().toRequestBody(textType)
-                val studentBody = studentId.toString().toRequestBody(textType)
-                val movementBody = movementId.toString().toRequestBody(textType)
-
-                // FIX: Create Dummy File Part correctly
-                val emptyBytes = ByteArray(0)
-                val pdfType = "application/pdf".toMediaTypeOrNull()
-                val fileReq = emptyBytes.toRequestBody(pdfType)
-                val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
-
-                val step2Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.generateTranscript(idBody, studentBody, movementBody, pdfPart).string()
+                if (transcriptRaw.isEmpty()) {
+                    log("!!! FAIL: Transcript response is empty.")
+                    return@launch
                 }
-                log("RAW 2: $step2Raw")
                 
-                // Wait for server to process
-                log("Waiting 3 seconds...")
-                delay(3000)
-
-                // --- STEP 3: RESOLVE LINK ---
-                log(">>> STEP 3: Resolving Link...")
-                val step3Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
-                }
-                log("RAW 3: $step3Raw")
-                
-                try {
-                    val urlJson = JSONObject(step3Raw)
-                    val url = urlJson.optString("url")
-                    if (url.isNotEmpty()) {
-                        log("✅ SUCCESS! URL: $url")
-                    } else {
-                        log("!!! FAILURE: URL is empty in JSON.")
-                    }
-                } catch (e: Exception) {
-                    log("!!! FAILURE: Bad JSON in Step 3.")
-                }
+                log("✔ SUCCESS! Data Length: ${transcriptRaw.length} chars")
+                log("\n--- TRANSCRIPT DATA (COPY THIS) ---")
+                log(transcriptRaw) // PRINT THE FULL JSON
+                log("--- END OF DATA ---\n")
 
             } catch (e: HttpException) {
                 val errorBody = e.response()?.errorBody()?.string() ?: "No body"
@@ -157,7 +117,7 @@ class DebugViewModel : ViewModel() {
                 e.printStackTrace()
             } finally {
                 isRunning = false
-                log("--- END ---")
+                log("--- FETCH COMPLETE ---")
             }
         }
     }
@@ -182,7 +142,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU DEBUGGER (COMPILATION FIXED)", color = Color.Cyan)
+        Text("DATA FETCH DEBUGGER", color = Color.Cyan)
         
         Spacer(Modifier.height(8.dp))
 
@@ -204,12 +164,12 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
 
         Row {
             Button(
-                onClick = { vm.runDebug(tokenInput) },
+                onClick = { vm.fetchData(tokenInput) },
                 enabled = !vm.isRunning,
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Yellow, contentColor = Color.Black)
             ) {
-                Text(if (vm.isRunning) "WORKING..." else "RUN")
+                Text(if (vm.isRunning) "FETCHING..." else "GET DATA")
             }
             
             Spacer(Modifier.width(8.dp))
@@ -219,7 +179,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
             ) {
-                Text("COPY LOGS")
+                Text("COPY OUTPUT")
             }
         }
 
