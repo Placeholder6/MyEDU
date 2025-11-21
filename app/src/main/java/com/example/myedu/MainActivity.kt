@@ -73,7 +73,7 @@ class DebugViewModel : ViewModel() {
             log("Configured.")
 
             try {
-                // --- STEP 0: IDS ---
+                // --- STEP 0: FETCH IDS ---
                 log(">>> STEP 0: Fetching IDs...")
                 val studentId = getStudentIdFromToken(token)
                 if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
@@ -84,7 +84,7 @@ class DebugViewModel : ViewModel() {
                 val movementId = JSONObject(infoRaw).optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
                 log("✔ Student: $studentId | Movement: $movementId")
 
-                // --- STEP 0.8: TRANSCRIPT JSON ---
+                // --- STEP 0.8: FETCH TRANSCRIPT DATA ---
                 log(">>> STEP 0.8: Fetching Transcript Data...")
                 val transcriptJsonRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptData(studentId, movementId).string()
@@ -103,7 +103,6 @@ class DebugViewModel : ViewModel() {
                 log("✔ Key: $key | Link ID: $linkId")
 
                 // --- STEP 1.5: UPDATE REFERER ---
-                // This matches the behavior seen in your logs
                 val newReferer = "https://myedu.oshsu.kg/#/document/$key"
                 NetworkClient.interceptor.currentReferer = newReferer
                 log("✔ Referer Updated: $newReferer")
@@ -111,7 +110,7 @@ class DebugViewModel : ViewModel() {
                 // --- STEP 2: GENERATE PDF ---
                 log(">>> STEP 2: Generating PDF (Multipart)...")
                 
-                // FIX: Use text/plain for form fields so server accepts them as parameters
+                // Use text/plain for standard form fields
                 val plainType = "text/plain".toMediaTypeOrNull()
                 val pdfType = "application/pdf".toMediaTypeOrNull()
 
@@ -119,10 +118,10 @@ class DebugViewModel : ViewModel() {
                 val studentBody = studentId.toString().toRequestBody(plainType)
                 val movementBody = movementId.toString().toRequestBody(plainType)
                 
-                // FIX: Sending the JSON data string as the 'contents' field
+                // THE FIX: Send the JSON string as a text field named "contents"
                 val contentsBody = transcriptJsonRaw.toRequestBody(plainType)
 
-                // Dummy File Part (Required by server)
+                // Dummy File Part
                 val emptyBytes = ByteArray(0)
                 val fileReq = emptyBytes.toRequestBody(pdfType)
                 val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
@@ -132,13 +131,13 @@ class DebugViewModel : ViewModel() {
                         id = idBody, 
                         idStudent = studentBody, 
                         idMovement = movementBody, 
-                        contents = contentsBody, 
+                        contents = contentsBody, // Passing the fetched JSON
                         pdf = pdfPart
                     ).string()
                 }
                 log("RAW 2: $step2Raw")
                 // Expected Output: "Ok :)"
-                
+
                 log("Waiting 3 seconds...")
                 delay(3000)
 

@@ -48,7 +48,7 @@ interface OshSuApi {
         @Part("id") id: RequestBody,
         @Part("id_student") idStudent: RequestBody,
         @Part("id_movement") idMovement: RequestBody,
-        @Part("contents") contents: RequestBody, 
+        @Part("contents") contents: RequestBody, // <--- THE FIX: JSON Data goes here
         @Part pdf: MultipartBody.Part
     ): ResponseBody
 
@@ -101,7 +101,6 @@ class DebugCookieJar : CookieJar {
 // --- INTERCEPTOR WITH DYNAMIC REFERER ---
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
-    // Mutable Referer: Default to root, updated by Activity
     var currentReferer: String = "https://myedu.oshsu.kg/" 
 
     override fun intercept(chain: Interceptor.Chain): Response {
