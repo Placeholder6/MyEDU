@@ -1,6 +1,7 @@
 package com.example.myedu
 
 import android.os.Bundle
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -31,7 +32,7 @@ import java.util.Date
 import java.util.Locale
 
 class DebugViewModel : ViewModel() {
-    var logs by mutableStateOf("Ready. Enter IDs and click Run.\n")
+    var logs by mutableStateOf("Ready. Paste Token and click Run.\n")
     var isRunning by mutableStateOf(false)
 
     fun log(msg: String) {
@@ -39,50 +40,84 @@ class DebugViewModel : ViewModel() {
         logs += "[$time] $msg\n"
     }
 
-    fun runDebug(tokenString: String, studentIdString: String, movementIdString: String) {
-        if (tokenString.isBlank() || studentIdString.isBlank() || movementIdString.isBlank()) {
-            log("Error: Token, Student ID, or Movement ID empty.")
+    // Helper to extract Student ID from JWT 'sub' claim
+    private fun getStudentIdFromToken(token: String): Long {
+        try {
+            val parts = token.split(".")
+            if (parts.size < 2) return 0L
+            val payload = String(Base64.decode(parts[1], Base64.URL_SAFE))
+            val json = JSONObject(payload)
+            return json.optLong("sub", 0L)
+        } catch (e: Exception) {
+            return 0L
+        }
+    }
+
+    fun runDebug(tokenString: String) {
+        if (tokenString.isBlank()) {
+            log("Error: Token is empty.")
             return
         }
 
         val token = tokenString.removePrefix("Bearer ").trim()
-        val studentId = studentIdString.trim().toLongOrNull() ?: 0L
-        val movementId = movementIdString.trim().toLongOrNull() ?: 0L
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING DEBUG SEQUENCE ---")
-            log("Student ID: $studentId | Movement ID: $movementId")
+            log("--- STARTING AUTO-FETCH SEQUENCE ---")
             
+            // 1. Configure Session
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
             log("Cookies & Headers Configured.")
 
             try {
-                // --- STEP 1: GET KEY ---
+                // --- STEP 0: AUTO-FETCH IDS ---
+                log(">>> STEP 0: Extracting Student ID from Token...")
+                val studentId = getStudentIdFromToken(token)
+                if (studentId == 0L) {
+                    log("!!! FAIL: Could not decode Student ID from token.")
+                    return@launch
+                }
+                log("✔ Student ID found: $studentId")
+
+                log(">>> STEP 0.5: Fetching Movement ID (searchstudentinfo)...")
+                val infoRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getStudentInfo(studentId).string()
+                }
+                val infoJson = JSONObject(infoRaw)
+                val movementObj = infoJson.optJSONObject("lastStudentMovement")
+                val movementId = movementObj?.optLong("id") ?: 0L
+
+                if (movementId == 0L) {
+                    log("!!! FAIL: Could not find 'lastStudentMovement.id' in response.")
+                    return@launch
+                }
+                log("✔ Movement ID found: $movementId")
+
+                // --- STEP 1: GET KEY & LINK ID ---
                 log(">>> STEP 1: Requesting Key (form13link)...")
                 val step1Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
                 }
-                log("RAW RESPONSE 1: $step1Raw")
+                log("RAW 1: $step1Raw")
 
                 val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
                     log("!!! FAIL: Step 1 is not JSON"); return@launch 
                 }
                 
                 val key = keyJson.optString("key")
-                if (key.isEmpty()) {
-                    log("!!! FAILURE: No 'key' found in Step 1 response.")
+                val linkId = keyJson.optLong("id") 
+                
+                if (key.isEmpty() || linkId == 0L) {
+                    log("!!! FAILURE: Missing 'key' or 'id' in Step 1.")
                     return@launch
                 }
-                log("KEY ACQUIRED: $key")
+                log("✔ Key: $key | Link ID: $linkId")
 
                 // --- STEP 2: TRIGGER GENERATION ---
                 log(">>> STEP 2: Triggering Generation (form13)...")
-                
-                // FIX: Sending 'pdf = true'
                 val request2 = TranscriptRequest(
-                    id = movementId,
+                    id = linkId,
                     id_student = studentId, 
                     id_movement = movementId,
                     pdf = true
@@ -91,9 +126,9 @@ class DebugViewModel : ViewModel() {
                 val step2Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.generateTranscript(request2).string()
                 }
-                log("RAW RESPONSE 2: $step2Raw")
+                log("RAW 2: $step2Raw")
 
-                log("Waiting 3 seconds...")
+                log("Waiting 3 seconds for PDF generation...")
                 delay(3000)
 
                 // --- STEP 3: RESOLVE LINK ---
@@ -101,7 +136,7 @@ class DebugViewModel : ViewModel() {
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
-                log("RAW RESPONSE 3: $step3Raw")
+                log("RAW 3: $step3Raw")
                 
                 try {
                     val urlJson = JSONObject(step3Raw)
@@ -118,7 +153,6 @@ class DebugViewModel : ViewModel() {
             } catch (e: HttpException) {
                 val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
                 log("💥 HTTP EXCEPTION ${e.code()}: $errorBody")
-                e.printStackTrace()
             } catch (e: Exception) {
                 log("💥 CRITICAL EXCEPTION: ${e.message}")
                 e.printStackTrace()
@@ -140,8 +174,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DebugScreen(vm: DebugViewModel = viewModel()) {
     var tokenInput by remember { mutableStateOf("") }
-    var studentIdInput by remember { mutableStateOf("") }
-    var movementIdInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
@@ -151,8 +183,11 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("TRANSCRIPT DEBUGGER v3", color = Color.Cyan)
+        Text("MYEDU AUTO-DEBUGGER", color = Color.Cyan)
+        Text("Just paste the token. IDs will be fetched automatically.", color = Color.Gray, fontSize = 10.sp)
         
+        Spacer(Modifier.height(8.dp))
+
         OutlinedTextField(
             value = tokenInput,
             onValueChange = { tokenInput = it },
@@ -167,47 +202,16 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             )
         )
         
-        Spacer(Modifier.height(8.dp))
-        
-        Row(Modifier.fillMaxWidth()) {
-            OutlinedTextField(
-                value = studentIdInput,
-                onValueChange = { studentIdInput = it },
-                label = { Text("Student ID (71001)") },
-                modifier = Modifier.weight(1f).padding(end = 4.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color.White,
-                    focusedBorderColor = Color.Cyan,
-                    unfocusedBorderColor = Color.Gray
-                )
-            )
-            OutlinedTextField(
-                value = movementIdInput,
-                onValueChange = { movementIdInput = it },
-                label = { Text("Move ID (33779)") },
-                modifier = Modifier.weight(1f).padding(start = 4.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    cursorColor = Color.White,
-                    focusedBorderColor = Color.Cyan,
-                    unfocusedBorderColor = Color.Gray
-                )
-            )
-        }
-
         Spacer(Modifier.height(16.dp))
 
         Row {
             Button(
-                onClick = { vm.runDebug(tokenInput, studentIdInput, movementIdInput) },
+                onClick = { vm.runDebug(tokenInput) },
                 enabled = !vm.isRunning,
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
             ) {
-                Text(if (vm.isRunning) "RUNNING..." else "RUN DEBUG")
+                Text(if (vm.isRunning) "WORKING..." else "START AUTO-DEBUG")
             }
             
             Spacer(Modifier.width(8.dp))

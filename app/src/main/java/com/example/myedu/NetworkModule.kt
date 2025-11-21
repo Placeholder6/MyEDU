@@ -10,7 +10,9 @@ import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.Query
 import java.text.SimpleDateFormat
 import java.util.ArrayList
 import java.util.Date
@@ -19,19 +21,21 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 // --- DATA MODELS ---
-data class DocIdRequest(val id: Long) // For Step 1
-data class DocKeyRequest(val key: String) // For Step 3
-
-// FIX: Added 'pdf' field which caused the 422 error
+data class DocIdRequest(val id: Long)
+data class DocKeyRequest(val key: String)
 data class TranscriptRequest(
     val id: Long,
     val id_student: Long,
     val id_movement: Long,
-    val pdf: Boolean = true // Server requires this flag
+    val pdf: Boolean = true
 )
 
 // --- API INTERFACE ---
 interface OshSuApi {
+    // New: Fetch Student Info to get Movement ID
+    @GET("public/api/searchstudentinfo")
+    suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
+
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
