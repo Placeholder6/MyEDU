@@ -390,13 +390,171 @@ fun ProfileScreen(vm: MainViewModel) {
 fun HomeScreen(vm: MainViewModel) {
     val user = vm.userData
     val profile = vm.profileData
-    val groupInfo = remember(vm.determinedGroup, profile) { val g = vm.determinedGroup; if (g != null) { "Group $g" } else { profile?.studentMovement?.avn_group_name ?: "-" } }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(48.dp)); Text("Good Morning,", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary); Text(user?.name ?: "Student", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold); Spacer(Modifier.height(24.dp))
-        if (vm.newsList.isNotEmpty()) { Text("Announcements", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold); Spacer(Modifier.height(12.dp)); vm.newsList.forEach { news -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) { Column(Modifier.padding(16.dp)) { Text(news.title ?: "Notice", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer); Text(news.message ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer) } } }; Spacer(Modifier.height(24.dp)) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); StatCard(Icons.Outlined.Groups, "Group", groupInfo, MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) }
-        Spacer(Modifier.height(32.dp)); Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp))
-        if (vm.todayClasses.isEmpty()) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } } else { vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } }
+    
+    // --- 1. DYNAMIC GREETING LOGIC ---
+    val currentHour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+    val greetingText = remember(currentHour) {
+        when (currentHour) {
+            in 4..5 -> "It's dawn now,"
+            in 6..11 -> "Good Morning,"
+            in 12..16 -> "Good Afternoon,"
+            in 17..20 -> "Good Evening,"
+            else -> "Good Night,"
+        }
+    }
+
+    // --- 2. RANDOM MEDICAL QUOTES ---
+    val medicalQuotes = remember {
+        listOf(
+            "Wherever the art of Medicine is loved, there is also a love of Humanity. — Hippocrates",
+            "The good physician treats the disease; the great physician treats the patient who has the disease. — William Osler",
+            "Medicine cures diseases, but only doctors can cure patients. — Carl Jung",
+            "Not all angels have wings, some have stethoscopes.",
+            "To study the phenomenon of disease without books is to sail an uncharted sea. — William Osler",
+            "Cure sometimes, treat often, comfort always. — Hippocrates",
+            "Wear the white coat with dignity and pride, it is an honor and privilege to serve.",
+            "Observation, Reason, Human Understanding, Courage; these make the physician."
+        )
+    }
+    val dailyQuote = remember { medicalQuotes.random() }
+
+    val groupInfo = remember(vm.determinedGroup, profile) { 
+        val g = vm.determinedGroup
+        if (g != null) "Group $g" else profile?.studentMovement?.avn_group_name ?: "-" 
+    }
+
+    Column(
+        Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+    ) {
+        Spacer(Modifier.height(48.dp))
+        
+        // Dynamic Greeting
+        Text(
+            text = greetingText, 
+            style = MaterialTheme.typography.titleMedium, 
+            color = MaterialTheme.colorScheme.secondary
+        )
+        
+        // User Name
+        Text(
+            text = user?.name ?: "Student", 
+            style = MaterialTheme.typography.displaySmall, 
+            fontWeight = FontWeight.Bold
+        )
+        
+        Spacer(Modifier.height(8.dp))
+        
+        // Daily Quote Card
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Outlined.FormatQuote, 
+                    contentDescription = null, 
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = dailyQuote,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        // Announcements Section
+        if (vm.newsList.isNotEmpty()) { 
+            Text(
+                "Announcements", 
+                style = MaterialTheme.typography.titleMedium, 
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(12.dp))
+            vm.newsList.forEach { news -> 
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer), 
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) { 
+                    Column(Modifier.padding(16.dp)) { 
+                        Text(
+                            news.title ?: "Notice", 
+                            fontWeight = FontWeight.Bold, 
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            news.message ?: "", 
+                            style = MaterialTheme.typography.bodyMedium, 
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        ) 
+                    } 
+                } 
+            }
+            Spacer(Modifier.height(24.dp)) 
+        }
+
+        // Stats Row
+        Row(
+            Modifier.fillMaxWidth(), 
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) { 
+            StatCard(
+                Icons.Outlined.CalendarToday, 
+                "Semester", 
+                profile?.active_semester?.toString() ?: "-", 
+                MaterialTheme.colorScheme.primaryContainer, 
+                Modifier.weight(1f)
+            )
+            StatCard(
+                Icons.Outlined.Groups, 
+                "Group", 
+                groupInfo, 
+                MaterialTheme.colorScheme.secondaryContainer, 
+                Modifier.weight(1f)
+            ) 
+        }
+        
+        Spacer(Modifier.height(32.dp))
+        
+        // Today's Classes
+        Text(
+            "${vm.todayDayName}'s Classes", 
+            style = MaterialTheme.typography.titleLarge, 
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(Modifier.height(16.dp))
+        
+        if (vm.todayClasses.isEmpty()) { 
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), 
+                modifier = Modifier.fillMaxWidth()
+            ) { 
+                Row(
+                    Modifier.padding(24.dp), 
+                    verticalAlignment = Alignment.CenterVertically
+                ) { 
+                    Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(16.dp))
+                    Text("No classes today!", style = MaterialTheme.typography.bodyLarge) 
+                } 
+            } 
+        } else { 
+            vm.todayClasses.forEach { item -> 
+                ClassItem(item, vm.getTimeString(item.id_lesson)) { 
+                    vm.selectedClass = item 
+                } 
+            } 
+        }
+        
         Spacer(Modifier.height(80.dp))
     }
 }
