@@ -101,7 +101,7 @@ class DebugCookieJar : CookieJar {
 // --- INTERCEPTOR WITH DYNAMIC REFERER ---
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
-    // Default Referer
+    // Mutable Referer: Default to root, updated by Activity
     var currentReferer: String = "https://myedu.oshsu.kg/" 
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -110,7 +110,7 @@ class DebugInterceptor : Interceptor {
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Origin", "https://myedu.oshsu.kg")
         
-        // Dynamic Referer
+        // Uses the variable we update in MainActivity
         builder.header("Referer", currentReferer)
         
         if (authToken != null) {

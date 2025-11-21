@@ -103,7 +103,7 @@ class DebugViewModel : ViewModel() {
                 log("✔ Key: $key | Link ID: $linkId")
 
                 // --- STEP 1.5: UPDATE REFERER ---
-                // Crucial Step: The server expects us to be ON the document page
+                // This matches the behavior seen in your logs
                 val newReferer = "https://myedu.oshsu.kg/#/document/$key"
                 NetworkClient.interceptor.currentReferer = newReferer
                 log("✔ Referer Updated: $newReferer")
@@ -111,15 +111,18 @@ class DebugViewModel : ViewModel() {
                 // --- STEP 2: GENERATE PDF ---
                 log(">>> STEP 2: Generating PDF (Multipart)...")
                 
-                val textType = "text/plain".toMediaTypeOrNull()
-                val jsonType = "application/json".toMediaTypeOrNull()
+                // FIX: Use text/plain for form fields so server accepts them as parameters
+                val plainType = "text/plain".toMediaTypeOrNull()
                 val pdfType = "application/pdf".toMediaTypeOrNull()
 
-                val idBody = linkId.toString().toRequestBody(textType)
-                val studentBody = studentId.toString().toRequestBody(textType)
-                val movementBody = movementId.toString().toRequestBody(textType)
-                val contentsBody = transcriptJsonRaw.toRequestBody(jsonType) // The Payload
+                val idBody = linkId.toString().toRequestBody(plainType)
+                val studentBody = studentId.toString().toRequestBody(plainType)
+                val movementBody = movementId.toString().toRequestBody(plainType)
                 
+                // FIX: Sending the JSON data string as the 'contents' field
+                val contentsBody = transcriptJsonRaw.toRequestBody(plainType)
+
+                // Dummy File Part (Required by server)
                 val emptyBytes = ByteArray(0)
                 val fileReq = emptyBytes.toRequestBody(pdfType)
                 val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
@@ -134,6 +137,7 @@ class DebugViewModel : ViewModel() {
                     ).string()
                 }
                 log("RAW 2: $step2Raw")
+                // Expected Output: "Ok :)"
                 
                 log("Waiting 3 seconds...")
                 delay(3000)
@@ -181,7 +185,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU FINAL SOLUTION", color = Color.Cyan)
+        Text("MYEDU FINAL FIX", color = Color.Cyan)
         
         Spacer(Modifier.height(8.dp))
 
@@ -208,7 +212,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
             ) {
-                Text(if (vm.isRunning) "WORKING..." else "RUN FINAL")
+                Text(if (vm.isRunning) "WORKING..." else "RUN FIX")
             }
             
             Spacer(Modifier.width(8.dp))
