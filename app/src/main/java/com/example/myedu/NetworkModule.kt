@@ -2,7 +2,6 @@ package com.example.myedu
 
 import com.google.gson.GsonBuilder
 import java.util.ArrayList
-import java.util.HashMap
 import java.util.concurrent.TimeUnit
 import okhttp3.Cookie
 import okhttp3.CookieJar
@@ -70,12 +69,26 @@ interface OshSuApi {
     ): List<ScheduleWrapper>
 }
 
-// --- NATIVE WINDOWS ENGINE ---
+// --- UNIVERSAL COOKIE ENGINE ---
 
-class WindowsCookieJar : CookieJar {
-    private val cookieStore = HashMap<String, List<Cookie>>()
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) { cookieStore[url.host] = cookies }
-    override fun loadForRequest(url: HttpUrl): List<Cookie> = cookieStore[url.host] ?: ArrayList()
+class UniversalCookieJar : CookieJar {
+    // A simple list that ignores domain matching rules to ensure cookies are always sent
+    private val cookieStorage = ArrayList<Cookie>()
+
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        // Remove old cookies with same name to update them
+        val names = cookies.map { it.name }
+        cookieStorage.removeAll { it.name in names }
+        cookieStorage.addAll(cookies)
+    }
+
+    override fun loadForRequest(url: HttpUrl): List<Cookie> {
+        return ArrayList(cookieStorage)
+    }
+    
+    fun clear() {
+        cookieStorage.clear()
+    }
 }
 
 class WindowsInterceptor : Interceptor {
@@ -84,14 +97,12 @@ class WindowsInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
 
-        // 1. WINDOWS HEADERS
+        // 1. WINDOWS HEADERS (Mimics Chrome on Windows)
         builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("Referer", "https://myedu.oshsu.kg/")
         builder.header("Origin", "https://myedu.oshsu.kg")
         
-        // FIX: REMOVED "Accept-Encoding". OkHttp handles gzip automatically.
-
         // 2. SECURITY HEADERS
         builder.header("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
         builder.header("sec-ch-ua-mobile", "?0")
@@ -111,10 +122,10 @@ class WindowsInterceptor : Interceptor {
 }
 
 object NetworkClient {
-    val cookieJar = WindowsCookieJar()
+    val cookieJar = UniversalCookieJar()
     val interceptor = WindowsInterceptor()
 
-    // FIX: Use Lenient Gson to tolerate minor server errors
+    // Use Lenient Gson to prevent crashes on server errors
     private val gson = GsonBuilder().setLenient().create()
 
     val api: OshSuApi = Retrofit.Builder()

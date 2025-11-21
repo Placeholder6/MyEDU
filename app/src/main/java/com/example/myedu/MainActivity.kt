@@ -48,6 +48,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Calendar
+import java.util.Locale
 
 // --- VIEWMODEL ---
 class MainViewModel : ViewModel() {
@@ -60,11 +61,17 @@ class MainViewModel : ViewModel() {
     var profileData by mutableStateOf<StudentInfoResponse?>(null)
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
+    var todayDayName by mutableStateOf("Today")
 
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
             errorMsg = null
+            
+            // Clear previous session
+            NetworkClient.cookieJar.clear()
+            NetworkClient.interceptor.authToken = null
+            
             try {
                 // 1. NATIVE LOGIN
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email, pass)) }
@@ -79,7 +86,9 @@ class MainViewModel : ViewModel() {
                     userData = user
                     profileData = profile
                     
-                    fetchSchedule(profile)
+                    // 3. FETCH SCHEDULE
+                    if (profile != null) fetchSchedule(profile)
+                    
                     appState = "APP"
                 } else {
                     errorMsg = "Incorrect credentials"
@@ -96,21 +105,35 @@ class MainViewModel : ViewModel() {
     private suspend fun fetchSchedule(profile: StudentInfoResponse) {
         try {
             val mov = profile.studentMovement
+            // Check for nulls to prevent crashes
             if (mov?.id_speciality != null && mov.id_edu_form != null && profile.active_semester != null) {
+                
                 val years = withContext(Dispatchers.IO) { NetworkClient.api.getYears() }
                 val activeYearId = years.find { it.active }?.id ?: 25 
+                
                 val wrappers = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getSchedule(mov.id_speciality, mov.id_edu_form, activeYearId, profile.active_semester)
+                    NetworkClient.api.getSchedule(
+                        specId = mov.id_speciality,
+                        formId = mov.id_edu_form,
+                        yearId = activeYearId,
+                        semId = profile.active_semester
+                    )
                 }
+                
                 val allItems = wrappers.flatMap { it.schedule_items ?: emptyList() }
                 fullSchedule = allItems.sortedBy { it.id_lesson }
                 
                 val cal = Calendar.getInstance()
-                val javaDay = cal.get(Calendar.DAY_OF_WEEK)
-                val todayApi = if(javaDay == 1) 0 else javaDay - 1 
-                todayClasses = fullSchedule.filter { it.day == todayApi }
+                val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) 
+                todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
+                
+                // Convert Java Day (Sun=1) to API Day (Mon=1)
+                val apiDay = if(dayOfWeek == Calendar.SUNDAY) 0 else dayOfWeek - 1
+                todayClasses = fullSchedule.filter { it.day == apiDay }
             }
-        } catch (e: Exception) { e.printStackTrace() }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
     
     fun logout() {
@@ -119,10 +142,13 @@ class MainViewModel : ViewModel() {
         userData = null
         profileData = null
         fullSchedule = emptyList()
+        todayClasses = emptyList()
+        NetworkClient.cookieJar.clear()
+        NetworkClient.interceptor.authToken = null
     }
 }
 
-// --- UI ---
+// --- UI COMPONENTS ---
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -213,7 +239,7 @@ fun HomeScreen(vm: MainViewModel) {
             StatCard(Icons.Outlined.Groups, "Group", profile?.studentMovement?.avn_group_name ?: "-", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f))
         }
         Spacer(Modifier.height(32.dp))
-        Text("Today's Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(16.dp))
         if (vm.todayClasses.isEmpty()) {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) {
