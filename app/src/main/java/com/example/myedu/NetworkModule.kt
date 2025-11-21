@@ -22,26 +22,36 @@ import java.util.concurrent.TimeUnit
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
 
-// --- API INTERFACE (Raw Responses for Debugging) ---
+// --- API INTERFACE ---
 interface OshSuApi {
-    // Step 1: Get the Key
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // Step 2: Trigger Generation
     @POST("public/api/student/doc/form13")
     suspend fun generateTranscript(@Body req: DocIdRequest): ResponseBody
 
-    // Step 3: Resolve Key to URL
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
-// --- MANUAL COOKIE INJECTOR ---
+// --- MANUAL COOKIE INJECTOR (FIXED) ---
 class DebugCookieJar : CookieJar {
     private val cookieStore = ArrayList<Cookie>()
 
-    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {}
+    // FIX: Save cookies sent by the server (e.g., session IDs)
+    override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+        cookies.forEach { newCookie ->
+            // Remove existing cookie with the same name to update it
+            val iterator = cookieStore.iterator()
+            while (iterator.hasNext()) {
+                val current = iterator.next()
+                if (current.name == newCookie.name) {
+                    iterator.remove()
+                }
+            }
+            cookieStore.add(newCookie)
+        }
+    }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
         return ArrayList(cookieStore)
@@ -49,16 +59,17 @@ class DebugCookieJar : CookieJar {
     
     fun setDebugCookies(token: String) {
         cookieStore.clear()
+        val cleanToken = token.removePrefix("Bearer ").trim()
         
-        // 1. JWT Token
+        // 1. JWT Token Cookie
         cookieStore.add(Cookie.Builder()
             .domain("myedu.oshsu.kg")
             .path("/")
             .name("myedu-jwt-token")
-            .value(token)
+            .value(cleanToken)
             .build())
 
-        // 2. Timestamp (Mimicking Browser)
+        // 2. Timestamp Cookie
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
         val timestamp = sdf.format(Date())
@@ -78,14 +89,15 @@ class DebugInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
 
-        // EXACT HEADERS FROM YOUR LOGS
-        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
+        // HEADERS MATCHING YOUR LOGS + BROWSER MIMIC
         builder.header("Accept", "application/json, text/plain, */*")
-        builder.header("Referer", "https://myedu.oshsu.kg/#/main")
+        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
+        builder.header("Referer", "https://myedu.oshsu.kg/")
         builder.header("Origin", "https://myedu.oshsu.kg")
         
         if (authToken != null) {
-            builder.header("Authorization", "Bearer $authToken")
+            val cleanToken = authToken!!.removePrefix("Bearer ").trim()
+            builder.header("Authorization", "Bearer $cleanToken")
         }
 
         return chain.proceed(builder.build())
@@ -101,7 +113,7 @@ object NetworkClient {
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(interceptor)
-            .connectTimeout(60, TimeUnit.SECONDS) // Long timeout for debugging
+            .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build())
         .addConverterFactory(GsonConverterFactory.create()) 

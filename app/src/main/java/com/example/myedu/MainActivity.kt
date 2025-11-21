@@ -29,7 +29,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// --- VIEWMODEL FOR DEBUGGING ---
 class DebugViewModel : ViewModel() {
     var logs by mutableStateOf("Ready. Paste token and click Run.\n")
     var isRunning by mutableStateOf(false)
@@ -45,7 +44,8 @@ class DebugViewModel : ViewModel() {
             return
         }
 
-        val token = tokenString.trim()
+        // Clean Inputs
+        val token = tokenString.removePrefix("Bearer ").trim()
         val studentId = studentIdString.trim().toLongOrNull() ?: 0L
 
         viewModelScope.launch {
@@ -53,7 +53,7 @@ class DebugViewModel : ViewModel() {
             log("--- STARTING DEBUG SEQUENCE ---")
             log("Target ID: $studentId")
             
-            // 1. Setup Session
+            // 1. Setup Session (Cookies + Headers)
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
             log("Cookies & Headers Configured.")
@@ -67,10 +67,15 @@ class DebugViewModel : ViewModel() {
                 log("RAW RESPONSE 1: $step1Raw")
 
                 val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
-                    log("!!! FAIL: Step 1 is not JSON"); return@launch 
+                    log("!!! FAIL: Step 1 is not JSON. Server might be blocking."); return@launch 
                 }
-                val key = keyJson.optString("key")
                 
+                // Check for specific error messages in JSON
+                if (keyJson.has("message")) {
+                    log("SERVER MESSAGE: ${keyJson.optString("message")}")
+                }
+
+                val key = keyJson.optString("key")
                 if (key.isEmpty()) {
                     log("!!! FAILURE: No 'key' found in Step 1 response.")
                     return@launch
@@ -83,7 +88,6 @@ class DebugViewModel : ViewModel() {
                     NetworkClient.api.generateTranscript(DocIdRequest(studentId)).string()
                 }
                 log("RAW RESPONSE 2: $step2Raw")
-                // Expected: "Ok :)"
 
                 // Wait loop
                 log("Waiting 3 seconds for server to generate PDF...")
@@ -96,11 +100,6 @@ class DebugViewModel : ViewModel() {
                 }
                 log("RAW RESPONSE 3: $step3Raw")
                 
-                if (step3Raw.trim().isEmpty()) {
-                    log("!!! FAILURE: Empty response in Step 3.")
-                    return@launch
-                }
-
                 try {
                     val urlJson = JSONObject(step3Raw)
                     val url = urlJson.optString("url")
@@ -110,7 +109,7 @@ class DebugViewModel : ViewModel() {
                         log("!!! FAILURE: JSON valid but 'url' is empty.")
                     }
                 } catch (e: Exception) {
-                    log("!!! FAILURE: Could not parse Step 3 JSON. Check Raw Response above.")
+                    log("!!! FAILURE: Could not parse Step 3 JSON.")
                 }
 
             } catch (e: Exception) {
@@ -134,7 +133,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DebugScreen(vm: DebugViewModel = viewModel()) {
     var tokenInput by remember { mutableStateOf("") }
-    var idInput by remember { mutableStateOf("") } // Need ID (e.g., 78656 from your logs)
+    var idInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
@@ -149,7 +148,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         OutlinedTextField(
             value = tokenInput,
             onValueChange = { tokenInput = it },
-            label = { Text("Paste JWT Token") },
+            label = { Text("Paste Token (Start with eyJ...)") },
             modifier = Modifier.fillMaxWidth(),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
@@ -165,7 +164,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         OutlinedTextField(
             value = idInput,
             onValueChange = { idInput = it },
-            label = { Text("Student ID (e.g. 78656)") },
+            label = { Text("ID (Try 71001 or 33779)") },
             modifier = Modifier.fillMaxWidth(),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
@@ -202,7 +201,6 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         Spacer(Modifier.height(16.dp))
         Divider(color = Color.DarkGray)
         
-        // Log Console
         SelectionContainer(Modifier.fillMaxSize()) {
             Text(
                 text = vm.logs,
@@ -213,7 +211,6 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             )
         }
         
-        // Auto-scroll
         LaunchedEffect(vm.logs) {
             scrollState.animateScrollTo(scrollState.maxValue)
         }
