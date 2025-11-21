@@ -22,11 +22,12 @@ import java.util.concurrent.TimeUnit
 data class DocIdRequest(val id: Long) // For Step 1
 data class DocKeyRequest(val key: String) // For Step 3
 
-// FIX: Step 2 likely needs specific IDs found in your GET logs
+// FIX: Added 'pdf' field which caused the 422 error
 data class TranscriptRequest(
-    val id: Long,          // Generic ID (sending Movement ID here to be safe)
-    val id_student: Long,  // Explicit Student ID
-    val id_movement: Long  // Explicit Movement ID
+    val id: Long,
+    val id_student: Long,
+    val id_movement: Long,
+    val pdf: Boolean = true // Server requires this flag
 )
 
 // --- API INTERFACE ---
@@ -34,7 +35,6 @@ interface OshSuApi {
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // Updated to use the new TranscriptRequest
     @POST("public/api/student/doc/form13")
     suspend fun generateTranscript(@Body req: TranscriptRequest): ResponseBody
 

@@ -25,7 +25,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import retrofit2.HttpException // Import for better error handling
+import retrofit2.HttpException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -60,7 +60,6 @@ class DebugViewModel : ViewModel() {
 
             try {
                 // --- STEP 1: GET KEY ---
-                // Step 1 usually just needs Student ID (or maybe just "id" which we map to studentId)
                 log(">>> STEP 1: Requesting Key (form13link)...")
                 val step1Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
@@ -81,11 +80,12 @@ class DebugViewModel : ViewModel() {
                 // --- STEP 2: TRIGGER GENERATION ---
                 log(">>> STEP 2: Triggering Generation (form13)...")
                 
-                // FIX: We send ALL IDs to be safe.
+                // FIX: Sending 'pdf = true'
                 val request2 = TranscriptRequest(
-                    id = movementId,        // Try movement ID as primary "id"
+                    id = movementId,
                     id_student = studentId, 
-                    id_movement = movementId
+                    id_movement = movementId,
+                    pdf = true
                 )
                 
                 val step2Raw = withContext(Dispatchers.IO) {
@@ -116,7 +116,6 @@ class DebugViewModel : ViewModel() {
                 }
 
             } catch (e: HttpException) {
-                // CAPTURE THE SERVER ERROR MESSAGE
                 val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
                 log("💥 HTTP EXCEPTION ${e.code()}: $errorBody")
                 e.printStackTrace()
@@ -142,7 +141,7 @@ class MainActivity : ComponentActivity() {
 fun DebugScreen(vm: DebugViewModel = viewModel()) {
     var tokenInput by remember { mutableStateOf("") }
     var studentIdInput by remember { mutableStateOf("") }
-    var movementIdInput by remember { mutableStateOf("") } // New Field
+    var movementIdInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
@@ -152,9 +151,8 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("TRANSCRIPT DEBUGGER v2", color = Color.Cyan)
+        Text("TRANSCRIPT DEBUGGER v3", color = Color.Cyan)
         
-        // Token Input
         OutlinedTextField(
             value = tokenInput,
             onValueChange = { tokenInput = it },
@@ -172,11 +170,10 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         Spacer(Modifier.height(8.dp))
         
         Row(Modifier.fillMaxWidth()) {
-            // Student ID
             OutlinedTextField(
                 value = studentIdInput,
                 onValueChange = { studentIdInput = it },
-                label = { Text("Student ID") },
+                label = { Text("Student ID (71001)") },
                 modifier = Modifier.weight(1f).padding(end = 4.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
@@ -186,11 +183,10 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
                     unfocusedBorderColor = Color.Gray
                 )
             )
-            // Movement ID
             OutlinedTextField(
                 value = movementIdInput,
                 onValueChange = { movementIdInput = it },
-                label = { Text("Move ID") },
+                label = { Text("Move ID (33779)") },
                 modifier = Modifier.weight(1f).padding(start = 4.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
