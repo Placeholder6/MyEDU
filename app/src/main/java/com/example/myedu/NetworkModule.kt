@@ -47,6 +47,7 @@ data class NameObj(val name_en: String?, val name_ru: String?, val name_kg: Stri
 data class EduYear(val id: Int, val name_en: String?, val active: Boolean)
 data class ScheduleWrapper(val schedule_items: List<ScheduleItem>?)
 
+// Updated Schedule Item with Building Info
 data class ScheduleItem(
     val day: Int,
     val id_lesson: Int,
@@ -110,8 +111,10 @@ class UniversalCookieJar : CookieJar {
         return ArrayList(cookieStore)
     }
     
-    // FIX: Manually inject the token cookie for session continuity
+    // CRITICAL FIX: Manually inject the token cookie
     fun injectSessionCookies(token: String) {
+        val targetUrl = "https://api.myedu.oshsu.kg".toHttpUrlOrNull() ?: return
+        
         // 1. JWT Token Cookie
         val jwtCookie = Cookie.Builder()
             .domain("myedu.oshsu.kg")

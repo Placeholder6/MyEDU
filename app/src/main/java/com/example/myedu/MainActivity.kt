@@ -1,5 +1,6 @@
 package com.example.myedu
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -69,6 +70,7 @@ class MainViewModel : ViewModel() {
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayDayName by mutableStateOf("Today")
     
+    // Navigation State for Details
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
 
     fun login(email: String, pass: String) {
@@ -199,6 +201,7 @@ fun LoginScreen(vm: MainViewModel) {
 
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
+    // Back Handler to close details
     BackHandler(enabled = vm.selectedClass != null) {
         vm.selectedClass = null
     }
@@ -213,6 +216,7 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }) { padding ->
         Box(Modifier.padding(padding)) {
+            // Main Tabs
             if (vm.selectedClass == null) {
                 when(vm.currentTab) {
                     0 -> HomeScreen(vm)
@@ -220,6 +224,8 @@ fun MainAppStructure(vm: MainViewModel) {
                     2 -> ProfileScreen(vm)
                 }
             }
+            
+            // Overlay: Class Details
             AnimatedVisibility(
                 visible = vm.selectedClass != null,
                 enter = slideInVertically { it } + fadeIn(),
@@ -247,17 +253,29 @@ fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+            
+            // Header
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
                 Column(Modifier.padding(24.dp)) {
                     Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(8.dp))
-                    AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface))
+                    AssistChip(
+                        onClick = {}, 
+                        label = { Text(item.subject_type?.get() ?: "Lesson") },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
                 }
             }
+            
             Spacer(Modifier.height(24.dp))
+            
+            // Teacher Section
             Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(16.dp))
@@ -265,14 +283,23 @@ fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
                     IconButton(onClick = { 
                         clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: ""))
                         Toast.makeText(context, "Teacher name copied", Toast.LENGTH_SHORT).show()
-                    }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) }
+                    }) {
+                        Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline)
+                    }
                 }
             }
+            
             Spacer(Modifier.height(24.dp))
+            
+            // Location Section
             Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Column {
+                    // Room
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(16.dp))
@@ -282,29 +309,57 @@ fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
                         }
                     }
                     Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    // Campus
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(16.dp))
-                        val campusName = item.classroom?.building?.getName() ?: "Campus"
-                        val campusInfo = item.classroom?.building?.getAddress() ?: ""
-                        val fullLocation = if(campusInfo.isNotBlank()) "$campusName, $campusInfo" else campusName
                         Column(Modifier.weight(1f)) {
-                            Text(campusName, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(if(campusInfo.isNotBlank()) campusInfo else "Osh State University", style = MaterialTheme.typography.bodyMedium)
+                            Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium)
                         }
+                        // Map Icon
                         IconButton(onClick = {
-                            clipboardManager.setText(AnnotatedString(fullLocation))
-                            Toast.makeText(context, "Address copied", Toast.LENGTH_SHORT).show()
-                        }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(20.dp)) }
-                        IconButton(onClick = {
-                            val query = Uri.encode("OshSU $campusName")
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$query"))
-                            intent.setPackage("com.google.android.apps.maps")
-                            try { context.startActivity(intent) } catch (e: Exception) { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/maps/search/?api=1&query=$query"))) }
-                        }) { Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) }
+                            val address = item.classroom?.building?.getAddress() ?: ""
+                            if (address.isNotEmpty()) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address"))
+                                context.startActivity(intent)
+                            } else {
+                                Toast.makeText(context, "Address not available", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }
+            
+            Spacer(Modifier.height(24.dp))
+            
+            // Placeholders for Future Logic
+            Text("Academic Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Marks", style = MaterialTheme.typography.bodyMedium)
+                        Text("Coming Soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(progress = 0f, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
+                }
+            }
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Thematic Plan", style = MaterialTheme.typography.bodyMedium)
+                        Text("Coming Soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+            
             Spacer(Modifier.height(48.dp))
         }
     }
@@ -406,11 +461,12 @@ fun StatCard(icon: ImageVector, label: String, value: String, bg: Color, modifie
 @Composable
 fun ClassItem(item: ScheduleItem, onClick: () -> Unit) {
     Card(
-        onClick = onClick,
+        onClick = onClick, // Updated to be clickable
         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), 
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            // Updated Pair Design: Just the number, circled
             Box(
                 modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha=0.1f)),
                 contentAlignment = Alignment.Center
@@ -422,6 +478,7 @@ fun ClassItem(item: ScheduleItem, onClick: () -> Unit) {
                 Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("${item.room?.name_en ?: "Room ?"} • ${item.subject_type?.get() ?: "Lesson"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             }
+            // Map Icon
             Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
         }
     }
