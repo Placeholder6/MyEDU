@@ -101,7 +101,7 @@ object NetworkClient {
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(interceptor)
-            .connectTimeout(60, TimeUnit.SECONDS)
+            .connectTimeout(60, TimeUnit.SECONDS) // Long timeout for debugging
             .readTimeout(60, TimeUnit.SECONDS)
             .build())
         .addConverterFactory(GsonConverterFactory.create()) 
