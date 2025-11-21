@@ -66,7 +66,9 @@ class DebugViewModel : ViewModel() {
                 }
                 log("RAW RESPONSE 1: $step1Raw")
 
-                val keyJson = JSONObject(step1Raw)
+                val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
+                    log("!!! FAIL: Step 1 is not JSON"); return@launch 
+                }
                 val key = keyJson.optString("key")
                 
                 if (key.isEmpty()) {
@@ -84,7 +86,7 @@ class DebugViewModel : ViewModel() {
                 // Expected: "Ok :)"
 
                 // Wait loop
-                log("Waiting 3 seconds for server...")
+                log("Waiting 3 seconds for server to generate PDF...")
                 delay(3000)
 
                 // --- STEP 3: RESOLVE LINK ---
@@ -108,7 +110,7 @@ class DebugViewModel : ViewModel() {
                         log("!!! FAILURE: JSON valid but 'url' is empty.")
                     }
                 } catch (e: Exception) {
-                    log("!!! FAILURE: Could not parse Step 3 JSON. Server might have sent HTML error.")
+                    log("!!! FAILURE: Could not parse Step 3 JSON. Check Raw Response above.")
                 }
 
             } catch (e: Exception) {
@@ -152,7 +154,9 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                cursorColor = Color.White
+                cursorColor = Color.White,
+                focusedBorderColor = Color.Cyan,
+                unfocusedBorderColor = Color.Gray
             )
         )
         
@@ -166,7 +170,9 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
-                cursorColor = Color.White
+                cursorColor = Color.White,
+                focusedBorderColor = Color.Cyan,
+                unfocusedBorderColor = Color.Gray
             )
         )
 
