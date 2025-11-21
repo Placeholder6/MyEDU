@@ -64,17 +64,17 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING FINAL SEQUENCE ---")
+            log("--- STARTING FULL RECREATION SEQUENCE ---")
             
             // 1. SETUP
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
-            NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/" // Default
+            NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/" // Initial Referer
             log("Configured.")
 
             try {
-                // --- STEP 0: FETCH IDS ---
-                log(">>> STEP 0: Fetching IDs...")
+                // --- STEP 0: FETCH IDs ---
+                log(">>> STEP 0: Fetching Student/Movement IDs...")
                 val studentId = getStudentIdFromToken(token)
                 if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
                 
@@ -84,7 +84,7 @@ class DebugViewModel : ViewModel() {
                 val movementId = JSONObject(infoRaw).optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
                 log("✔ Student: $studentId | Movement: $movementId")
 
-                // --- STEP 0.8: FETCH TRANSCRIPT DATA ---
+                // --- STEP 0.8: FETCH TRANSCRIPT JSON ---
                 log(">>> STEP 0.8: Fetching Transcript Data...")
                 val transcriptJsonRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptData(studentId, movementId).string()
@@ -92,25 +92,28 @@ class DebugViewModel : ViewModel() {
                 if (transcriptJsonRaw.isEmpty()) { log("!!! FAIL: Empty Data"); return@launch }
                 log("✔ Data Loaded (${transcriptJsonRaw.length} chars)")
 
-                // --- STEP 1: GET KEY ---
-                log(">>> STEP 1: Requesting Key...")
+                // --- STEP 1: GET DOCUMENT KEY ---
+                log(">>> STEP 1: Requesting Document Key...")
                 val step1Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
                 }
                 val keyJson = JSONObject(step1Raw)
                 val key = keyJson.optString("key")
                 val linkId = keyJson.optLong("id")
+                
+                if (key.isEmpty()) { log("!!! FAIL: No Key returned"); return@launch }
                 log("✔ Key: $key | Link ID: $linkId")
 
-                // --- STEP 1.5: UPDATE REFERER ---
+                // --- STEP 1.5: UPDATE REFERER (CRITICAL) ---
+                // The server expects us to be on the specific document page now
                 val newReferer = "https://myedu.oshsu.kg/#/document/$key"
                 NetworkClient.interceptor.currentReferer = newReferer
                 log("✔ Referer Updated: $newReferer")
 
-                // --- STEP 2: GENERATE PDF ---
-                log(">>> STEP 2: Generating PDF (Multipart)...")
+                // --- STEP 2: GENERATE PDF (MULTIPART) ---
+                log(">>> STEP 2: Generating PDF...")
                 
-                // Use text/plain for standard form fields
+                // Important: Use text/plain for form fields so server parses them as params
                 val plainType = "text/plain".toMediaTypeOrNull()
                 val pdfType = "application/pdf".toMediaTypeOrNull()
 
@@ -118,10 +121,10 @@ class DebugViewModel : ViewModel() {
                 val studentBody = studentId.toString().toRequestBody(plainType)
                 val movementBody = movementId.toString().toRequestBody(plainType)
                 
-                // THE FIX: Send the JSON string as a text field named "contents"
+                // FIX: Send the huge JSON string as a PLAIN TEXT form field named "contents"
                 val contentsBody = transcriptJsonRaw.toRequestBody(plainType)
 
-                // Dummy File Part
+                // Dummy File Part (Required by server validation)
                 val emptyBytes = ByteArray(0)
                 val fileReq = emptyBytes.toRequestBody(pdfType)
                 val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
@@ -131,25 +134,24 @@ class DebugViewModel : ViewModel() {
                         id = idBody, 
                         idStudent = studentBody, 
                         idMovement = movementBody, 
-                        contents = contentsBody, // Passing the fetched JSON
+                        contents = contentsBody, // <--- Correctly injected
                         pdf = pdfPart
                     ).string()
                 }
-                log("RAW 2: $step2Raw")
-                // Expected Output: "Ok :)"
-
-                log("Waiting 3 seconds...")
+                log("RAW 2: $step2Raw") // Should be "Ok :)"
+                
+                log("Waiting 3 seconds for generation...")
                 delay(3000)
 
                 // --- STEP 3: RESOLVE URL ---
-                log(">>> STEP 3: Resolving Link...")
+                log(">>> STEP 3: Resolving Final Link...")
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
                 log("RAW 3: $step3Raw")
                 
                 val url = JSONObject(step3Raw).optString("url")
-                if (url.isNotEmpty()) log("✅ FINAL URL: $url") else log("!!! FAIL: No URL")
+                if (url.isNotEmpty()) log("✅ SUCCESS! URL: $url") else log("!!! FAIL: No URL found")
 
             } catch (e: HttpException) {
                 val errorBody = e.response()?.errorBody()?.string() ?: "No body"
@@ -184,7 +186,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU FINAL FIX", color = Color.Cyan)
+        Text("MYEDU API RECREATOR", color = Color.Cyan)
         
         Spacer(Modifier.height(8.dp))
 
@@ -211,7 +213,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
             ) {
-                Text(if (vm.isRunning) "WORKING..." else "RUN FIX")
+                Text(if (vm.isRunning) "WORKING..." else "RUN SEQUENCE")
             }
             
             Spacer(Modifier.width(8.dp))

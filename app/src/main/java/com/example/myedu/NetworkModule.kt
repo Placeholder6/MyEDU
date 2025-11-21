@@ -30,28 +30,33 @@ data class DocKeyRequest(val key: String)
 
 // --- API INTERFACE ---
 interface OshSuApi {
+    // 1. Get Student Info (for Movement ID)
     @GET("public/api/searchstudentinfo")
     suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
 
+    // 2. Get Transcript Data (The Marksheet JSON)
     @GET("public/api/studenttranscript")
     suspend fun getTranscriptData(
         @Query("id_student") studentId: Long,
         @Query("id_movement") movementId: Long
     ): ResponseBody
 
+    // 3. Get Document Key (Link ID)
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
+    // 4. Generate PDF (Sends JSON data + Dummy PDF)
     @Multipart
     @POST("public/api/student/doc/form13")
     suspend fun generateTranscript(
         @Part("id") id: RequestBody,
         @Part("id_student") idStudent: RequestBody,
         @Part("id_movement") idMovement: RequestBody,
-        @Part("contents") contents: RequestBody, // <--- THE FIX: JSON Data goes here
+        @Part("contents") contents: RequestBody, // <--- The JSON string goes here as text
         @Part pdf: MultipartBody.Part
     ): ResponseBody
 
+    // 5. Resolve Final URL
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
@@ -101,6 +106,7 @@ class DebugCookieJar : CookieJar {
 // --- INTERCEPTOR WITH DYNAMIC REFERER ---
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
+    // Mutable Referer allows us to update it per-step
     var currentReferer: String = "https://myedu.oshsu.kg/" 
 
     override fun intercept(chain: Interceptor.Chain): Response {
@@ -108,8 +114,6 @@ class DebugInterceptor : Interceptor {
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Origin", "https://myedu.oshsu.kg")
-        
-        // Uses the variable we update in MainActivity
         builder.header("Referer", currentReferer)
         
         if (authToken != null) {
