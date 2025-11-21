@@ -210,7 +210,7 @@ interface OshSuApi {
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): DocKeyResponse
 
-    // Step 2: Trigger Generation (UPDATED TO RETURN RAW BODY because server sends text "Ok :)")
+    // Step 2: Trigger Generation (UPDATED TO RETURN RAW BODY)
     @POST("public/api/student/doc/form8")
     suspend fun generateReference(@Body req: DocIdRequest): ResponseBody
 

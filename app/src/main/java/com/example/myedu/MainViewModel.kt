@@ -131,7 +131,7 @@ class MainViewModel : ViewModel() {
                 docError = null
                 val uid = userData?.id ?: return@launch
                 
-                // 1. Get Key (JSON Response)
+                // 1. Get Key
                 val keyResp = if (type == "reference") {
                     NetworkClient.api.getReferenceLink(DocIdRequest(uid))
                 } else {
@@ -139,8 +139,7 @@ class MainViewModel : ViewModel() {
                 }
                 
                 if (keyResp.key != null) {
-                    // 2. Trigger Generation (TEXT Response "Ok :)")
-                    // We consume the response body as a string to prevent "Malformed JSON" error
+                    // 2. Trigger Generation (Consumed as string to ignore non-JSON "Ok :)" response)
                     try {
                         if (type == "reference") {
                             NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
@@ -148,11 +147,10 @@ class MainViewModel : ViewModel() {
                             NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
                         }
                     } catch (e: Exception) {
-                        // If this fails, it might be a real error, but if it was just non-JSON, we are safe now.
-                        e.printStackTrace()
+                        // Ignore parsing errors here, as long as the request was sent
                     }
 
-                    // 3. Resolve URL (JSON Response)
+                    // 3. Resolve URL
                     val urlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(keyResp.key))
                     if (urlResp.url != null) {
                         docUrl = urlResp.url
