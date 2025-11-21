@@ -40,7 +40,7 @@ interface OshSuApi {
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // BROWSER STYLE UPLOAD (No contents, no movement_id)
+    // BROWSER UPLOAD METHOD
     @Multipart
     @POST("public/api/student/doc/form13")
     suspend fun uploadPdf(
