@@ -25,6 +25,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.text.SimpleDateFormat
@@ -40,7 +43,6 @@ class DebugViewModel : ViewModel() {
         logs += "[$time] $msg\n"
     }
 
-    // Helper to extract Student ID from JWT 'sub' claim
     private fun getStudentIdFromToken(token: String): Long {
         try {
             val parts = token.split(".")
@@ -63,76 +65,70 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING AUTO-FETCH SEQUENCE ---")
+            log("--- STARTING AUTO-FETCH SEQUENCE (MULTIPART) ---")
             
-            // 1. Configure Session
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
             log("Cookies & Headers Configured.")
 
             try {
                 // --- STEP 0: AUTO-FETCH IDS ---
-                log(">>> STEP 0: Extracting Student ID from Token...")
+                log(">>> STEP 0: Extracting Student ID...")
                 val studentId = getStudentIdFromToken(token)
-                if (studentId == 0L) {
-                    log("!!! FAIL: Could not decode Student ID from token.")
-                    return@launch
-                }
-                log("✔ Student ID found: $studentId")
+                if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
+                log("✔ Student ID: $studentId")
 
-                log(">>> STEP 0.5: Fetching Movement ID (searchstudentinfo)...")
+                log(">>> STEP 0.5: Fetching Movement ID...")
                 val infoRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getStudentInfo(studentId).string()
                 }
                 val infoJson = JSONObject(infoRaw)
-                val movementObj = infoJson.optJSONObject("lastStudentMovement")
-                val movementId = movementObj?.optLong("id") ?: 0L
+                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
 
-                if (movementId == 0L) {
-                    log("!!! FAIL: Could not find 'lastStudentMovement.id' in response.")
-                    return@launch
-                }
-                log("✔ Movement ID found: $movementId")
+                if (movementId == 0L) { log("!!! FAIL: No Movement ID"); return@launch }
+                log("✔ Movement ID: $movementId")
 
                 // --- STEP 1: GET KEY & LINK ID ---
-                log(">>> STEP 1: Requesting Key (form13link)...")
+                log(">>> STEP 1: Requesting Key...")
                 val step1Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
                 }
                 log("RAW 1: $step1Raw")
 
                 val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
-                    log("!!! FAIL: Step 1 is not JSON"); return@launch 
+                    log("!!! FAIL: Step 1 not JSON"); return@launch 
                 }
-                
                 val key = keyJson.optString("key")
                 val linkId = keyJson.optLong("id") 
                 
-                if (key.isEmpty() || linkId == 0L) {
-                    log("!!! FAILURE: Missing 'key' or 'id' in Step 1.")
-                    return@launch
-                }
+                if (key.isEmpty() || linkId == 0L) { log("!!! FAIL: Missing key/id"); return@launch }
                 log("✔ Key: $key | Link ID: $linkId")
 
-                // --- STEP 2: TRIGGER GENERATION ---
-                log(">>> STEP 2: Triggering Generation (form13)...")
-                val request2 = TranscriptRequest(
-                    id = linkId,
-                    id_student = studentId, 
-                    id_movement = movementId,
-                    pdf = true
-                )
+                // --- STEP 2: TRIGGER GENERATION (MULTIPART) ---
+                log(">>> STEP 2: Triggering Generation (Multipart)...")
                 
+                // Create Parts
+                val textType = MediaType.parse("text/plain")
+                val idBody = RequestBody.create(textType, linkId.toString())
+                val studentBody = RequestBody.create(textType, studentId.toString())
+                val movementBody = RequestBody.create(textType, movementId.toString())
+
+                // Create File Part (The Fix)
+                val emptyBytes = ByteArray(0)
+                val fileReq = RequestBody.create(MediaType.parse("application/pdf"), emptyBytes)
+                val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
+
                 val step2Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.generateTranscript(request2).string()
+                    NetworkClient.api.generateTranscript(idBody, studentBody, movementBody, pdfPart).string()
                 }
                 log("RAW 2: $step2Raw")
-
-                log("Waiting 3 seconds for PDF generation...")
+                
+                // Wait for server to process
+                log("Waiting 3 seconds...")
                 delay(3000)
 
                 // --- STEP 3: RESOLVE LINK ---
-                log(">>> STEP 3: Resolving Link (showlink)...")
+                log(">>> STEP 3: Resolving Link...")
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
@@ -144,21 +140,21 @@ class DebugViewModel : ViewModel() {
                     if (url.isNotEmpty()) {
                         log("✅ SUCCESS! URL: $url")
                     } else {
-                        log("!!! FAILURE: JSON valid but 'url' is empty.")
+                        log("!!! FAILURE: URL is empty in JSON.")
                     }
                 } catch (e: Exception) {
-                    log("!!! FAILURE: Could not parse Step 3 JSON.")
+                    log("!!! FAILURE: Bad JSON in Step 3.")
                 }
 
             } catch (e: HttpException) {
-                val errorBody = e.response()?.errorBody()?.string() ?: "No error body"
-                log("💥 HTTP EXCEPTION ${e.code()}: $errorBody")
+                val errorBody = e.response()?.errorBody()?.string() ?: "No body"
+                log("💥 HTTP ERROR ${e.code()}: $errorBody")
             } catch (e: Exception) {
-                log("💥 CRITICAL EXCEPTION: ${e.message}")
+                log("💥 EXCEPTION: ${e.message}")
                 e.printStackTrace()
             } finally {
                 isRunning = false
-                log("--- END DEBUG ---")
+                log("--- END ---")
             }
         }
     }
@@ -183,8 +179,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU AUTO-DEBUGGER", color = Color.Cyan)
-        Text("Just paste the token. IDs will be fetched automatically.", color = Color.Gray, fontSize = 10.sp)
+        Text("MYEDU DEBUGGER (MULTIPART FIX)", color = Color.Cyan)
         
         Spacer(Modifier.height(8.dp))
 
@@ -211,7 +206,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
             ) {
-                Text(if (vm.isRunning) "WORKING..." else "START AUTO-DEBUG")
+                Text(if (vm.isRunning) "WORKING..." else "RUN")
             }
             
             Spacer(Modifier.width(8.dp))

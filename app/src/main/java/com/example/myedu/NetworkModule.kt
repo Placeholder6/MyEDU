@@ -4,14 +4,18 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Query
 import java.text.SimpleDateFormat
 import java.util.ArrayList
@@ -23,24 +27,24 @@ import java.util.concurrent.TimeUnit
 // --- DATA MODELS ---
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
-data class TranscriptRequest(
-    val id: Long,
-    val id_student: Long,
-    val id_movement: Long,
-    val pdf: Boolean = true
-)
 
 // --- API INTERFACE ---
 interface OshSuApi {
-    // New: Fetch Student Info to get Movement ID
     @GET("public/api/searchstudentinfo")
     suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
 
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
+    // FIX: Changed to Multipart to satisfy "file" requirement
+    @Multipart
     @POST("public/api/student/doc/form13")
-    suspend fun generateTranscript(@Body req: TranscriptRequest): ResponseBody
+    suspend fun generateTranscript(
+        @Part("id") id: RequestBody,
+        @Part("id_student") idStudent: RequestBody,
+        @Part("id_movement") idMovement: RequestBody,
+        @Part pdf: MultipartBody.Part // The "File"
+    ): ResponseBody
 
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
