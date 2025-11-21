@@ -156,9 +156,8 @@ data class MarkList(
 
 // Documents
 data class DocIdRequest(val id: Long)
-data class DocKeyResponse(val key: String?)
 data class DocKeyRequest(val key: String)
-data class DocUrlResponse(val url: String?)
+// NOTE: DocKeyResponse and DocUrlResponse are handled via manual JSON parsing now to be safe
 
 // --- API INTERFACE ---
 
@@ -201,17 +200,16 @@ interface OshSuApi {
         @Query("id_semester") semesterId: Int
     ): List<SessionResponse>
 
-    // --- DOCUMENT ENDPOINTS ---
+    // --- DOCUMENT ENDPOINTS (ALL RAW RESPONSE BODY) ---
 
     // Step 1: Get Key
     @POST("public/api/student/doc/form8link")
-    suspend fun getReferenceLink(@Body req: DocIdRequest): DocKeyResponse
+    suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
 
     @POST("public/api/student/doc/form13link")
-    suspend fun getTranscriptLink(@Body req: DocIdRequest): DocKeyResponse
+    suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // Step 2: Trigger Generation (CRITICAL FIX: RETURN RAW RESPONSE BODY)
-    // This is necessary because the server returns plain text "Ok :)" instead of JSON
+    // Step 2: Trigger Generation
     @POST("public/api/student/doc/form8")
     suspend fun generateReference(@Body req: DocIdRequest): ResponseBody
 
@@ -220,7 +218,7 @@ interface OshSuApi {
 
     // Step 3: Resolve Key to URL
     @POST("public/api/open/doc/showlink")
-    suspend fun resolveDocLink(@Body req: DocKeyRequest): DocUrlResponse
+    suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
 // --- NETWORK CLIENT ---

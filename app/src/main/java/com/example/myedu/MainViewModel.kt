@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 import java.util.Calendar
 import java.util.Locale
 
@@ -131,38 +132,55 @@ class MainViewModel : ViewModel() {
                 docError = null
                 val uid = userData?.id ?: return@launch
                 
-                // 1. Get Key
-                val keyResp = if (type == "reference") {
-                    NetworkClient.api.getReferenceLink(DocIdRequest(uid))
+                // STEP 1: Get Key
+                val rawKeyResp = if (type == "reference") {
+                    NetworkClient.api.getReferenceLink(DocIdRequest(uid)).string()
                 } else {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(uid))
+                    NetworkClient.api.getTranscriptLink(DocIdRequest(uid)).string()
+                }
+
+                // Manual Parse to catch non-JSON errors
+                val keyJson = try {
+                     JSONObject(rawKeyResp)
+                } catch(e: Exception) {
+                    throw Exception("Step 1 Failed (Not JSON): $rawKeyResp")
                 }
                 
-                if (keyResp.key != null) {
-                    // 2. Trigger Generation (FIX: CONSUME AS STRING TO AVOID JSON CRASH)
-                    try {
-                        if (type == "reference") {
-                            NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
-                        } else {
-                            NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
-                        }
-                    } catch (e: Exception) {
-                        // We catch exceptions here just in case, but calling .string() should safely consume "Ok :)"
-                        e.printStackTrace()
-                    }
-
-                    // 3. Resolve URL
-                    val urlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(keyResp.key))
-                    if (urlResp.url != null) {
-                        docUrl = urlResp.url
-                    } else {
-                        docError = "Document URL not found"
-                    }
-                } else {
-                    docError = "Failed to generate document key"
+                val key = keyJson.optString("key")
+                if (key.isNullOrEmpty()) {
+                     throw Exception("Step 1 Failed: No key in $rawKeyResp")
                 }
+
+                // STEP 2: Trigger Generation
+                try {
+                    if (type == "reference") {
+                        NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
+                    } else {
+                        NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
+                    }
+                    // We ignore the output of step 2 as it's just "Ok :)"
+                } catch (e: Exception) {
+                    // Even if this fails, we try step 3 because sometimes the server is fast
+                }
+
+                // STEP 3: Resolve URL
+                val rawUrlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
+                
+                val urlJson = try {
+                     JSONObject(rawUrlResp)
+                } catch(e: Exception) {
+                    throw Exception("Step 3 Failed (Not JSON): $rawUrlResp")
+                }
+
+                val finalUrl = urlJson.optString("url")
+                if (finalUrl.isNotEmpty()) {
+                    docUrl = finalUrl
+                } else {
+                    throw Exception("Step 3 Failed: No URL in $rawUrlResp")
+                }
+
             } catch (e: Exception) { 
-                docError = "Network error: ${e.message}"
+                docError = "ERR: ${e.message}"
                 e.printStackTrace() 
             } finally { 
                 docLoading = false 
