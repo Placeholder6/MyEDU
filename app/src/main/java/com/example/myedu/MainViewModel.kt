@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -132,55 +133,51 @@ class MainViewModel : ViewModel() {
                 docError = null
                 val uid = userData?.id ?: return@launch
                 
-                // STEP 1: Get Key
+                // STEP 1: Get Key (Raw JSON String)
                 val rawKeyResp = if (type == "reference") {
                     NetworkClient.api.getReferenceLink(DocIdRequest(uid)).string()
                 } else {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(uid)).string()
                 }
 
-                // Manual Parse to catch non-JSON errors
-                val keyJson = try {
-                     JSONObject(rawKeyResp)
-                } catch(e: Exception) {
-                    throw Exception("Step 1 Failed (Not JSON): $rawKeyResp")
-                }
-                
+                val keyJson = try { JSONObject(rawKeyResp) } catch(e: Exception) { throw Exception("Step 1 Failed: $rawKeyResp") }
                 val key = keyJson.optString("key")
-                if (key.isNullOrEmpty()) {
-                     throw Exception("Step 1 Failed: No key in $rawKeyResp")
-                }
+                if (key.isNullOrEmpty()) throw Exception("Step 1 Failed: No key in response")
 
-                // STEP 2: Trigger Generation
+                // STEP 2: Trigger Generation (Returns "Ok :)", we ignore result but MUST call it)
                 try {
                     if (type == "reference") {
                         NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
                     } else {
                         NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
                     }
-                    // We ignore the output of step 2 as it's just "Ok :)"
                 } catch (e: Exception) {
-                    // Even if this fails, we try step 3 because sometimes the server is fast
+                    // Ignore non-JSON errors here, server side job started
                 }
 
-                // STEP 3: Resolve URL
-                val rawUrlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
-                
-                val urlJson = try {
-                     JSONObject(rawUrlResp)
-                } catch(e: Exception) {
-                    throw Exception("Step 3 Failed (Not JSON): $rawUrlResp")
+                // STEP 3: Resolve URL (Retry loop because server might be slow)
+                var finalUrl = ""
+                var attempts = 0
+                while (attempts < 5 && finalUrl.isEmpty()) {
+                    delay(1000) // Wait 1s for PDF to generate
+                    try {
+                        val rawUrlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
+                        val urlJson = JSONObject(rawUrlResp)
+                        finalUrl = urlJson.optString("url")
+                    } catch (e: Exception) {
+                        // Keep trying
+                    }
+                    attempts++
                 }
 
-                val finalUrl = urlJson.optString("url")
                 if (finalUrl.isNotEmpty()) {
                     docUrl = finalUrl
                 } else {
-                    throw Exception("Step 3 Failed: No URL in $rawUrlResp")
+                    throw Exception("Step 3 Failed: PDF not ready after 5s")
                 }
 
             } catch (e: Exception) { 
-                docError = "ERR: ${e.message}"
+                docError = "Error: ${e.message}"
                 e.printStackTrace() 
             } finally { 
                 docLoading = false 

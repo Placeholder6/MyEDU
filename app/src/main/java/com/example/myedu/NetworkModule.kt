@@ -157,7 +157,6 @@ data class MarkList(
 // Documents
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
-// NOTE: DocKeyResponse and DocUrlResponse are handled via manual JSON parsing now to be safe
 
 // --- API INTERFACE ---
 
@@ -200,23 +199,20 @@ interface OshSuApi {
         @Query("id_semester") semesterId: Int
     ): List<SessionResponse>
 
-    // --- DOCUMENT ENDPOINTS (ALL RAW RESPONSE BODY) ---
+    // --- DOCUMENT ENDPOINTS (Raw ResponseBody to handle "Ok :)" text) ---
 
-    // Step 1: Get Key
     @POST("public/api/student/doc/form8link")
     suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
 
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // Step 2: Trigger Generation
     @POST("public/api/student/doc/form8")
     suspend fun generateReference(@Body req: DocIdRequest): ResponseBody
 
     @POST("public/api/student/doc/form13")
     suspend fun generateTranscript(@Body req: DocIdRequest): ResponseBody
 
-    // Step 3: Resolve Key to URL
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
@@ -237,8 +233,6 @@ class UniversalCookieJar : CookieJar {
     }
     
     fun injectSessionCookies(token: String) {
-        val targetUrl = "https://api.myedu.oshsu.kg".toHttpUrlOrNull() ?: return
-        
         val jwtCookie = Cookie.Builder()
             .domain("myedu.oshsu.kg")
             .path("/")
