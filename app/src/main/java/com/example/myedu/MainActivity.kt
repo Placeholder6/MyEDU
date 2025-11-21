@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.text.SimpleDateFormat
@@ -55,7 +56,7 @@ class DebugViewModel : ViewModel() {
         }
     }
 
-    fun runDebug(tokenString: String) {
+    fun runDebug(tokenString: String, generator: PdfGenerator) {
         if (tokenString.isBlank()) {
             log("Error: Token is empty.")
             return
@@ -64,7 +65,7 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING SEQUENCE (PLAIN CONTENT FIX) ---")
+            log("--- STARTING CLIENT-SIDE GENERATION ---")
             
             // 1. SETUP
             NetworkClient.cookieJar.setDebugCookies(token)
@@ -81,10 +82,12 @@ class DebugViewModel : ViewModel() {
                 val infoRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getStudentInfo(studentId).string()
                 }
-                val movementId = JSONObject(infoRaw).optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                log("✔ Student: $studentId | Movement: $movementId")
+                val infoJson = JSONObject(infoRaw)
+                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
+                val studentName = infoJson.optString("name", "Student")
+                log("✔ Student: $studentName ($studentId)")
 
-                // --- STEP 0.8: TRANSCRIPT JSON ---
+                // --- STEP 0.8: FETCH TRANSCRIPT JSON ---
                 log(">>> STEP 0.8: Fetching Transcript Data...")
                 val transcriptJsonRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptData(studentId, movementId).string()
@@ -102,40 +105,47 @@ class DebugViewModel : ViewModel() {
                 val linkId = keyJson.optLong("id")
                 log("✔ Key: $key | Link ID: $linkId")
 
-                // --- STEP 1.5: UPDATE REFERER ---
+                // --- STEP 1.5: GENERATE PDF LOCALLY ---
+                log(">>> STEP 1.5: Generating PDF Locally...")
+                val pdfFile = withContext(Dispatchers.Default) {
+                    generator.generateTranscriptPdf(transcriptJsonRaw, studentName, studentId)
+                }
+                
+                if (pdfFile == null || !pdfFile.exists()) {
+                    log("!!! FAIL: PDF Generation Failed")
+                    return@launch
+                }
+                log("✔ PDF Generated: ${pdfFile.name} (${pdfFile.length()} bytes)")
+
+                // --- STEP 1.6: UPDATE REFERER ---
                 val newReferer = "https://myedu.oshsu.kg/#/document/$key"
                 NetworkClient.interceptor.currentReferer = newReferer
-                log("✔ Referer Updated: $newReferer")
+                log("✔ Referer Updated")
 
-                // --- STEP 2: GENERATE PDF ---
-                log(">>> STEP 2: Generating PDF...")
+                // --- STEP 2: UPLOAD GENERATED PDF ---
+                // Note: We mimic the browser now. We DO NOT send 'contents' or 'id_movement'.
+                // We send the actual PDF file we just made.
+                log(">>> STEP 2: Uploading PDF...")
                 
-                // Use NULL media type for text fields. This is crucial!
-                // It forces Retrofit to send them as simple form fields without headers.
-                val idBody = linkId.toString().toRequestBody(null)
-                val studentBody = studentId.toString().toRequestBody(null)
-                val movementBody = movementId.toString().toRequestBody(null)
-                
-                // FIX: Send JSON string with NULL media type (treat as plain text form field)
-                val contentsBody = transcriptJsonRaw.toRequestBody(null)
-
-                // Dummy PDF Part (Required for file validation)
+                val plainType = "text/plain".toMediaTypeOrNull()
                 val pdfType = "application/pdf".toMediaTypeOrNull()
-                val emptyBytes = ByteArray(0)
-                val fileReq = emptyBytes.toRequestBody(pdfType)
-                val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
 
+                val idBody = linkId.toString().toRequestBody(plainType)
+                val studentBody = studentId.toString().toRequestBody(plainType)
+                
+                val fileReq = pdfFile.asRequestBody(pdfType)
+                val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileReq)
+
+                // Note: We use a simpler call here because we mimic the browser's upload
+                // See NetworkModule update below for 'uploadPdf'
                 val step2Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.generateTranscript(
+                    NetworkClient.api.uploadPdf(
                         id = idBody, 
                         idStudent = studentBody, 
-                        idMovement = movementBody, 
-                        contents = contentsBody, 
                         pdf = pdfPart
                     ).string()
                 }
                 log("RAW 2: $step2Raw")
-                // Should return: "Ok :)"
 
                 log("Waiting 3s...")
                 delay(3000)
@@ -145,8 +155,6 @@ class DebugViewModel : ViewModel() {
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
-                log("RAW 3: $step3Raw")
-                
                 val url = JSONObject(step3Raw).optString("url")
                 if (url.isNotEmpty()) log("✅ SUCCESS! URL: $url") else log("!!! FAIL: No URL")
 
@@ -167,12 +175,14 @@ class DebugViewModel : ViewModel() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { DebugScreen() }
+        // Pass context to Generator
+        val generator = PdfGenerator(applicationContext)
+        setContent { DebugScreen(generator) }
     }
 }
 
 @Composable
-fun DebugScreen(vm: DebugViewModel = viewModel()) {
+fun DebugScreen(generator: PdfGenerator, vm: DebugViewModel = viewModel()) {
     var tokenInput by remember { mutableStateOf("") }
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
@@ -183,12 +193,12 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU FINAL FIX", color = Color.Cyan)
+        Text("MYEDU CLIENT-SIDE GENERATOR", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            value = tokenInput,
-            onValueChange = { tokenInput = it },
-            label = { Text("Paste Token") },
+            value = tokenInput, 
+            onValueChange = { tokenInput = it }, 
+            label = { Text("Paste Token") }, 
             modifier = Modifier.fillMaxWidth(),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
@@ -200,36 +210,13 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         )
         Spacer(Modifier.height(16.dp))
         Row {
-            Button(
-                onClick = { vm.runDebug(tokenInput) },
-                enabled = !vm.isRunning,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
-            ) {
-                Text(if (vm.isRunning) "WORKING..." else "RUN FIX")
-            }
+            Button(onClick = { vm.runDebug(tokenInput, generator) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "..." else "GENERATE & UPLOAD") }
             Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
-            ) {
-                Text("COPY LOGS")
-            }
+            Button(onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("COPY") }
         }
         Spacer(Modifier.height(16.dp))
         Divider(color = Color.DarkGray)
-        SelectionContainer(Modifier.fillMaxSize()) {
-            Text(
-                text = vm.logs,
-                color = Color.Green,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                modifier = Modifier.verticalScroll(scrollState)
-            )
-        }
-        LaunchedEffect(vm.logs) {
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
+        SelectionContainer(Modifier.fillMaxSize()) { Text(text = vm.logs, color = Color.Green, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.verticalScroll(scrollState)) }
+        LaunchedEffect(vm.logs) { scrollState.animateScrollTo(scrollState.maxValue) }
     }
 }
