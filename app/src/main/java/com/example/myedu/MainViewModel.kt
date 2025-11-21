@@ -8,202 +8,101 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.util.Calendar
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 class MainViewModel : ViewModel() {
-    var appState by mutableStateOf("LOGIN")
-    var currentTab by mutableStateOf(0)
-    var isLoading by mutableStateOf(false)
-    var errorMsg by mutableStateOf<String?>(null)
-    
-    var userData by mutableStateOf<UserData?>(null)
-    var profileData by mutableStateOf<StudentInfoResponse?>(null)
-    
-    var payStatus by mutableStateOf<PayStatusResponse?>(null)
-    var newsList by mutableStateOf<List<NewsItem>>(emptyList())
-    var timeMap by mutableStateOf<Map<Int, String>>(emptyMap()) 
-    
-    var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
-    var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
-    var todayDayName by mutableStateOf("Today")
-    
-    var determinedStream by mutableStateOf<Int?>(null)
-    var determinedGroup by mutableStateOf<Int?>(null)
-    
-    var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
-    var isGradesLoading by mutableStateOf(false)
-    
-    var docUrl by mutableStateOf<String?>(null)
-    var docLoading by mutableStateOf(false)
-    var docError by mutableStateOf<String?>(null)
-    
-    var selectedClass by mutableStateOf<ScheduleItem?>(null)
+    // Using 'logs' instead of complex state to keep it simple for the console
+    var logs by mutableStateOf("Ready. Paste token and click Run.\n")
+    var isRunning by mutableStateOf(false)
 
-    fun login(email: String, pass: String) {
+    fun log(msg: String) {
+        val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        logs += "[$time] $msg\n"
+    }
+
+    fun runDebug(tokenString: String, studentIdString: String) {
+        if (tokenString.isBlank() || studentIdString.isBlank()) {
+            log("Error: Token or ID empty.")
+            return
+        }
+
+        val token = tokenString.trim()
+        val studentId = studentIdString.trim().toLongOrNull() ?: 0L
+
         viewModelScope.launch {
-            isLoading = true
-            errorMsg = null
-            NetworkClient.cookieJar.clear()
-            NetworkClient.interceptor.authToken = null
+            isRunning = true
+            log("--- STARTING DEBUG SEQUENCE ---")
+            log("Target ID: $studentId")
+            
+            // 1. Setup Session
+            NetworkClient.cookieJar.setDebugCookies(token)
+            NetworkClient.interceptor.authToken = token
+            log("Cookies & Headers Configured.")
+
             try {
-                val cleanEmail = email.trim()
-                val cleanPass = pass.trim()
-                val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(cleanEmail, cleanPass)) }
-                val token = resp.authorisation?.token
-                
-                if (token != null) {
-                    NetworkClient.interceptor.authToken = token
-                    NetworkClient.cookieJar.injectSessionCookies(token)
-                    
-                    val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user }
-                    val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() }
-                    userData = user
-                    profileData = profile
-                    
-                    if (profile != null) {
-                        loadDashboardData(profile)
-                        fetchSession(profile)
-                    }
-                    appState = "APP"
-                } else {
-                    errorMsg = "Incorrect credentials"
+                // --- STEP 1: GET KEY ---
+                log(">>> STEP 1: Requesting Key (form13link)...")
+                val step1Raw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
                 }
-            } catch (e: Exception) {
-                errorMsg = "Login Failed: ${e.message}"
-                e.printStackTrace()
-            } finally {
-                isLoading = false
-            }
-        }
-    }
+                log("RAW RESPONSE 1: $step1Raw")
 
-    private fun loadDashboardData(profile: StudentInfoResponse) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                try { newsList = NetworkClient.api.getNews() } catch(e:Exception) {}
-                try { payStatus = NetworkClient.api.getPayStatus() } catch(e:Exception) {}
-
-                val mov = profile.studentMovement
-                if (mov?.id_speciality != null && mov.id_edu_form != null && profile.active_semester != null) {
-                    val years = NetworkClient.api.getYears()
-                    val activeYearId = years.find { it.active }?.id ?: 25
-                    
-                    val times = try {
-                        NetworkClient.api.getLessonTimes(mov.id_speciality, mov.id_edu_form, activeYearId)
-                    } catch (e:Exception) { emptyList() }
-                    
-                    timeMap = times.associate { 
-                        (it.lesson?.num ?: 0) to "${it.begin_time ?: ""} - ${it.end_time ?: ""}" 
-                    }
-
-                    val wrappers = NetworkClient.api.getSchedule(mov.id_speciality, mov.id_edu_form, activeYearId, profile.active_semester)
-                    val allItems = wrappers.flatMap { it.schedule_items ?: emptyList() }
-                    fullSchedule = allItems.sortedBy { it.id_lesson }
-                    
-                    determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
-                    determinedGroup = fullSchedule.asSequence().filter { it.subject_type?.get() == "Practical Class" }.mapNotNull { it.stream?.numeric }.firstOrNull()
-                    
-                    val cal = Calendar.getInstance()
-                    val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) 
-                    todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
-                    val apiDay = if (dayOfWeek == Calendar.SUNDAY) 6 else dayOfWeek - 2
-                    todayClasses = fullSchedule.filter { it.day == apiDay }
+                val keyJson = try { JSONObject(step1Raw) } catch(e:Exception) { 
+                    log("!!! FAIL: Step 1 is not JSON"); return@launch 
                 }
-            } catch (e: Exception) { e.printStackTrace() }
-        }
-    }
-    
-    private fun fetchSession(profile: StudentInfoResponse) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                isGradesLoading = true
-                val semId = profile.active_semester ?: return@launch
-                sessionData = NetworkClient.api.getSession(semId)
-            } catch (e: Exception) { e.printStackTrace() } 
-            finally { isGradesLoading = false }
-        }
-    }
-    
-    fun downloadDocument(type: String) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                docLoading = true
-                docUrl = null
-                docError = null
-                val uid = userData?.id ?: return@launch
-                
-                // STEP 1: Get Key (Raw JSON String)
-                val rawKeyResp = if (type == "reference") {
-                    NetworkClient.api.getReferenceLink(DocIdRequest(uid)).string()
-                } else {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(uid)).string()
-                }
-
-                val keyJson = try { JSONObject(rawKeyResp) } catch(e: Exception) { throw Exception("Step 1 Failed: $rawKeyResp") }
                 val key = keyJson.optString("key")
-                if (key.isNullOrEmpty()) throw Exception("Step 1 Failed: No key in response")
+                
+                if (key.isEmpty()) {
+                    log("!!! FAILURE: No 'key' found in Step 1 response.")
+                    return@launch
+                }
+                log("KEY ACQUIRED: $key")
 
-                // STEP 2: Trigger Generation (Returns "Ok :)", we ignore result but MUST call it)
+                // --- STEP 2: TRIGGER GENERATION ---
+                log(">>> STEP 2: Triggering Generation (form13)...")
+                val step2Raw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.generateTranscript(DocIdRequest(studentId)).string()
+                }
+                log("RAW RESPONSE 2: $step2Raw")
+                // Expected: "Ok :)" or similar text
+
+                // Wait loop
+                log("Waiting 3 seconds for server to generate PDF...")
+                delay(3000)
+
+                // --- STEP 3: RESOLVE LINK ---
+                log(">>> STEP 3: Resolving Link (showlink)...")
+                val step3Raw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
+                }
+                log("RAW RESPONSE 3: $step3Raw")
+                
+                if (step3Raw.trim().isEmpty()) {
+                    log("!!! FAILURE: Empty response in Step 3.")
+                    return@launch
+                }
+
                 try {
-                    if (type == "reference") {
-                        NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
+                    val urlJson = JSONObject(step3Raw)
+                    val url = urlJson.optString("url")
+                    if (url.isNotEmpty()) {
+                        log("✅ SUCCESS! URL: $url")
                     } else {
-                        NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
+                        log("!!! FAILURE: JSON valid but 'url' is empty.")
                     }
                 } catch (e: Exception) {
-                    // Ignore non-JSON errors here, server side job started
+                    log("!!! FAILURE: Could not parse Step 3 JSON. Check Raw Response above.")
                 }
 
-                // STEP 3: Resolve URL (Retry loop because server might be slow)
-                var finalUrl = ""
-                var attempts = 0
-                while (attempts < 5 && finalUrl.isEmpty()) {
-                    delay(1000) // Wait 1s for PDF to generate
-                    try {
-                        val rawUrlResp = NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
-                        val urlJson = JSONObject(rawUrlResp)
-                        finalUrl = urlJson.optString("url")
-                    } catch (e: Exception) {
-                        // Keep trying
-                    }
-                    attempts++
-                }
-
-                if (finalUrl.isNotEmpty()) {
-                    docUrl = finalUrl
-                } else {
-                    throw Exception("Step 3 Failed: PDF not ready after 5s")
-                }
-
-            } catch (e: Exception) { 
-                docError = "Error: ${e.message}"
-                e.printStackTrace() 
-            } finally { 
-                docLoading = false 
+            } catch (e: Exception) {
+                log("💥 CRITICAL EXCEPTION: ${e.message}")
+                e.printStackTrace()
+            } finally {
+                isRunning = false
+                log("--- END DEBUG ---")
             }
         }
-    }
-    
-    fun getTimeString(lessonId: Int): String {
-        return timeMap[lessonId] ?: "Pair $lessonId"
-    }
-
-    fun logout() {
-        appState = "LOGIN"
-        currentTab = 0
-        userData = null
-        profileData = null
-        payStatus = null
-        newsList = emptyList()
-        fullSchedule = emptyList()
-        timeMap = emptyMap()
-        sessionData = emptyList()
-        selectedClass = null
-        determinedStream = null
-        determinedGroup = null
-        docUrl = null
-        NetworkClient.cookieJar.clear()
-        NetworkClient.interceptor.authToken = null
     }
 }

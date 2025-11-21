@@ -1,8 +1,5 @@
 package com.example.myedu
 
-import com.google.gson.GsonBuilder
-import java.util.ArrayList
-import java.util.concurrent.TimeUnit
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -13,39 +10,34 @@ import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.Body
-import retrofit2.http.GET
 import retrofit2.http.POST
 import java.text.SimpleDateFormat
+import java.util.ArrayList
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.TimeUnit
 
-// --- DATA MODELS ---
+// --- SIMPLE DATA MODELS ---
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
 
 // --- API INTERFACE (Raw Responses for Debugging) ---
 interface OshSuApi {
-    // Step 1: Get Key
+    // Step 1: Get the Key
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
-
-    @POST("public/api/student/doc/form8link")
-    suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
 
     // Step 2: Trigger Generation
     @POST("public/api/student/doc/form13")
     suspend fun generateTranscript(@Body req: DocIdRequest): ResponseBody
-    
-    @POST("public/api/student/doc/form8")
-    suspend fun generateReference(@Body req: DocIdRequest): ResponseBody
 
     // Step 3: Resolve Key to URL
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
-// --- COOKIE & NETWORK SETUP ---
+// --- MANUAL COOKIE INJECTOR ---
 class DebugCookieJar : CookieJar {
     private val cookieStore = ArrayList<Cookie>()
 
@@ -57,13 +49,26 @@ class DebugCookieJar : CookieJar {
     
     fun setDebugCookies(token: String) {
         cookieStore.clear()
-        val jwtCookie = Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("myedu-jwt-token").value(token).build()
+        
+        // 1. JWT Token
+        cookieStore.add(Cookie.Builder()
+            .domain("myedu.oshsu.kg")
+            .path("/")
+            .name("myedu-jwt-token")
+            .value(token)
+            .build())
+
+        // 2. Timestamp (Mimicking Browser)
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
-        val timeCookie = Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("my_edu_update").value(sdf.format(Date())).build()
+        val timestamp = sdf.format(Date())
         
-        cookieStore.add(jwtCookie)
-        cookieStore.add(timeCookie)
+        cookieStore.add(Cookie.Builder()
+            .domain("myedu.oshsu.kg")
+            .path("/")
+            .name("my_edu_update")
+            .value(timestamp)
+            .build())
     }
 }
 
@@ -72,13 +77,17 @@ class DebugInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
-        builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+        // EXACT HEADERS FROM YOUR LOGS
+        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("Referer", "https://myedu.oshsu.kg/#/main")
         builder.header("Origin", "https://myedu.oshsu.kg")
         
-        if (authToken != null) builder.header("Authorization", "Bearer $authToken")
-        
+        if (authToken != null) {
+            builder.header("Authorization", "Bearer $authToken")
+        }
+
         return chain.proceed(builder.build())
     }
 }
@@ -95,7 +104,7 @@ object NetworkClient {
             .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build())
-        .addConverterFactory(GsonConverterFactory.create())
+        .addConverterFactory(GsonConverterFactory.create()) 
         .build()
         .create(OshSuApi::class.java)
 }
