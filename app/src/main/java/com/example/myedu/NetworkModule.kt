@@ -40,23 +40,12 @@ interface OshSuApi {
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // Browser-Style Upload: Only ID, StudentID, and File
+    // BROWSER STYLE UPLOAD (No contents, no movement_id)
     @Multipart
     @POST("public/api/student/doc/form13")
     suspend fun uploadPdf(
         @Part("id") id: RequestBody,
         @Part("id_student") idStudent: RequestBody,
-        @Part pdf: MultipartBody.Part
-    ): ResponseBody
-
-    // Server-Generation Style (Fallback)
-    @Multipart
-    @POST("public/api/student/doc/form13")
-    suspend fun generateTranscript(
-        @Part("id") id: RequestBody,
-        @Part("id_student") idStudent: RequestBody,
-        @Part("id_movement") idMovement: RequestBody,
-        @Part("contents") contents: RequestBody,
         @Part pdf: MultipartBody.Part
     ): ResponseBody
 

@@ -65,17 +65,15 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING CLIENT-SIDE GENERATION ---")
+            log("--- STARTING CLIENT-SIDE PDF GEN ---")
             
-            // 1. SETUP
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
             NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/"
             log("Configured.")
 
             try {
-                // --- STEP 0: IDS ---
-                log(">>> STEP 0: Fetching IDs...")
+                // 1. INFO
                 val studentId = getStudentIdFromToken(token)
                 if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
                 
@@ -85,84 +83,63 @@ class DebugViewModel : ViewModel() {
                 val infoJson = JSONObject(infoRaw)
                 val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
                 val studentName = infoJson.optString("name", "Student")
-                log("✔ Student: $studentName ($studentId)")
+                log("✔ IDs: $studentId / $movementId")
 
-                // --- STEP 0.8: FETCH TRANSCRIPT JSON ---
-                log(">>> STEP 0.8: Fetching Transcript Data...")
+                // 2. DATA
                 val transcriptJsonRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptData(studentId, movementId).string()
                 }
-                if (transcriptJsonRaw.isEmpty()) { log("!!! FAIL: Empty Data"); return@launch }
-                log("✔ Data Loaded (${transcriptJsonRaw.length} chars)")
+                log("✔ Data: ${transcriptJsonRaw.length} chars")
 
-                // --- STEP 1: GET KEY ---
-                log(">>> STEP 1: Requesting Key...")
+                // 3. KEY
                 val step1Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
                 }
                 val keyJson = JSONObject(step1Raw)
                 val key = keyJson.optString("key")
                 val linkId = keyJson.optLong("id")
-                log("✔ Key: $key | Link ID: $linkId")
+                log("✔ Key: $key")
 
-                // --- STEP 1.5: GENERATE PDF LOCALLY ---
-                log(">>> STEP 1.5: Generating PDF Locally...")
+                // 4. GENERATE PDF (LOCALLY)
+                log(">>> GENERATING PDF...")
                 val pdfFile = withContext(Dispatchers.Default) {
-                    generator.generateTranscriptPdf(transcriptJsonRaw, studentName, studentId)
+                    generator.generateTranscriptPdf(transcriptJsonRaw, studentName, studentId, infoRaw)
                 }
                 
                 if (pdfFile == null || !pdfFile.exists()) {
                     log("!!! FAIL: PDF Generation Failed")
                     return@launch
                 }
-                log("✔ PDF Generated: ${pdfFile.name} (${pdfFile.length()} bytes)")
+                log("✔ PDF Ready: ${pdfFile.length()} bytes")
 
-                // --- STEP 1.6: UPDATE REFERER ---
-                val newReferer = "https://myedu.oshsu.kg/#/document/$key"
-                NetworkClient.interceptor.currentReferer = newReferer
-                log("✔ Referer Updated")
-
-                // --- STEP 2: UPLOAD GENERATED PDF ---
-                // Note: We mimic the browser now. We DO NOT send 'contents' or 'id_movement'.
-                // We send the actual PDF file we just made.
-                log(">>> STEP 2: Uploading PDF...")
+                // 5. UPLOAD
+                log(">>> UPLOADING...")
+                NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/#/document/$key"
                 
                 val plainType = "text/plain".toMediaTypeOrNull()
                 val pdfType = "application/pdf".toMediaTypeOrNull()
 
                 val idBody = linkId.toString().toRequestBody(plainType)
                 val studentBody = studentId.toString().toRequestBody(plainType)
-                
                 val fileReq = pdfFile.asRequestBody(pdfType)
                 val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileReq)
 
-                // Note: We use a simpler call here because we mimic the browser's upload
-                // See NetworkModule update below for 'uploadPdf'
                 val step2Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.uploadPdf(
-                        id = idBody, 
-                        idStudent = studentBody, 
-                        pdf = pdfPart
-                    ).string()
+                    NetworkClient.api.uploadPdf(idBody, studentBody, pdfPart).string()
                 }
-                log("RAW 2: $step2Raw")
+                log("✔ RESPONSE: $step2Raw")
 
-                log("Waiting 3s...")
-                delay(3000)
+                delay(2000)
 
-                // --- STEP 3: RESOLVE URL ---
-                log(">>> STEP 3: Resolving Link...")
+                // 6. RESOLVE
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
                 val url = JSONObject(step3Raw).optString("url")
-                if (url.isNotEmpty()) log("✅ SUCCESS! URL: $url") else log("!!! FAIL: No URL")
+                log("✅ URL: $url")
 
-            } catch (e: HttpException) {
-                val errorBody = e.response()?.errorBody()?.string() ?: "No body"
-                log("💥 HTTP ERROR ${e.code()}: $errorBody")
             } catch (e: Exception) {
-                log("💥 EXCEPTION: ${e.message}")
+                log("💥 ERROR: ${e.message}")
                 e.printStackTrace()
             } finally {
                 isRunning = false
@@ -175,7 +152,6 @@ class DebugViewModel : ViewModel() {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Pass context to Generator
         val generator = PdfGenerator(applicationContext)
         setContent { DebugScreen(generator) }
     }
@@ -193,7 +169,7 @@ fun DebugScreen(generator: PdfGenerator, vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU CLIENT-SIDE GENERATOR", color = Color.Cyan)
+        Text("MYEDU PDF GENERATOR", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = tokenInput, 
@@ -210,7 +186,7 @@ fun DebugScreen(generator: PdfGenerator, vm: DebugViewModel = viewModel()) {
         )
         Spacer(Modifier.height(16.dp))
         Row {
-            Button(onClick = { vm.runDebug(tokenInput, generator) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "..." else "GENERATE & UPLOAD") }
+            Button(onClick = { vm.runDebug(tokenInput, generator) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "..." else "GENERATE") }
             Spacer(Modifier.width(8.dp))
             Button(onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("COPY") }
         }
