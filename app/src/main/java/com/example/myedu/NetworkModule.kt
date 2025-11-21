@@ -4,12 +4,18 @@ import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.Interceptor
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.RequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.Body
 import retrofit2.http.GET
+import retrofit2.http.Multipart
+import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Query
 import java.text.SimpleDateFormat
 import java.util.ArrayList
@@ -18,20 +24,36 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
+// --- DATA MODELS ---
+data class DocIdRequest(val id: Long)
+data class DocKeyRequest(val key: String)
+
 // --- API INTERFACE ---
 interface OshSuApi {
-    // Step 1: Fetch Student Details (Returns JSON with 'lastStudentMovement')
     @GET("public/api/searchstudentinfo")
-    suspend fun getStudentInfo(
-        @Query("id_student") studentId: Long
-    ): ResponseBody
+    suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
 
-    // Step 2: Fetch Transcript Data (The big JSON list of grades)
     @GET("public/api/studenttranscript")
     suspend fun getTranscriptData(
         @Query("id_student") studentId: Long,
         @Query("id_movement") movementId: Long
     ): ResponseBody
+
+    @POST("public/api/student/doc/form13link")
+    suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
+
+    @Multipart
+    @POST("public/api/student/doc/form13")
+    suspend fun generateTranscript(
+        @Part("id") id: RequestBody,
+        @Part("id_student") idStudent: RequestBody,
+        @Part("id_movement") idMovement: RequestBody,
+        @Part("contents") contents: RequestBody, 
+        @Part pdf: MultipartBody.Part
+    ): ResponseBody
+
+    @POST("public/api/open/doc/showlink")
+    suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
 // --- COOKIE INJECTOR ---
@@ -76,15 +98,20 @@ class DebugCookieJar : CookieJar {
     }
 }
 
+// --- INTERCEPTOR WITH DYNAMIC REFERER ---
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
+    // Default Referer
+    var currentReferer: String = "https://myedu.oshsu.kg/" 
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
-        builder.header("Referer", "https://myedu.oshsu.kg/")
         builder.header("Origin", "https://myedu.oshsu.kg")
+        
+        // Dynamic Referer
+        builder.header("Referer", currentReferer)
         
         if (authToken != null) {
             val cleanToken = authToken!!.removePrefix("Bearer ").trim()
