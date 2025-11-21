@@ -139,7 +139,7 @@ class MainViewModel : ViewModel() {
                 }
                 
                 if (keyResp.key != null) {
-                    // 2. Trigger Generation (Consumed as string to ignore non-JSON "Ok :)" response)
+                    // 2. Trigger Generation (FIX: CONSUME AS STRING TO AVOID JSON CRASH)
                     try {
                         if (type == "reference") {
                             NetworkClient.api.generateReference(DocIdRequest(uid)).string() 
@@ -147,7 +147,8 @@ class MainViewModel : ViewModel() {
                             NetworkClient.api.generateTranscript(DocIdRequest(uid)).string()
                         }
                     } catch (e: Exception) {
-                        // Ignore parsing errors here, as long as the request was sent
+                        // We catch exceptions here just in case, but calling .string() should safely consume "Ok :)"
+                        e.printStackTrace()
                     }
 
                     // 3. Resolve URL
