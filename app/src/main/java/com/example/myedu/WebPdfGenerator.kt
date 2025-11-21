@@ -12,7 +12,6 @@ import kotlin.coroutines.resumeWithException
 
 class WebPdfGenerator(private val context: Context) {
 
-    // Interface to receive data from JavaScript
     interface PdfCallback {
         fun onPdfGenerated(base64: String)
         fun onError(error: String)
@@ -26,17 +25,14 @@ class WebPdfGenerator(private val context: Context) {
         qrUrl: String
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
-        // Run on Main Thread (Required for WebView)
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val webView = WebView(context)
             webView.settings.javaScriptEnabled = true
             
-            // Bridge to receive result
             webView.addJavascriptInterface(object : Any() {
                 @JavascriptInterface
                 fun returnPdf(base64: String) {
                     try {
-                        // Remove data URI prefix if present
                         val cleanBase64 = base64.replace("data:application/pdf;base64,", "")
                         val bytes = Base64.decode(cleanBase64, Base64.DEFAULT)
                         continuation.resume(bytes)
@@ -51,23 +47,22 @@ class WebPdfGenerator(private val context: Context) {
                 }
             }, "AndroidBridge")
 
-            // Load the script (PDFMake + Logic extracted from Transcript.js)
             val htmlContent = getHtmlContent(studentInfoJson, transcriptJson, linkId, qrUrl)
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Trigger generation once libraries are loaded
                     webView.evaluateJavascript("startGeneration();", null)
                 }
             }
             
-            // Load data (using baseURL for internet access to CDNs if needed)
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg", htmlContent, "text/html", "UTF-8", null)
         }
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String): String {
-        // We embed pdfmake from CDN. Ensure device has internet or include these files in assets.
+        // We define a variable for the dollar sign to avoid Kotlin interpolation errors
+        val $ = "$"
+        
         return """
 <!DOCTYPE html>
 <html>
@@ -77,29 +72,22 @@ class WebPdfGenerator(private val context: Context) {
 </head>
 <body>
 <script>
-    // --- DATA INPUTS ---
     const studentInfo = $info;
     const transcriptData = $transcript;
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
 
-    // --- HELPER FUNCTIONS (Recreating dependencies from Transcript.js) ---
-    
-    // Replaces 'KeysValue.js' logic
     function K(obj, pathArray) {
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
 
-    // Replaces 'moment.js' logic (Simple formatter)
     function formatDate(dateStr) {
         if (!dateStr) return "";
         const d = new Date(dateStr);
         return d.toLocaleDateString("ru-RU");
     }
-    
     const currentDate = new Date().toLocaleDateString("ru-RU");
 
-    // Replaces 'PdfStyle.js' (Inferred from usage)
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -114,12 +102,10 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- ORIGINAL LOGIC FROM Transcript.js (Adapted) ---
-
     const yt = (C, a) => {
         let c = [];
         C.forEach((d, h) => {
-            c.push({ margin: [0, 0, 0, 5], text: `Учебный год ${d.edu_year}`, style: ["textCenter", "fb", "f10"] });
+            c.push({ margin: [0, 0, 0, 5], text: `Учебный год ${$}{d.edu_year}`, style: ["textCenter", "fb", "f10"] });
             d.semesters.forEach(o => {
                 c.push({ margin: [0, 0, 0, 5], text: o.semester, style: ["textCenter", "fb", "f9"] });
                 let n = [];
@@ -132,12 +118,11 @@ class WebPdfGenerator(private val context: Context) {
                     });
                     n.push(g);
                 });
-                // Footer Row (GPA)
                 const credits = o.subjects.reduce((i, b) => i + parseInt(b.credit || 0), 0);
                 n.push([
-                    { text: `Зарегистрировано кредитов - ${credits}`, style: ["textCenter", "fb", "f9"], colSpan: 6, alignment: "right" }, 
+                    { text: `Зарегистрировано кредитов - ${$}{credits}`, style: ["textCenter", "fb", "f9"], colSpan: 6, alignment: "right" }, 
                     {}, {}, {}, {}, {}, 
-                    { text: `GPA: ${o.gpa || 0}`, style: ["textCenter", "fb", "f9"], colSpan: 3, alignment: "center" }, 
+                    { text: `GPA: ${$}{o.gpa || 0}`, style: ["textCenter", "fb", "f9"], colSpan: 3, alignment: "center" }, 
                     {}, {}
                 ]);
                 c.push({ margin: [0, 0, 0, 5], style: ["tableExample", "f8"], table: { headerRows: 1, widths: [10, 40, "*", 30, 45, 25, 25, 20, 35], body: n } });
@@ -183,7 +168,9 @@ class WebPdfGenerator(private val context: Context) {
                             { margin: [0, 0, 0, 3], columns: [{ text: "ФИО:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: (a.last_name || "") + " " + (a.name || "") + " " + (a.father_name || ""), alignment: "left", style: ["f9", "fb"] }] },
                             { margin: [0, 0, 0, 3], columns: [{ text: "ID студента:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: a.id ? a.id.toString() : "", alignment: "left", style: ["f9", "fb"] }] },
                             { margin: [0, 0, 0, 3], columns: [{ text: "Дата рождения:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: formatDate(a.birthday), alignment: "left", style: ["f9", "fb"] }] },
-                            { margin: [0, 0, 0, 3], columns: [{ text: "Специальность:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: a.lastStudentMovement?.speciality?.name_ru || "", alignment: "left", style: ["f9", "fb"] }] },
+                            { margin: [0, 0, 0, 3], columns: [{ text: "Направление:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: a.direction_code + ". " + a.direction_ru, alignment: "left", style: ["f9", "fb"] }] },
+                            { margin: [0, 0, 0, 3], columns: [{ text: "Специальность:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: a.code + ". " + a.speciality_ru, alignment: "left", style: ["f9", "fb"] }] },
+                            { margin: [0, 0, 0, 3], columns: [{ text: "Форма обучения:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: a.lastStudentMovement?.edu_form?.name_ru || "", alignment: "left", style: ["f9", "fb"] }] },
                             { margin: [0, 0, 0, 3], columns: [{ text: "Общий GPA:", width: 100, alignment: "left", style: ["f9", "fb"] }, { text: c[1].toString(), alignment: "left", style: ["f9", "fb"] }] },
                             { margin: [0, 0, 0, 10], text: `Всего зарегистрированых кредитов: ` + c[0], style: ["f9", "fb"] }
                         ],
@@ -199,40 +186,49 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
 
-    // --- PROCESSING FUNCTION (Mimics 'W' in JS) ---
     function processData() {
         let totalCredits = 0;
-        let totalGpa = 0;
-        let gpaCount = 0;
-
-        // Simplified logic to match your JSON structure
         transcriptData.forEach(year => {
             year.semesters.forEach(sem => {
-                let semCredits = 0;
-                let semGradePoints = 0;
-                let subjectsCount = 0;
-
+                let semesterGradePoints = 0;
+                let semesterCredits = 0;
                 sem.subjects.forEach(sub => {
-                    // Fix types
-                    sub.credit = parseInt(sub.credit || 0);
-                    totalCredits += sub.credit;
-                    semCredits += sub.credit;
-                    
-                    const digital = parseFloat(sub.exam_rule?.digital || 0);
-                    semGradePoints += (digital * sub.credit);
-                    if(sub.exam_rule) subjectsCount++;
+                    const credit = parseInt(sub.credit || 0);
+                    sub.credit = credit;
+                    totalCredits += credit;
+                    if (sub.exam_rule && sub.mark_list && sub.exam && sub.exam.includes("Экзамен")) {
+                        semesterCredits += credit;
+                        const digital = parseFloat(sub.exam_rule.digital || 0);
+                        semesterGradePoints += (digital * credit);
+                    }
                 });
+                if (semesterCredits > 0) {
+                    const rawGpa = semesterGradePoints / semesterCredits;
+                    sem.gpa = Math.ceil(rawGpa * 100) / 100;
+                } else {
+                    sem.gpa = 0;
+                }
+            });
+        });
 
-                sem.gpa = semCredits > 0 ? (semGradePoints / semCredits).toFixed(2) : 0;
-                if (sem.gpa > 0) {
-                    totalGpa += parseFloat(sem.gpa);
+        let gpaSum = 0;
+        let gpaCount = 0;
+        transcriptData.forEach(year => {
+            year.semesters.forEach(sem => {
+                if (sem.gpa && sem.gpa > 0) {
+                    gpaSum += sem.gpa;
                     gpaCount++;
                 }
             });
         });
 
-        const avgGpa = gpaCount > 0 ? (totalGpa / gpaCount).toFixed(2) : 0;
-        return [totalCredits, avgGpa, currentDate]; // c array
+        let overallGpa = 0;
+        if (gpaCount > 0) {
+            const rawAvg = gpaSum / gpaCount;
+            overallGpa = Math.ceil(rawAvg * 100) / 100;
+        }
+
+        return [totalCredits, overallGpa, currentDate];
     }
 
     function startGeneration() {
