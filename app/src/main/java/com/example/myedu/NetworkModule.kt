@@ -6,6 +6,7 @@ import java.util.concurrent.TimeUnit
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -72,22 +73,35 @@ interface OshSuApi {
 // --- UNIVERSAL COOKIE ENGINE ---
 
 class UniversalCookieJar : CookieJar {
-    // A simple list that ignores domain matching rules to ensure cookies are always sent
-    private val cookieStorage = ArrayList<Cookie>()
+    private val cookieStore = ArrayList<Cookie>()
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
-        // Remove old cookies with same name to update them
         val names = cookies.map { it.name }
-        cookieStorage.removeAll { it.name in names }
-        cookieStorage.addAll(cookies)
+        cookieStore.removeAll { it.name in names }
+        cookieStore.addAll(cookies)
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> {
-        return ArrayList(cookieStorage)
+        return ArrayList(cookieStore)
+    }
+    
+    // FIX: Manually inject the token cookie since the server doesn't send it
+    fun addManualCookie(token: String) {
+        val url = "https://api.myedu.oshsu.kg".toHttpUrlOrNull() ?: return
+        val cookie = Cookie.Builder()
+            .domain("api.myedu.oshsu.kg")
+            .path("/")
+            .name("myedu-jwt-token")
+            .value(token)
+            .build()
+        
+        // Remove old if exists
+        cookieStore.removeAll { it.name == "myedu-jwt-token" }
+        cookieStore.add(cookie)
     }
     
     fun clear() {
-        cookieStorage.clear()
+        cookieStore.clear()
     }
 }
 
@@ -97,7 +111,7 @@ class WindowsInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
 
-        // 1. WINDOWS HEADERS (Mimics Chrome on Windows)
+        // 1. WINDOWS HEADERS
         builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("Referer", "https://myedu.oshsu.kg/")
@@ -125,7 +139,6 @@ object NetworkClient {
     val cookieJar = UniversalCookieJar()
     val interceptor = WindowsInterceptor()
 
-    // Use Lenient Gson to prevent crashes on server errors
     private val gson = GsonBuilder().setLenient().create()
 
     val api: OshSuApi = Retrofit.Builder()

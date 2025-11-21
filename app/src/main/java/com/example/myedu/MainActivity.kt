@@ -68,25 +68,26 @@ class MainViewModel : ViewModel() {
             isLoading = true
             errorMsg = null
             
-            // Clear previous session
+            // Reset Session
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
             
             try {
-                // 1. NATIVE LOGIN
+                // 1. LOGIN API CALL
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email, pass)) }
                 val token = resp.authorisation?.token
                 
                 if (token != null) {
+                    // 2. INJECT TOKENS (FIX FOR 401)
                     NetworkClient.interceptor.authToken = token
+                    NetworkClient.cookieJar.addManualCookie(token) // <--- CRITICAL FIX
                     
-                    // 2. FETCH DATA
+                    // 3. FETCH DATA
                     val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user }
                     val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() }
                     userData = user
                     profileData = profile
                     
-                    // 3. FETCH SCHEDULE
                     if (profile != null) fetchSchedule(profile)
                     
                     appState = "APP"
@@ -105,35 +106,23 @@ class MainViewModel : ViewModel() {
     private suspend fun fetchSchedule(profile: StudentInfoResponse) {
         try {
             val mov = profile.studentMovement
-            // Check for nulls to prevent crashes
             if (mov?.id_speciality != null && mov.id_edu_form != null && profile.active_semester != null) {
-                
                 val years = withContext(Dispatchers.IO) { NetworkClient.api.getYears() }
                 val activeYearId = years.find { it.active }?.id ?: 25 
                 
                 val wrappers = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getSchedule(
-                        specId = mov.id_speciality,
-                        formId = mov.id_edu_form,
-                        yearId = activeYearId,
-                        semId = profile.active_semester
-                    )
+                    NetworkClient.api.getSchedule(mov.id_speciality, mov.id_edu_form, activeYearId, profile.active_semester)
                 }
-                
                 val allItems = wrappers.flatMap { it.schedule_items ?: emptyList() }
                 fullSchedule = allItems.sortedBy { it.id_lesson }
                 
                 val cal = Calendar.getInstance()
-                val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) 
+                val javaDay = cal.get(Calendar.DAY_OF_WEEK)
                 todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
-                
-                // Convert Java Day (Sun=1) to API Day (Mon=1)
-                val apiDay = if(dayOfWeek == Calendar.SUNDAY) 0 else dayOfWeek - 1
+                val apiDay = if(javaDay == Calendar.SUNDAY) 0 else javaDay - 1 
                 todayClasses = fullSchedule.filter { it.day == apiDay }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
     
     fun logout() {
@@ -148,7 +137,7 @@ class MainViewModel : ViewModel() {
     }
 }
 
-// --- UI COMPONENTS ---
+// --- UI ---
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
