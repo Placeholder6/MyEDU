@@ -25,9 +25,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import retrofit2.HttpException
 import java.text.SimpleDateFormat
@@ -83,7 +84,8 @@ class DebugViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(studentId).string()
                 }
                 val infoJson = JSONObject(infoRaw)
-                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
+                val movementObj = infoJson.optJSONObject("lastStudentMovement")
+                val movementId = movementObj?.optLong("id") ?: 0L
 
                 if (movementId == 0L) { log("!!! FAIL: No Movement ID"); return@launch }
                 log("✔ Movement ID: $movementId")
@@ -107,15 +109,16 @@ class DebugViewModel : ViewModel() {
                 // --- STEP 2: TRIGGER GENERATION (MULTIPART) ---
                 log(">>> STEP 2: Triggering Generation (Multipart)...")
                 
-                // Create Parts
-                val textType = MediaType.parse("text/plain")
-                val idBody = RequestBody.create(textType, linkId.toString())
-                val studentBody = RequestBody.create(textType, studentId.toString())
-                val movementBody = RequestBody.create(textType, movementId.toString())
+                // FIX: Use Kotlin Extension functions for OkHttp
+                val textType = "text/plain".toMediaTypeOrNull()
+                val idBody = linkId.toString().toRequestBody(textType)
+                val studentBody = studentId.toString().toRequestBody(textType)
+                val movementBody = movementId.toString().toRequestBody(textType)
 
-                // Create File Part (The Fix)
+                // FIX: Create Dummy File Part correctly
                 val emptyBytes = ByteArray(0)
-                val fileReq = RequestBody.create(MediaType.parse("application/pdf"), emptyBytes)
+                val pdfType = "application/pdf".toMediaTypeOrNull()
+                val fileReq = emptyBytes.toRequestBody(pdfType)
                 val pdfPart = MultipartBody.Part.createFormData("pdf", "generated.pdf", fileReq)
 
                 val step2Raw = withContext(Dispatchers.IO) {
@@ -179,7 +182,7 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU DEBUGGER (MULTIPART FIX)", color = Color.Cyan)
+        Text("MYEDU DEBUGGER (COMPILATION FIXED)", color = Color.Cyan)
         
         Spacer(Modifier.height(8.dp))
 
