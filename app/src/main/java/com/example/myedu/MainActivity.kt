@@ -64,7 +64,7 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING SEQUENCE (NO-TYPE FIX) ---")
+            log("--- STARTING SEQUENCE (PLAIN CONTENT FIX) ---")
             
             // 1. SETUP
             NetworkClient.cookieJar.setDebugCookies(token)
@@ -105,22 +105,21 @@ class DebugViewModel : ViewModel() {
                 // --- STEP 1.5: UPDATE REFERER ---
                 val newReferer = "https://myedu.oshsu.kg/#/document/$key"
                 NetworkClient.interceptor.currentReferer = newReferer
-                log("✔ Referer Updated")
+                log("✔ Referer Updated: $newReferer")
 
                 // --- STEP 2: GENERATE PDF ---
                 log(">>> STEP 2: Generating PDF...")
                 
-                // Pass IDs as standard fields (no content type)
+                // Use NULL media type for text fields. This is crucial!
+                // It forces Retrofit to send them as simple form fields without headers.
                 val idBody = linkId.toString().toRequestBody(null)
                 val studentBody = studentId.toString().toRequestBody(null)
                 val movementBody = movementId.toString().toRequestBody(null)
                 
-                // FIX: Pass 'contents' with NULL media type.
-                // This makes Retrofit send it without a Content-Type header, 
-                // which is required for many PHP servers to see it as a regular $_POST field.
+                // FIX: Send JSON string with NULL media type (treat as plain text form field)
                 val contentsBody = transcriptJsonRaw.toRequestBody(null)
 
-                // PDF Part (Requires filename and content type)
+                // Dummy PDF Part (Required for file validation)
                 val pdfType = "application/pdf".toMediaTypeOrNull()
                 val emptyBytes = ByteArray(0)
                 val fileReq = emptyBytes.toRequestBody(pdfType)
@@ -136,6 +135,7 @@ class DebugViewModel : ViewModel() {
                     ).string()
                 }
                 log("RAW 2: $step2Raw")
+                // Should return: "Ok :)"
 
                 log("Waiting 3s...")
                 delay(3000)
@@ -145,12 +145,14 @@ class DebugViewModel : ViewModel() {
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
+                log("RAW 3: $step3Raw")
+                
                 val url = JSONObject(step3Raw).optString("url")
                 if (url.isNotEmpty()) log("✅ SUCCESS! URL: $url") else log("!!! FAIL: No URL")
 
             } catch (e: HttpException) {
                 val errorBody = e.response()?.errorBody()?.string() ?: "No body"
-                log("💥 HTTP ${e.code()}: $errorBody")
+                log("💥 HTTP ERROR ${e.code()}: $errorBody")
             } catch (e: Exception) {
                 log("💥 EXCEPTION: ${e.message}")
                 e.printStackTrace()
@@ -184,9 +186,9 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         Text("MYEDU FINAL FIX", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
-            value = tokenInput, 
-            onValueChange = { tokenInput = it }, 
-            label = { Text("Paste Token") }, 
+            value = tokenInput,
+            onValueChange = { tokenInput = it },
+            label = { Text("Paste Token") },
             modifier = Modifier.fillMaxWidth(),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedTextColor = Color.White,
@@ -198,13 +200,36 @@ fun DebugScreen(vm: DebugViewModel = viewModel()) {
         )
         Spacer(Modifier.height(16.dp))
         Row {
-            Button(onClick = { vm.runDebug(tokenInput) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "..." else "RUN") }
+            Button(
+                onClick = { vm.runDebug(tokenInput) },
+                enabled = !vm.isRunning,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
+            ) {
+                Text(if (vm.isRunning) "WORKING..." else "RUN FIX")
+            }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("COPY") }
+            Button(
+                onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+            ) {
+                Text("COPY LOGS")
+            }
         }
         Spacer(Modifier.height(16.dp))
         Divider(color = Color.DarkGray)
-        SelectionContainer(Modifier.fillMaxSize()) { Text(text = vm.logs, color = Color.Green, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.verticalScroll(scrollState)) }
-        LaunchedEffect(vm.logs) { scrollState.animateScrollTo(scrollState.maxValue) }
+        SelectionContainer(Modifier.fillMaxSize()) {
+            Text(
+                text = vm.logs,
+                color = Color.Green,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 12.sp,
+                modifier = Modifier.verticalScroll(scrollState)
+            )
+        }
+        LaunchedEffect(vm.logs) {
+            scrollState.animateScrollTo(scrollState.maxValue)
+        }
     }
 }
