@@ -1,14 +1,19 @@
 package com.example.myedu
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -32,8 +37,10 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,41 +69,35 @@ class MainViewModel : ViewModel() {
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayDayName by mutableStateOf("Today")
+    
+    // Navigation State for Details
+    var selectedClass by mutableStateOf<ScheduleItem?>(null)
 
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
             errorMsg = null
-            
-            // Reset Session
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
-            
             try {
-                // FIX: Trim inputs to remove accidental copy-paste spaces
                 val cleanEmail = email.trim()
                 val cleanPass = pass.trim()
-
-                // 1. LOGIN
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(cleanEmail, cleanPass)) }
                 val token = resp.authorisation?.token
                 
                 if (token != null) {
-                    // 2. INJECT TOKENS & COOKIES (FULL SESSION REPLICATION)
                     NetworkClient.interceptor.authToken = token
-                    NetworkClient.cookieJar.injectSessionCookies(token) 
+                    NetworkClient.cookieJar.injectSessionCookies(token)
                     
-                    // 3. FETCH DATA
                     val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user }
                     val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() }
                     userData = user
                     profileData = profile
                     
                     if (profile != null) fetchSchedule(profile)
-                    
                     appState = "APP"
                 } else {
-                    errorMsg = "Incorrect credentials (No Token)"
+                    errorMsg = "Incorrect credentials"
                 }
             } catch (e: Exception) {
                 errorMsg = "Login Failed: ${e.message}"
@@ -113,17 +114,15 @@ class MainViewModel : ViewModel() {
             if (mov?.id_speciality != null && mov.id_edu_form != null && profile.active_semester != null) {
                 val years = withContext(Dispatchers.IO) { NetworkClient.api.getYears() }
                 val activeYearId = years.find { it.active }?.id ?: 25 
-                
                 val wrappers = withContext(Dispatchers.IO) {
                     NetworkClient.api.getSchedule(mov.id_speciality, mov.id_edu_form, activeYearId, profile.active_semester)
                 }
                 val allItems = wrappers.flatMap { it.schedule_items ?: emptyList() }
                 fullSchedule = allItems.sortedBy { it.id_lesson }
-                
                 val cal = Calendar.getInstance()
-                val javaDay = cal.get(Calendar.DAY_OF_WEEK)
+                val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK) 
                 todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
-                val apiDay = if(javaDay == Calendar.SUNDAY) 0 else javaDay - 1 
+                val apiDay = if(dayOfWeek == Calendar.SUNDAY) 0 else dayOfWeek - 1 
                 todayClasses = fullSchedule.filter { it.day == apiDay }
             }
         } catch (e: Exception) { e.printStackTrace() }
@@ -136,6 +135,7 @@ class MainViewModel : ViewModel() {
         profileData = null
         fullSchedule = emptyList()
         todayClasses = emptyList()
+        selectedClass = null
         NetworkClient.cookieJar.clear()
         NetworkClient.interceptor.authToken = null
     }
@@ -201,19 +201,166 @@ fun LoginScreen(vm: MainViewModel) {
 
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
+    // Back Handler to close details
+    BackHandler(enabled = vm.selectedClass != null) {
+        vm.selectedClass = null
+    }
+
     Scaffold(bottomBar = {
-        NavigationBar {
-            NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-            NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-            NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
+        if (vm.selectedClass == null) {
+            NavigationBar {
+                NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
+                NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
+                NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
+            }
         }
     }) { padding ->
         Box(Modifier.padding(padding)) {
-            when(vm.currentTab) {
-                0 -> HomeScreen(vm)
-                1 -> ScheduleScreen(vm)
-                2 -> ProfileScreen(vm)
+            // Main Tabs
+            if (vm.selectedClass == null) {
+                when(vm.currentTab) {
+                    0 -> HomeScreen(vm)
+                    1 -> ScheduleScreen(vm)
+                    2 -> ProfileScreen(vm)
+                }
             }
+            
+            // Overlay: Class Details
+            AnimatedVisibility(
+                visible = vm.selectedClass != null,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+            ) {
+                vm.selectedClass?.let { ClassDetailsScreen(it) { vm.selectedClass = null } }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Class Details") },
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+            )
+        }
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+            
+            // Header
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.padding(24.dp)) {
+                    Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(8.dp))
+                    AssistChip(
+                        onClick = {}, 
+                        label = { Text(item.subject_type?.get() ?: "Lesson") },
+                        colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(24.dp))
+            
+            // Teacher Section
+            Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(16.dp))
+                    Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { 
+                        clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: ""))
+                        Toast.makeText(context, "Teacher name copied", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(24.dp))
+            
+            // Location Section
+            Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column {
+                    // Room
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                    // Campus
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        // Map Icon
+                        IconButton(onClick = {
+                            val address = item.classroom?.building?.getAddress() ?: ""
+                            if (address.isNotEmpty()) {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address"))
+                                context.startActivity(intent)
+                            } else {
+                                Toast.makeText(context, "Address not available", Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(24.dp))
+            
+            // Placeholders for Future Logic
+            Text("Academic Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Marks", style = MaterialTheme.typography.bodyMedium)
+                        Text("Coming Soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(progress = 0f, modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)))
+                }
+            }
+            
+            Spacer(Modifier.height(12.dp))
+            
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Thematic Plan", style = MaterialTheme.typography.bodyMedium)
+                        Text("Coming Soon", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+            
+            Spacer(Modifier.height(48.dp))
         }
     }
 }
@@ -242,7 +389,7 @@ fun HomeScreen(vm: MainViewModel) {
                     Text("No classes today!", style = MaterialTheme.typography.bodyLarge)
                 }
             }
-        } else { vm.todayClasses.forEach { item -> ClassItem(item) } }
+        } else { vm.todayClasses.forEach { item -> ClassItem(item) { vm.selectedClass = item } } }
         Spacer(Modifier.height(80.dp))
     }
 }
@@ -261,7 +408,7 @@ fun ScheduleScreen(vm: MainViewModel) {
                 val dayApi = selectedDay + 1
                 val classes = vm.fullSchedule.filter { it.day == dayApi }
                 if (classes.isEmpty()) item { Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) { Text("Free Day", color = Color.Gray) } }
-                else items(classes) { item -> ClassItem(item) }
+                else items(classes) { item -> ClassItem(item) { vm.selectedClass = item } }
                 item { Spacer(Modifier.height(80.dp)) }
             }
         }
@@ -312,21 +459,27 @@ fun StatCard(icon: ImageVector, label: String, value: String, bg: Color, modifie
 }
 
 @Composable
-fun ClassItem(item: ScheduleItem) {
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
+fun ClassItem(item: ScheduleItem, onClick: () -> Unit) {
+    Card(
+        onClick = onClick, // Updated to be clickable
+        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), 
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))
+    ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp)) {
-                Text("${item.id_lesson}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text("Pair", style = MaterialTheme.typography.labelSmall)
+            // Updated Pair Design: Just the number, circled
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary.copy(alpha=0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("${item.id_lesson}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
             Spacer(Modifier.width(16.dp))
-            Box(Modifier.width(4.dp).height(40.dp).clip(RoundedCornerShape(2.dp)).background(MaterialTheme.colorScheme.primaryContainer))
-            Spacer(Modifier.width(16.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 Text("${item.room?.name_en ?: "Room ?"} • ${item.subject_type?.get() ?: "Lesson"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                Text(item.teacher?.get() ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
+            // Map Icon
+            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
         }
     }
 }

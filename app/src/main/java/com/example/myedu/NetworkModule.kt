@@ -1,17 +1,11 @@
 package com.example.myedu
 
 import com.google.gson.GsonBuilder
-import java.text.SimpleDateFormat
 import java.util.ArrayList
-import java.util.Date
-import java.util.HashMap
-import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Response
@@ -47,8 +41,30 @@ data class NameObj(val name_en: String?, val name_ru: String?, val name_kg: Stri
 
 data class EduYear(val id: Int, val name_en: String?, val active: Boolean)
 data class ScheduleWrapper(val schedule_items: List<ScheduleItem>?)
-data class ScheduleItem(val day: Int, val id_lesson: Int, val subject: NameObj?, val teacher: TeacherObj?, val room: RoomObj?, val subject_type: NameObj?)
-data class TeacherObj(val name: String?, val last_name: String?) { fun get(): String = "${last_name ?: ""} ${name ?: ""}".trim() }
+
+// UPDATED SCHEDULE ITEM WITH BUILDING INFO
+data class ScheduleItem(
+    val day: Int,
+    val id_lesson: Int,
+    val subject: NameObj?,
+    val teacher: TeacherObj?,
+    val room: RoomObj?,
+    val subject_type: NameObj?,
+    val classroom: ClassroomObj? // Added this
+)
+
+data class ClassroomObj(val building: BuildingObj?)
+data class BuildingObj(
+    val name_en: String?, val name_ru: String?, 
+    val info_en: String?, val info_ru: String?
+) {
+    fun getName(): String = name_en ?: name_ru ?: "Campus"
+    fun getAddress(): String = info_en ?: info_ru ?: ""
+}
+
+data class TeacherObj(val name: String?, val last_name: String?) { 
+    fun get(): String = "${last_name ?: ""} ${name ?: ""}".trim() 
+}
 data class RoomObj(val name_en: String?)
 
 // --- API INTERFACE ---
@@ -90,32 +106,17 @@ class UniversalCookieJar : CookieJar {
         return ArrayList(cookieStore)
     }
     
-    // FIX: Inject BOTH the Token and the Timestamp cookie
     fun injectSessionCookies(token: String) {
-        // 1. JWT Token Cookie
+        // Manually inject session cookies as if we were the browser
         val jwtCookie = Cookie.Builder()
-            .domain("myedu.oshsu.kg") // Set on Root domain to match Referer
+            .domain("myedu.oshsu.kg")
             .path("/")
             .name("myedu-jwt-token")
             .value(token)
             .build()
-
-        // 2. Update Timestamp Cookie (Simulating Browser JS behavior)
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
-        sdf.timeZone = TimeZone.getTimeZone("UTC")
-        val timestamp = sdf.format(Date())
-        
-        val timeCookie = Cookie.Builder()
-            .domain("myedu.oshsu.kg")
-            .path("/")
-            .name("my_edu_update")
-            .value(timestamp)
-            .build()
-        
-        // Remove old versions and add new ones
-        cookieStore.removeAll { it.name == "myedu-jwt-token" || it.name == "my_edu_update" }
+            
+        cookieStore.removeAll { it.name == "myedu-jwt-token" }
         cookieStore.add(jwtCookie)
-        cookieStore.add(timeCookie)
     }
     
     fun clear() {
@@ -129,13 +130,11 @@ class WindowsInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
 
-        // 1. WINDOWS HEADERS
         builder.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("Referer", "https://myedu.oshsu.kg/")
         builder.header("Origin", "https://myedu.oshsu.kg")
         
-        // 2. SECURITY HEADERS
         builder.header("sec-ch-ua", "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"")
         builder.header("sec-ch-ua-mobile", "?0")
         builder.header("sec-ch-ua-platform", "\"Windows\"")
@@ -144,7 +143,6 @@ class WindowsInterceptor : Interceptor {
         builder.header("Sec-Fetch-Site", "same-site")
         builder.header("X-Requested-With", "XMLHttpRequest")
 
-        // 3. AUTH TOKEN
         if (authToken != null) {
             builder.header("Authorization", "Bearer $authToken")
         }
