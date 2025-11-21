@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -70,7 +71,6 @@ fun MyEduTheme(
         )
     }
 
-    // Edge-to-Edge Status Bar Fix
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -84,7 +84,6 @@ fun MyEduTheme(
     MaterialTheme(colorScheme = colorScheme, content = content)
 }
 
-// --- VIEWMODEL (Logic) ---
 class MainViewModel : ViewModel() {
     var appState by mutableStateOf("LOGIN")
     var isLoading by mutableStateOf(false)
@@ -96,7 +95,6 @@ class MainViewModel : ViewModel() {
             isLoading = true
             errorMsg = null
             try {
-                // 1. Native Login
                 val resp = withContext(Dispatchers.IO) {
                     NetworkClient.api.login(LoginRequest(email, pass))
                 }
@@ -104,7 +102,6 @@ class MainViewModel : ViewModel() {
                 
                 if (token != null) {
                     NetworkClient.interceptor.authToken = token
-                    // 2. Fetch Profile
                     val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() }
                     profileData = profile
                     appState = "PROFILE"
@@ -127,11 +124,10 @@ class MainViewModel : ViewModel() {
     }
 }
 
-// --- UI ENTRY ---
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false) // Enable Edge-to-Edge
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContent { MyEduTheme { AppContent() } }
     }
 }
@@ -155,7 +151,6 @@ fun AppContent(vm: MainViewModel = viewModel()) {
     }
 }
 
-// --- SCREEN 1: LOGIN ---
 @Composable
 fun LoginScreen(vm: MainViewModel) {
     var email by remember { mutableStateOf("") }
@@ -170,7 +165,6 @@ fun LoginScreen(vm: MainViewModel) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Hero Icon
             Icon(
                 imageVector = Icons.Default.School,
                 contentDescription = null,
@@ -193,7 +187,6 @@ fun LoginScreen(vm: MainViewModel) {
             
             Spacer(Modifier.height(48.dp))
 
-            // Inputs
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -228,7 +221,6 @@ fun LoginScreen(vm: MainViewModel) {
 
             Spacer(Modifier.height(32.dp))
 
-            // Action
             Button(
                 onClick = { vm.login(email, pass) },
                 modifier = Modifier
@@ -247,7 +239,6 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
-// --- SCREEN 2: PROFILE (Dashboard) ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(vm: MainViewModel) {
@@ -280,11 +271,11 @@ fun ProfileScreen(vm: MainViewModel) {
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 1. ID Card Section
+            // FIX 1: Replaced surfaceContainerHigh with surfaceVariant
             ElevatedCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(
                     Modifier.padding(24.dp),
@@ -300,9 +291,8 @@ fun ProfileScreen(vm: MainViewModel) {
                     )
                     Spacer(Modifier.height(16.dp))
                     
-                    // Fallback Name Logic (Usually in user object, but here mostly hardcoded/extracted)
                     Text(
-                        text = "Dipanshu Chakole", // Placeholder based on your name
+                        text = "Dipanshu Chakole", 
                         style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface
@@ -320,10 +310,6 @@ fun ProfileScreen(vm: MainViewModel) {
 
             Spacer(Modifier.height(24.dp))
             SectionHeader("Academic")
-            
-            // Parse nested data manually from the generic object if needed, 
-            // but for now we assume simple display or placeholders since Any? is tricky without strict parsing.
-            // For this UI demo, we will display the structure.
             
             DetailCard(Icons.Outlined.School, "Faculty", "International Medical Faculty")
             DetailCard(Icons.Outlined.Book, "Speciality", "General Medicine")
@@ -359,7 +345,8 @@ fun DetailCard(icon: ImageVector, title: String, value: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(bottom = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+        // FIX 2: Replaced surfaceContainerLow with surface
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(16.dp)
     ) {
         Row(
