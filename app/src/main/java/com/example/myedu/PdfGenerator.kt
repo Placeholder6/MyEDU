@@ -8,7 +8,6 @@ import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import android.os.Environment
 import org.json.JSONArray
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -17,9 +16,15 @@ class PdfGenerator(private val context: Context) {
 
     fun generateTranscriptPdf(jsonData: String, studentName: String, studentId: Long): File? {
         val pdfDocument = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4 Size
-        val page = pdfDocument.startPage(pageInfo)
-        val canvas = page.canvas
+        val pageHeight = 842
+        val pageWidth = 595
+        var pageNumber = 1
+        
+        // Initialize First Page
+        var pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        var page = pdfDocument.startPage(pageInfo)
+        var canvas = page.canvas
+        
         val paint = Paint()
         val titlePaint = Paint()
 
@@ -32,6 +37,19 @@ class PdfGenerator(private val context: Context) {
         titlePaint.textAlign = Paint.Align.CENTER
 
         var y = 40f // Vertical Cursor
+
+        // --- Helper Function to Handle Page Breaks ---
+        fun checkPageBreak() {
+            if (y > 780) { // Leave some bottom margin
+                pdfDocument.finishPage(page)
+                
+                pageNumber++
+                pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                page = pdfDocument.startPage(pageInfo)
+                canvas = page.canvas
+                y = 40f // Reset cursor for new page
+            }
+        }
 
         // --- Header ---
         canvas.drawText("MINISTRY OF EDUCATION AND SCIENCE OF KYRGYZ REPUBLIC", 297f, y, titlePaint)
@@ -48,12 +66,14 @@ class PdfGenerator(private val context: Context) {
         canvas.drawText("Student ID: $studentId", 40f, y, paint)
         y += 30f
 
-        // --- Drawing Tables (Simplified Logic) ---
+        // --- Drawing Tables ---
         try {
             val data = JSONArray(jsonData)
             
             // Loop through Academic Years
             for (i in 0 until data.length()) {
+                checkPageBreak()
+
                 val eduYearObj = data.getJSONObject(i)
                 val year = eduYearObj.optString("edu_year", "Unknown Year")
                 
@@ -65,6 +85,8 @@ class PdfGenerator(private val context: Context) {
                 
                 // Loop through Semesters
                 for (j in 0 until semesters.length()) {
+                    checkPageBreak()
+
                     val semesterObj = semesters.getJSONObject(j)
                     val semesterName = semesterObj.optString("semester", "Semester")
                     
@@ -73,6 +95,7 @@ class PdfGenerator(private val context: Context) {
                     y += 15f
                     
                     // Draw Table Header
+                    checkPageBreak()
                     drawRow(canvas, y, listOf("Subject", "Credit", "Score", "Grade"), true)
                     y += 15f
                     
@@ -80,6 +103,8 @@ class PdfGenerator(private val context: Context) {
                     
                     // Loop through Subjects
                     for (k in 0 until subjects.length()) {
+                        checkPageBreak()
+
                         val subj = subjects.getJSONObject(k)
                         val name = subj.optString("subject", "Unknown")
                         val credit = subj.optString("credit", "-")
@@ -92,14 +117,6 @@ class PdfGenerator(private val context: Context) {
 
                         drawRow(canvas, y, listOf(name, credit, total, grade), false)
                         y += 15f
-                        
-                        // Simple Page Break Logic
-                        if (y > 800) {
-                            pdfDocument.finishPage(page)
-                            // In a real app, you'd start a new page here. 
-                            // For this demo, we just stop drawing to avoid crash.
-                            break 
-                        }
                     }
                     y += 10f // Space between semesters
                 }
@@ -110,6 +127,7 @@ class PdfGenerator(private val context: Context) {
             e.printStackTrace()
         }
 
+        // Finish the last page
         pdfDocument.finishPage(page)
 
         // --- Save File ---
@@ -136,8 +154,8 @@ class PdfGenerator(private val context: Context) {
         val xPositions = listOf(40f, 350f, 420f, 480f) 
         
         for (i in cells.indices) {
-            // Truncate text if too long for simple demo
             var text = cells[i]
+            // Simple truncation to prevent overlap
             if (text.length > 45 && i == 0) text = text.substring(0, 42) + "..."
             canvas.drawText(text, xPositions[i], y, paint)
         }
