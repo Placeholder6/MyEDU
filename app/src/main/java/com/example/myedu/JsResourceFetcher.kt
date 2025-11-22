@@ -26,17 +26,17 @@ class JsResourceFetcher {
             // 2. Get Main JS
             logger("Fetching Main JS...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-            
-            // 3. Find Transcript JS (referenced in Main JS)
             val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
                 ?: throw Exception("Transcript JS not found in Main JS")
             
+            // 3. Get Transcript JS
             logger("Fetching Transcript JS: $transcriptJsName")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. PREPARE DUMMY VARIABLES (Prevents crash on import)
+            // 4. MOCK IMPORTS
+            // We extract all variables from "import { d as at, ... }" and make them dummy objects.
+            // This prevents the script from crashing when it tries to use Vue functions.
             val varsToMock = mutableSetOf<String>()
-            // Regex to find imports like: import { d as at, Y as lt } from ...
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
@@ -46,11 +46,12 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // Don't mock manually provided vars
+            
+            // Remove manual mocks to avoid conflicts
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
 
             val dummyScript = StringBuilder()
-            // A Proxy that absorbs all calls without crashing
+            // Universal Dummy: A Proxy that allows any property access or function call without error
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
@@ -58,29 +59,15 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. FIND SIGNED JS (STAMP)
-            // Crucial Fix: We look inside transcriptJsContent, NOT mainJsContent
-            var stampBase64 = ""
-            val signedJsName = findMatch(transcriptJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
-            
-            if (signedJsName != null) {
-                logger("Fetching Stamp from: $signedJsName")
-                val signedContent = fetchString("$baseUrl/assets/$signedJsName")
-                // Look for: "data:image/jpeg;base64,..."
-                stampBase64 = findMatch(signedContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") ?: ""
-                if (stampBase64.isNotEmpty()) logger("Stamp extracted successfully.")
-            } else {
-                logger("WARNING: Signed.js (Stamp) not found in Transcript source.")
-            }
-
-            // 6. CLEAN CODE
+            // 5. CLEAN CODE (Remove imports/exports)
             transcriptJsContent = transcriptJsContent
-                .replace(importRegex, "") // Remove imports
+                .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 7. EXPOSE GENERATOR FUNCTION
-            // The signature in your file is: Y=(C,a,c,d)
+            // 6. EXPOSE GENERATOR
+            // The function signature in your file is like: Y=(C,a,c,d)=>{...}
+            // We find the name 'Y' and attach it to window.
             val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
             
             if (funcNameMatch != null) {
@@ -91,6 +78,14 @@ class JsResourceFetcher {
             }
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
+
+            // 7. Get Stamp (Optional)
+            var stampBase64 = ""
+            val signedJsName = findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
+            if (signedJsName != null) {
+                val signedContent = fetchString("$baseUrl/assets/$signedJsName")
+                stampBase64 = findMatch(signedContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") ?: ""
+            }
 
             return@withContext PdfResources(stampBase64, finalScript)
 
