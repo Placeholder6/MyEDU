@@ -56,11 +56,7 @@ class WebPdfGenerator(private val context: Context) {
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
-        // Use fetched stamp or fallback pixel
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-
-        // Escape $ for Kotlin string templates
-        val $ = "$"
 
         return """
 <!DOCTYPE html>
@@ -77,10 +73,10 @@ class WebPdfGenerator(private val context: Context) {
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
     
-    // --- MOCKS (Dependencies required by the fetched code) ---
+    // --- MOCKS ---
     
-    // 1. Mock 'moment.js' ($)
-    const $ = function(d) {
+    // 1. Mock 'moment.js'
+    const ${'$'} = function(d) {
         return {
             format: function(fmt) {
                 const date = d ? new Date(d) : new Date();
@@ -88,14 +84,14 @@ class WebPdfGenerator(private val context: Context) {
             }
         };
     };
-    $.locale = function() {};
+    ${'$'}.locale = function() {};
 
-    // 2. Mock 'KeysValue.js' (K)
+    // 2. Mock 'KeysValue.js'
     function K(obj, pathArray) {
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
 
-    // 3. Mock 'PdfFooter4.js' (U)
+    // 3. Mock 'PdfFooter4.js'
     const U = function(currentPage, pageCount) {
         return { 
             margin: [40, 0, 25, 0],
@@ -106,10 +102,10 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
 
-    // 4. Mock 'Signed.js' (mt) - This variable name comes from the minified code
+    // 4. Mock 'Signed.js'
     const mt = "$validStamp";
 
-    // 5. Mock 'PdfStyle.js' (J)
+    // 5. Mock 'PdfStyle.js'
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -124,15 +120,15 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- INJECT FETCHED LOGIC HERE ---
-    // This inserts the 'const yt=...' and 'const Y=...' code directly from the server
-    ${res.logicCode}
+    // --- INJECT FETCHED LOGIC ---
+    ${res.tableGenCode}
+
+    ${res.docDefCode}
 
     // --- DRIVER LOGIC ---
     function startGeneration() {
         try {
-            // 1. Calculate Stats (Credits, GPA)
-            // We recreate the 'W' logic from the original script here for safety
+            // 1. Calculate Stats
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
@@ -160,11 +156,12 @@ class WebPdfGenerator(private val context: Context) {
             const avgGpa = gpaCount > 0 ? (gpaSum / gpaCount).toFixed(2) : 0;
             const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-            // 2. Call the Fetched 'Y' function
-            // The extracted code defines 'const Y = ...' so it is available here.
-            const docDef = Y(transcriptData, studentInfo, stats, qrCodeUrl);
+            // 2. Call Fetched Function
+            // We use eval here because the function name is dynamic (e.g. 'Y' or 'a1')
+            const docFunc = eval("${res.docDefName}");
+            const docDef = docFunc(transcriptData, studentInfo, stats, qrCodeUrl);
             
-            // 3. Create and Return
+            // 3. Generate
             pdfMake.createPdf(docDef).getBase64(function(encoded) {
                 AndroidBridge.returnPdf(encoded);
             });
