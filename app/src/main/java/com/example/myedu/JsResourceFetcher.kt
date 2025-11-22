@@ -8,10 +8,10 @@ import java.util.regex.Pattern
 
 data class PdfResources(
     val stampBase64: String,
-    val tableGenCode: String, // The function that builds rows (yt)
-    val docDefCode: String,   // The function that builds the PDF object (Y)
-    val tableGenName: String, // Variable name for (1)
-    val docDefName: String    // Variable name for (2)
+    val tableGenCode: String,
+    val docDefCode: String,
+    val tableGenName: String,
+    val docDefName: String
 )
 
 class JsResourceFetcher {
@@ -21,43 +21,43 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Find Main JS
+            // 1. Find Main JS from Index HTML
+            // New Robust Regex: Matches index.<hash>.<timestamp>.js
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[a-z0-9]+\.js)"""") 
-                ?: throw Exception("Main JS not found")
+            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
+                ?: throw Exception("Main JS not found in index.html")
             
-            // 2. Find Transcript JS
+            // 2. Find Transcript JS from Main JS
+            // Look for dynamic import: import("./Transcript.HASH.TIMESTAMP.js")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-            val transcriptHash = findMatch(mainJsContent, """Transcript\.([a-z0-9]+)\.js""") 
-                ?: throw Exception("Transcript Hash not found")
-            val transcriptJsName = "Transcript.$transcriptHash.js"
+            // Matches "Transcript." followed by anything until ".js"
+            val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"]+\.js)""") 
+                ?: throw Exception("Transcript JS name not found")
             
-            // 3. Find Signed JS (for Stamp)
+            // 3. Find Signed JS from Transcript JS (for Stamp)
+            // Look for import: from"./Signed.HASH.TIMESTAMP.js"
             val transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
-            val signedHash = findMatch(transcriptJsContent, """Signed\.([a-z0-9]+)\.js""") 
-                ?: throw Exception("Signed Hash not found")
+            val signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"]+\.js)""") 
+                ?: throw Exception("Signed JS name not found")
             
             // 4. Get Stamp Image
-            val signedJsContent = fetchString("$baseUrl/assets/Signed.$signedHash.js")
+            val signedJsContent = fetchString("$baseUrl/assets/$signedJsName")
             val stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") 
                 ?: ""
 
-            // 5. Extract Logic Functions from Transcript.js
-            // Pattern: const yt = (C, a) => { ... return c; }
-            // We look for the signature: (C, a) => { ... }
-            // and (C, a, c, d) => { ... return { pageSize ... } }
+            // 5. Extract Logic Functions from Transcript JS
+            // We use flexible regexes that handle whitespace/formatting differences
             
             // Extract Table Generator (yt)
-            // Looks for: const XX=(C,a)=>{ ... return c}
-            // Note: We grab the whole line or block.
-            val ytMatch = findMatchGroup(transcriptJsContent, """const ([a-zA-Z0-9]+)=\(C,a\)=>\{.*?return c\},""")
-                ?: throw Exception("Table Generator logic not found")
+            // Looks for: const NAME=(C,a)=>{ ... return c},
+            val ytMatch = findMatchGroup(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a\)\s*=>\s*\{.*?return c\},""")
+                ?: throw Exception("Table Gen logic not found")
             val ytName = ytMatch.first
             val ytCode = "const $ytName=(C,a)=>{${ytMatch.second} return c};"
 
             // Extract Document Definer (Y)
-            // Looks for: const XX=(C,a,c,d)=>{ ... pageSize:"A4" ... }
-            val yMatch = findMatchGroup(transcriptJsContent, """const ([a-zA-Z0-9]+)=\(C,a,c,d\)=>\{.*?pageSize:"A4".*?\}\};""")
+            // Looks for: const NAME=(C,a,c,d)=>{ ... pageSize:"A4" ... }
+            val yMatch = findMatchGroup(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)\s*=>\s*\{.*?pageSize:"A4".*?\}\};""")
                 ?: throw Exception("Doc Def logic not found")
             val yName = yMatch.first
             val yCode = "const $yName=(C,a,c,d)=>{${yMatch.second}}};"
@@ -73,7 +73,7 @@ class JsResourceFetcher {
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("Failed $url: ${response.code}")
+            if (!response.isSuccessful) throw Exception("Failed to fetch $url: ${response.code}")
             return response.body?.string() ?: ""
         }
     }
@@ -83,27 +83,17 @@ class JsResourceFetcher {
         return if (matcher.find()) (if (matcher.groupCount() >= 1) matcher.group(1) else matcher.group(0)) else null
     }
 
-    // Returns Pair(VariableName, FunctionBody_Inside_Braces_Roughly)
     private fun findMatchGroup(content: String, regex: String): Pair<String, String>? {
         val matcher = Pattern.compile(regex).matcher(content)
         return if (matcher.find()) {
-            // Group 1 is Var Name. The rest is the body match.
-            // To be safe, we extract the whole match and strip the "const name=" part in Kotlin
             val fullMatch = matcher.group(0)
             val varName = matcher.group(1)
             
-            // Hacky cleanup to reconstruct valid JS:
-            // The regex matches "const yt=(C,a)=>{...},"
-            // We want to return just the body part to reconstruct it safely? 
-            // Actually, let's just return the match minus the trailing comma
+            // Clean up the match to get just the function body content
+            // Removes trailing comma or closing syntax to prevent syntax errors when re-injecting
             var code = fullMatch.trim().removeSuffix(",")
-            // If it ends with a comma inside the block (rare), this might break, 
-            // but minified code usually puts commas between const declarations.
-            
-            // Better approach: Regex grabbed "const name=(args)=>{body}"
-            // We just clean the code string we captured.
             val bodyStart = code.indexOf("=>")
-            val body = code.substring(bodyStart + 2) // { ... }
+            val body = code.substring(bodyStart + 2) 
             
             Pair(varName, body)
         } else null
