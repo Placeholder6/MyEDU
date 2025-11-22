@@ -2,10 +2,10 @@ package com.example.myedu
 
 import android.os.Bundle
 import android.util.Base64
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,8 +14,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalClipboardManager // <--- Added this missing import
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,11 +25,11 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 
-// Simple data class for UI display
 data class TranscriptItem(
     val subject: String,
     val credit: String,
@@ -38,17 +38,11 @@ data class TranscriptItem(
 )
 
 class MainViewModel : ViewModel() {
-    // Inputs
     var tokenInput by mutableStateOf("")
-
-    // State
     var statusMessage by mutableStateOf("Ready")
     var isBusy by mutableStateOf(false)
-    
-    // Display Data
     var transcriptList = mutableStateListOf<TranscriptItem>()
 
-    // Cached Data for PDF Generation
     private var cachedStudentId: Long = 0
     private var cachedInfoJson: String? = null
     private var cachedTranscriptJson: String? = null
@@ -82,15 +76,12 @@ class MainViewModel : ViewModel() {
             val token = tokenInput.removePrefix("Bearer ").trim()
 
             try {
-                // Setup Networking
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
-                NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/"
 
-                // 1. Fetch JS Resources (needed later, but good to grab now)
+                // 1. Fetch JS Resources
                 statusMessage = "Fetching App Resources..."
-                val resources = jsFetcher.fetchResources()
-                cachedResources = resources
+                cachedResources = jsFetcher.fetchResources()
 
                 // 2. Fetch Student Info
                 statusMessage = "Fetching Student Info..."
@@ -137,16 +128,14 @@ class MainViewModel : ViewModel() {
             statusMessage = "Getting Document Key..."
             
             try {
-                // 1. Get Link/QR Data
                 val linkReq = DocIdRequest(cachedStudentId)
                 val linkRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(linkReq).string()
                 }
                 val keyJson = JSONObject(linkRaw)
                 val linkId = keyJson.optLong("id")
-                val qrUrl = keyJson.optString("url") // Contains the key/hash
+                val qrUrl = keyJson.optString("url")
 
-                // 2. Generate PDF
                 statusMessage = "Generating PDF (JavaScript)..."
                 val pdfBytes = webGenerator.generatePdf(
                     cachedInfoJson!!,
@@ -156,7 +145,6 @@ class MainViewModel : ViewModel() {
                     cachedResources!!
                 )
 
-                // 3. Save File
                 val pdfFile = File(filesDir, "transcript.pdf")
                 withContext(Dispatchers.IO) {
                     FileOutputStream(pdfFile).use { it.write(pdfBytes) }
@@ -177,7 +165,7 @@ class MainViewModel : ViewModel() {
     private fun parseAndDisplayTranscript(jsonString: String) {
         try {
             val items = mutableListOf<TranscriptItem>()
-            val yearsArray = org.json.JSONArray(jsonString)
+            val yearsArray = JSONArray(jsonString)
 
             for (i in 0 until yearsArray.length()) {
                 val yearObj = yearsArray.optJSONObject(i)
@@ -191,12 +179,20 @@ class MainViewModel : ViewModel() {
                         if (subjects != null) {
                             for (k in 0 until subjects.length()) {
                                 val sub = subjects.optJSONObject(k)
-                                val name = sub.optString("subject_name")
+                                
+                                // --- FIXED PARSING LOGIC ---
+                                val name = sub.optString("subject") // Was "subject_name"
                                 val credit = sub.optString("credit")
                                 
                                 val examRule = sub.optJSONObject("exam_rule")
-                                val total = examRule?.optString("digital") ?: "-"
-                                val letter = examRule?.optString("letter") ?: "-"
+                                val markList = sub.optJSONObject("mark_list")
+                                
+                                // Prioritize 'finally' score, then 'total'
+                                val total = markList?.optString("finally") 
+                                    ?: markList?.optString("total") 
+                                    ?: "-"
+                                    
+                                val letter = examRule?.optString("alphabetic") ?: "-" // Was "letter"
 
                                 items.add(TranscriptItem(name, credit, total, letter))
                             }
@@ -207,6 +203,7 @@ class MainViewModel : ViewModel() {
             transcriptList.addAll(items)
         } catch (e: Exception) {
             statusMessage = "Parsing Error: ${e.message}"
+            e.printStackTrace()
         }
     }
 }
@@ -236,7 +233,6 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
     val clipboardManager = LocalClipboardManager.current
 
     Column(modifier = Modifier.padding(16.dp)) {
-        // Token Input
         OutlinedTextField(
             value = viewModel.tokenInput,
             onValueChange = { viewModel.tokenInput = it },
@@ -244,19 +240,25 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Button(onClick = {
+            clipboardManager.getText()?.text?.let { viewModel.tokenInput = it }
+        }, modifier = Modifier.fillMaxWidth()) {
+            Text("Paste from Clipboard")
+        }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Status
         Text(
             text = viewModel.statusMessage,
-            color = if (viewModel.statusMessage.startsWith("Error")) Color.Red else Color.Blue,
+            color = if (viewModel.statusMessage.contains("Error")) Color.Red else Color.Blue,
             fontSize = 14.sp
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Buttons Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -272,7 +274,7 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
             Button(
                 onClick = {
                     viewModel.generatePdf(webGenerator, filesDir) { file ->
-                        Toast.makeText(context, "Saved to ${file.name}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_LONG).show()
                     }
                 },
                 enabled = !viewModel.isBusy && viewModel.transcriptList.isNotEmpty(),
@@ -284,15 +286,13 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
 
         Divider(modifier = Modifier.padding(vertical = 12.dp))
 
-        // List Header
         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
             Text("Subject", modifier = Modifier.weight(2f), fontWeight = FontWeight.Bold)
-            Text("Cred", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold)
-            Text("Scr", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold)
+            Text("Cr", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold)
+            Text("Scr", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold)
             Text("Grd", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold)
         }
 
-        // Grades List
         if (viewModel.isBusy && viewModel.transcriptList.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
@@ -310,28 +310,10 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = item.subject,
-                                modifier = Modifier.weight(2f),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = item.credit,
-                                modifier = Modifier.width(40.dp),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = item.total,
-                                modifier = Modifier.width(40.dp),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                text = item.grade,
-                                modifier = Modifier.width(30.dp),
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Text(item.subject, modifier = Modifier.weight(2f), style = MaterialTheme.typography.bodyMedium)
+                            Text(item.credit, modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodyMedium)
+                            Text(item.total, modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodyMedium)
+                            Text(item.grade, modifier = Modifier.width(30.dp), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
