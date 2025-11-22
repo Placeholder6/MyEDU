@@ -68,7 +68,7 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING AUTOMATED GENERATION ---")
+            log("--- STARTING FIXED HOST SEQUENCE ---")
             
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
@@ -76,14 +76,10 @@ class DebugViewModel : ViewModel() {
             log("Configured.")
 
             try {
-                // 0. FETCH RESOURCES
-                log(">>> STEP 0: Fetching JS Resources...")
+                // 0. FETCH JS RESOURCES
+                log(">>> STEP 0: Fetching JS from myedu.oshsu.kg...")
                 val resources = jsFetcher.fetchResources()
-                if (resources.logicCode.isNotEmpty()) {
-                    log("✔ JS Fetched: ${resources.mainFuncName}")
-                } else {
-                    log("! JS Missing")
-                }
+                log("✔ JS & Stamp Fetched")
 
                 // 1. INFO
                 val studentId = getStudentIdFromToken(token)
@@ -137,7 +133,7 @@ class DebugViewModel : ViewModel() {
                 val step2Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.uploadPdf(idBody, studentBody, pdfPart).string()
                 }
-                log("✔ Upload: $step2Raw")
+                log("✔ UPLOAD: $step2Raw")
 
                 delay(2000)
 
@@ -155,78 +151,6 @@ class DebugViewModel : ViewModel() {
                 isRunning = false
                 log("--- END ---")
             }
-        }
-    }
-}
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val webGenerator = WebPdfGenerator(this)
-        setContent { DebugScreen(webGenerator) }
-    }
-}
-
-@Composable
-fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel()) {
-    var tokenInput by remember { mutableStateOf("") }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
-    val scrollState = rememberScrollState()
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .padding(16.dp)
-    ) {
-        Text("MYEDU PDF FETCHER", color = Color.Cyan)
-        Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
-            value = tokenInput, 
-            onValueChange = { tokenInput = it }, 
-            label = { Text("Paste Token") }, 
-            modifier = Modifier.fillMaxWidth(),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                cursorColor = Color.White,
-                focusedBorderColor = Color.Cyan,
-                unfocusedBorderColor = Color.Gray
-            )
-        )
-        Spacer(Modifier.height(16.dp))
-        Row {
-            Button(
-                onClick = { vm.runDebug(tokenInput, webGenerator, context.filesDir) }, 
-                enabled = !vm.isRunning, 
-                modifier = Modifier.weight(1f), 
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)
-            ) {
-                Text(if (vm.isRunning) "WORKING..." else "START")
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) }, 
-                modifier = Modifier.weight(1f), 
-                colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
-            ) {
-                Text("COPY")
-            }
-        }
-        Spacer(Modifier.height(16.dp))
-        Divider(color = Color.DarkGray)
-        SelectionContainer(Modifier.fillMaxSize()) {
-            Text(
-                text = vm.logs,
-                color = Color.Green,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
-                modifier = Modifier.verticalScroll(scrollState)
-            )
-        }
-        LaunchedEffect(vm.logs) {
-            scrollState.animateScrollTo(scrollState.maxValue)
         }
     }
 }
