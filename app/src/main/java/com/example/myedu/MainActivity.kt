@@ -365,9 +365,9 @@ fun ScheduleScreen(vm: MainViewModel) {
 
     Scaffold(topBar = { CenterAlignedTopAppBar(title = { Text("Timetable") }) }) { padding ->
         Column(Modifier.padding(padding)) {
-            ScrollableTabRow(
+            // FIX START: Use TabRow instead of ScrollableTabRow to spread tabs evenly on tablets
+            TabRow(
                 selectedTabIndex = pagerState.currentPage,
-                edgePadding = 16.dp,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary,
                 indicator = { tabPositions ->
@@ -378,6 +378,8 @@ fun ScheduleScreen(vm: MainViewModel) {
             ) {
                 tabs.forEachIndexed { index, title -> Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) }) }
             }
+            // FIX END
+
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
                 val dayClasses = vm.fullSchedule.filter { it.day == pageIndex }
                 if (dayClasses.isEmpty()) {
