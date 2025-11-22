@@ -4,7 +4,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.regex.Pattern
 
 data class PdfResources(
     val stampBase64: String,
@@ -18,24 +17,25 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Get Index HTML
-            logger("Downloading index.html...")
+            // 1. Index HTML
+            logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
-                ?: throw Exception("Main JS not found")
+                ?: throw Exception("Main JS not found in HTML")
             
-            // 2. Get Main JS
-            logger("Downloading Main JS...")
+            // 2. Main JS
+            logger("Fetching Main JS...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
-                ?: throw Exception("Transcript JS not found")
+                ?: throw Exception("Transcript JS not found in Main JS")
             
-            // 3. Get Transcript JS
-            logger("Downloading Transcript JS...")
+            // 3. Transcript JS
+            logger("Fetching Transcript JS: $transcriptJsName")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. GENERATE DUMMY VARIABLES
+            // 4. PREPARE DUMMY VARIABLES (Prevents crash on import)
             val varsToMock = mutableSetOf<String>()
+            // Regex to find: import { d as at, Y as lt } from ...
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
@@ -45,11 +45,11 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            
-            // Don't mock what we provide manually
+            // Don't mock manually provided vars
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
 
             val dummyScript = StringBuilder()
+            // A Proxy that absorbs all calls without crashing
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
@@ -57,28 +57,28 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. REMOVE IMPORTS/EXPORTS
+            // 5. CLEAN CODE
             transcriptJsContent = transcriptJsContent
-                .replace(importRegex, "") 
+                .replace(importRegex, "") // Remove imports
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE THE GENERATOR FUNCTION
-            // Find the main function: const Y = (C,a,c,d) => ...
-            // We look for this pattern and extract the name 'Y'
-            val funcNameMatch = findMatch(transcriptJsContent, """const\s+(\w+)\s*=\s*\(C,a,c,d\)""")
+            // 6. FIND & EXPOSE GENERATOR FUNCTION
+            // The signature in your file is: Y=(C,a,c,d)
+            // We look for: (WORD)=(C,a,c,d)
+            val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
             
             if (funcNameMatch != null) {
-                logger("Found Generator Function: $funcNameMatch")
-                // Append line to attach it to window
+                logger("FOUND GENERATOR: $funcNameMatch")
+                // Explicitly attach to window so we can call it
                 transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
-                logger("WARNING: Could not find generator function signature.")
+                logger("CRITICAL: Generator function signature (C,a,c,d) not found!")
             }
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 7. Get Stamp
+            // 7. Stamp (Optional)
             var stampBase64 = ""
             val signedJsName = findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
             if (signedJsName != null) {
