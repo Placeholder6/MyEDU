@@ -28,7 +28,6 @@ class WebPdfGenerator(private val context: Context) {
             val webView = WebView(context)
             webView.settings.javaScriptEnabled = true
             
-            // Capture JS Console Logs
             webView.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
                     logCallback("[JS] ${cm.message()} (Line ${cm.lineNumber()})")
@@ -50,188 +49,127 @@ class WebPdfGenerator(private val context: Context) {
 
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("JS Error: $msg"))
+                    if (continuation.isActive) continuation.resumeWithException(Exception("Web Error: $msg"))
                 }
                 
                 @JavascriptInterface
-                fun log(msg: String) {
-                    logCallback(msg)
-                }
+                fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            val htmlContent = getHtmlContent(studentInfoJson, transcriptJson, linkId, qrUrl, resources)
+            // We inject the scripts in specific order using separate tags to isolate errors.
+            val validStamp = if (resources.stampBase64.isNotEmpty()) resources.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
             
+            val html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+            </head>
+            <body>
+            
+            <script>
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
+                
+                const studentInfo = $studentInfoJson;
+                const transcriptData = $transcriptJson;
+                const linkId = $linkId;
+                const qrCodeUrl = "$qrUrl";
+                const mt = "$validStamp";
+
+                const ${'$'} = function(d) {
+                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") };
+                };
+                ${'$'}.locale = function() {};
+
+                function K(obj, pathArray) {
+                    if(!pathArray) return '';
+                    return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
+                }
+
+                const U = (cp, pc) => ({ 
+                    margin: [40, 0, 25, 0],
+                    columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] 
+                });
+
+                const J = {
+                    textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' },
+                    fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 },
+                    l2: {}, tableExample: { margin: [0, 5, 0, 15] }
+                };
+            </script>
+
+            <script>
+                try {
+                    ${resources.logicCode}
+                    AndroidBridge.log("JS: Logic injected successfully");
+                } catch(e) {
+                    AndroidBridge.log("JS: Injection Failed: " + e.toString());
+                    // We don't returnError here, we let the driver try to find what it can
+                }
+            </script>
+
+            <script>
+                function startGeneration() {
+                    try {
+                        AndroidBridge.log("JS: Driver started...");
+                        
+                        // Stats Calculation
+                        let totalCredits = 0, gpaSum = 0, gpaCount = 0;
+                        if (Array.isArray(transcriptData)) {
+                            transcriptData.forEach(y => {
+                                if(y.semesters) y.semesters.forEach(s => {
+                                    let sCred = 0, sPoints = 0;
+                                    if(s.subjects) s.subjects.forEach(sub => {
+                                        const cr = parseInt(sub.credit || 0);
+                                        sCred += cr; totalCredits += cr;
+                                        if(sub.exam_rule && sub.exam_rule.digital) sPoints += (parseFloat(sub.exam_rule.digital) * cr);
+                                    });
+                                    if(sCred > 0) s.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
+                                    else s.gpa = 0;
+                                    if(parseFloat(s.gpa) > 0) { gpaSum += parseFloat(s.gpa); gpaCount++; }
+                                });
+                            });
+                        }
+                        const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
+                        const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
+
+                        // Find function
+                        let func = null;
+                        if (typeof window['Y'] === 'function') func = window['Y'];
+                        if (!func) {
+                             for (let k in window) {
+                                 try {
+                                     if (typeof window[k] === 'function' && window[k].length === 4 && k.length < 4 && k !== 'set') {
+                                         func = window[k];
+                                         AndroidBridge.log("JS: Found candidate: " + k);
+                                         break;
+                                     }
+                                 } catch(e){}
+                             }
+                        }
+
+                        if(!func) throw "Generator function not found";
+
+                        const docDef = func(transcriptData, studentInfo, stats, qrCodeUrl);
+                        pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
+                        
+                    } catch(e) {
+                        AndroidBridge.returnError("Driver: " + e.toString());
+                    }
+                }
+            </script>
+            </body>
+            </html>
+            """
+
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     webView.evaluateJavascript("startGeneration();", null)
                 }
             }
             
-            // Load with correct base URL
-            webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", htmlContent, "text/html", "UTF-8", null)
+            webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
         }
-    }
-
-    private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
-        // Fallback if stamp is missing
-        val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-
-        return """
-<!DOCTYPE html>
-<html>
-<head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
-</head>
-<body>
-<script>
-    // 1. Global Error Handler
-    window.onerror = function(message, source, lineno, colno, error) {
-        AndroidBridge.returnError(message + " at line " + lineno);
-    };
-
-    // 2. Variables
-    const studentInfo = $info;
-    const transcriptData = $transcript;
-    const linkId = $linkId;
-    const qrCodeUrl = "$qrUrl";
-    const mt = "$validStamp"; // 'mt' is typically used for the signed image
-
-    // 3. MOCKS (Crucial for preventing crashes when imports are removed)
-    
-    // Mock Vue's date formatter ($)
-    const ${'$'} = function(d) {
-        return {
-            format: function(fmt) {
-                const date = d ? new Date(d) : new Date();
-                return date.toLocaleDateString("ru-RU");
-            }
-        };
-    };
-    ${'$'}.locale = function() {};
-
-    // Mock Helper 'K' (deep access)
-    function K(obj, pathArray) {
-        if(!pathArray) return '';
-        return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
-    }
-
-    // Mock Footer 'U'
-    const U = function(currentPage, pageCount) {
-        return { 
-            margin: [40, 0, 25, 0],
-            columns: [
-                { text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 },
-                { text: 'Страница ' + currentPage + ' из ' + pageCount, alignment: 'right', fontSize: 8 }
-            ]
-        };
-    };
-
-    // Mock Styles 'J'
-    const J = {
-        textCenter: { alignment: 'center' },
-        textRight: { alignment: 'right' },
-        textLeft: { alignment: 'left' },
-        fb: { bold: true },
-        f7: { fontSize: 7 },
-        f8: { fontSize: 8 },
-        f9: { fontSize: 9 },
-        f10: { fontSize: 10 },
-        f11: { fontSize: 11 },
-        l2: {}, 
-        tableExample: { margin: [0, 5, 0, 15] }
-    };
-
-    // 4. INJECT SERVER LOGIC
-    try {
-        ${res.logicCode}
-    } catch(e) {
-        AndroidBridge.returnError("Logic Injection Failed: " + e.message);
-    }
-
-    // 5. DRIVER CODE
-    function startGeneration() {
-        try {
-            AndroidBridge.log("JS: Calculating stats...");
-            
-            // Calculate GPA/Credits (Frontend logic)
-            let totalCredits = 0;
-            let gpaSum = 0; 
-            let gpaCount = 0;
-            
-            if (Array.isArray(transcriptData)) {
-                transcriptData.forEach(year => {
-                    if(year.semesters) {
-                        year.semesters.forEach(sem => {
-                            let sCred = 0; let sPoints = 0;
-                            if(sem.subjects) {
-                                sem.subjects.forEach(sub => {
-                                    const cr = parseInt(sub.credit || 0);
-                                    sCred += cr;
-                                    totalCredits += cr;
-                                    if(sub.exam_rule && sub.exam_rule.digital) {
-                                        sPoints += (parseFloat(sub.exam_rule.digital) * cr);
-                                    }
-                                });
-                            }
-                            if(sCred > 0) sem.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
-                            else sem.gpa = 0;
-                            
-                            if(parseFloat(sem.gpa) > 0) {
-                                gpaSum += parseFloat(sem.gpa);
-                                gpaCount++;
-                            }
-                        });
-                    }
-                });
-            }
-            
-            const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
-            const statsArray = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
-
-            // FIND THE GENERATOR FUNCTION
-            // We look for a function in the global scope that accepts exactly 4 arguments.
-            // Original signature: (data, student, stats, qr)
-            let generatorFunc = null;
-            
-            // 1. Check for common minified names (Y is in your file)
-            if (typeof window['Y'] === 'function' && window['Y'].length === 4) {
-                 generatorFunc = window['Y'];
-            }
-            
-            // 2. Scan window if Y isn't found
-            if (!generatorFunc) {
-                for (let key in window) {
-                    try {
-                        if (typeof window[key] === 'function' && window[key].length === 4) {
-                            // Ignore standard functions
-                            if (key !== 'setTimeout' && key !== 'setInterval' && key !== 'alert' && key.length < 5) {
-                                generatorFunc = window[key];
-                                AndroidBridge.log("JS: Found candidate function: " + key);
-                                break;
-                            }
-                        }
-                    } catch(e) {}
-                }
-            }
-
-            if (!generatorFunc) throw "Generator function not found in scripts.";
-
-            AndroidBridge.log("JS: Creating PDF definition...");
-            const docDef = generatorFunc(transcriptData, studentInfo, statsArray, qrCodeUrl);
-            
-            AndroidBridge.log("JS: Generating PDF binary...");
-            pdfMake.createPdf(docDef).getBase64(function(encoded) {
-                AndroidBridge.returnPdf(encoded);
-            });
-
-        } catch(e) {
-            AndroidBridge.returnError(e.toString());
-        }
-    }
-</script>
-</body>
-</html>
-        """.trimIndent()
     }
 }
