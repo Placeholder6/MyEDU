@@ -19,49 +19,46 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // STEP 1: Fetch HTML to get the Entry Point (index.js)
+            // 1. Get Index HTML
             val indexHtml = fetchString("$baseUrl/")
-            // Looks for: src="/assets/index.HASH.TIMESTAMP.js"
+            // Match: src="/assets/index.HASH.TIMESTAMP.js"
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
                 ?: throw Exception("Main JS not found in index.html")
             
-            // STEP 2: Fetch Main Index JS
+            // 2. Get Main JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
 
-            // STEP 3: Find Target Files inside Index JS
-            // Regex looks for "Transcript.HASH.TIMESTAMP.js" inside the code
-            val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"]+\.js)""")
-                ?: throw Exception("Transcript JS filename not found in index.js")
+            // 3. Find Transcript JS
+            // Match: Transcript.HASH.js (handles both ' and " quotes)
+            val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"']+\.js)""")
+                ?: throw Exception("Transcript JS not found in index.js")
             
-            // Try to find Signed.js in Index JS, fallback to Transcript JS later
-            var signedJsName = findMatch(mainJsContent, """(Signed\.[^"]+\.js)""")
+            // 4. Find Signed JS (Try Main JS first, then Transcript JS)
+            var signedJsName = findMatch(mainJsContent, """(Signed\.[^"']+\.js)""")
             
-            // STEP 4: Fetch Transcript JS
+            // 5. Get Transcript JS Content
             val transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
             
-            // If Signed.js wasn't in Index, check Transcript.js
             if (signedJsName == null) {
-                signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"]+\.js)""")
-                    ?: throw Exception("Signed JS filename not found")
+                signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"']+\.js)""")
+                    ?: throw Exception("Signed JS not found")
             }
 
-            // STEP 5: Fetch Stamp from Signed.js
+            // 6. Get Stamp
             val signedJsContent = fetchString("$baseUrl/assets/$signedJsName")
             val stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""")
                 ?: ""
 
-            // STEP 6: Extract PDF Logic from Transcript.js
-            // We extract the code block starting from "const yt=" (table generator)
+            // 7. Extract Logic
             val startMarker = "const yt="
             val endMarker = "export{"
             val startIndex = transcriptJsContent.indexOf(startMarker)
             val endIndex = transcriptJsContent.lastIndexOf(endMarker)
 
-            if (startIndex == -1 || endIndex == -1) throw Exception("PDF Logic block not found in Transcript.js")
+            if (startIndex == -1 || endIndex == -1) throw Exception("Logic block not found in Transcript.js")
             val logicCode = transcriptJsContent.substring(startIndex, endIndex)
 
-            // STEP 7: Find the Main Function Name (dynamic)
-            // Looks for: const Y = (C, a, c, d)
+            // 8. Function Name
             val mainFuncMatch = findMatch(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)""")
                 ?: "Y"
 
@@ -69,8 +66,7 @@ class JsResourceFetcher {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Return safe empty object to prevent crash, allowing retry
-            return@withContext PdfResources("", "", "Y")
+            throw e // Throw to see the error in logs
         }
     }
 
