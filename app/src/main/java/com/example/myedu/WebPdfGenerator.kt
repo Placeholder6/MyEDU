@@ -21,10 +21,12 @@ class WebPdfGenerator(private val context: Context) {
         resources: PdfResources
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
+        // WebView must be created on the main thread
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val webView = WebView(context)
             webView.settings.javaScriptEnabled = true
             
+            // Bridge to get result back from JS
             webView.addJavascriptInterface(object : Any() {
                 @JavascriptInterface
                 fun returnPdf(base64: String) {
@@ -47,15 +49,18 @@ class WebPdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
+                    // Trigger the generation once libraries are loaded
                     webView.evaluateJavascript("startGeneration();", null)
                 }
             }
             
+            // Load the constructed HTML
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg", htmlContent, "text/html", "UTF-8", null)
         }
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
+        // Use empty pixel if stamp fetch failed
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 
         return """
@@ -67,13 +72,18 @@ class WebPdfGenerator(private val context: Context) {
 </head>
 <body>
 <script>
-    // --- INPUTS ---
+    // --- 1. INJECTED DATA ---
     const studentInfo = $info;
     const transcriptData = $transcript;
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
+    const mt = "$validStamp"; // 'mt' is often the variable name for the stamp in the minified code
+
+    // --- 2. MOCKS ---
+    // The site's JS likely expects a specific environment (Vue/plugins). 
+    // We mock essential functions used in the transcript logic.
     
-    // --- MOCKS ---
+    // Mocking Vue's '$' utility often used for formatting dates
     const ${'$'} = function(d) {
         return {
             format: function(fmt) {
@@ -84,10 +94,12 @@ class WebPdfGenerator(private val context: Context) {
     };
     ${'$'}.locale = function() {};
 
+    // Helper to safely access nested object properties (often used in minified code)
     function K(obj, pathArray) {
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
 
+    // Mocking 'U': Likely a function creating the Header/Footer layout
     const U = function(currentPage, pageCount) {
         return { 
             margin: [40, 0, 25, 0],
@@ -98,8 +110,7 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
 
-    const mt = "$validStamp";
-
+    // Mocking 'J': Likely a style definition object
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -114,46 +125,68 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- INJECTED LOGIC FROM SERVER ---
+    // --- 3. INJECTED LOGIC ---
+    // This is the code we scraped from Transcript.js
     ${res.logicCode}
 
-    // --- DRIVER ---
+    // --- 4. DRIVER FUNCTION ---
     function startGeneration() {
         try {
-            // 1. Calculate Stats
+            // Re-calculate necessary stats that the frontend usually does before generating PDF
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
             
-            transcriptData.forEach(year => {
-                year.semesters.forEach(sem => {
-                    let sCred = 0; let sPoints = 0;
-                    sem.subjects.forEach(sub => {
-                        const cr = parseInt(sub.credit || 0);
-                        sCred += cr;
-                        totalCredits += cr;
-                        if(sub.exam_rule && sub.exam_rule.digital) {
-                            sPoints += (parseFloat(sub.exam_rule.digital) * cr);
-                        }
-                    });
-                    if(sCred > 0) sem.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
-                    else sem.gpa = 0;
-                    
-                    if(parseFloat(sem.gpa) > 0) {
-                        gpaSum += parseFloat(sem.gpa);
-                        gpaCount++;
+            if (Array.isArray(transcriptData)) {
+                transcriptData.forEach(year => {
+                    if(year.semesters) {
+                        year.semesters.forEach(sem => {
+                            let sCred = 0; let sPoints = 0;
+                            if(sem.subjects) {
+                                sem.subjects.forEach(sub => {
+                                    const cr = parseInt(sub.credit || 0);
+                                    sCred += cr;
+                                    totalCredits += cr;
+                                    if(sub.exam_rule && sub.exam_rule.digital) {
+                                        sPoints += (parseFloat(sub.exam_rule.digital) * cr);
+                                    }
+                                });
+                            }
+                            // Calculate Semester GPA if not present
+                            if(sCred > 0) sem.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
+                            else sem.gpa = 0;
+                            
+                            if(parseFloat(sem.gpa) > 0) {
+                                gpaSum += parseFloat(sem.gpa);
+                                gpaCount++;
+                            }
+                        });
                     }
                 });
-            });
+            }
             
             const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
-            const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
-
-            // 2. Call Dynamic Function
-            const docFunc = eval("${res.mainFuncName}");
-            const docDef = docFunc(transcriptData, studentInfo, stats, qrCodeUrl);
             
-            // 3. Generate
+            // The main function usually expects: (Data, StudentInfo, StatsArray, QRCodeUrl)
+            // We try to execute the function name scraped by JsResourceFetcher
+            // If that failed, 'Y' is a common minified name, but this is brittle.
+            const funcName = "${res.mainFuncName}";
+            
+            if (typeof window[funcName] !== 'function') {
+                 // Try to find the function in the window scope if the name is wrong
+                 // This is a fallback to find the likely PDF generator function
+                 const possibleKeys = Object.keys(window).filter(k => typeof window[k] === 'function' && window[k].length === 4);
+                 if(possibleKeys.length > 0) {
+                     // Use the first 4-argument function found that matches our expected signature
+                     var docDef = window[possibleKeys[0]](transcriptData, studentInfo, [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")], qrCodeUrl);
+                 } else {
+                     throw "Could not find PDF generation function: " + funcName;
+                 }
+            } else {
+                 var docDef = window[funcName](transcriptData, studentInfo, [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")], qrCodeUrl);
+            }
+            
+            // Generate PDF
             pdfMake.createPdf(docDef).getBase64(function(encoded) {
                 AndroidBridge.returnPdf(encoded);
             });
