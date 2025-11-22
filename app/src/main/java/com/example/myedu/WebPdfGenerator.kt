@@ -56,9 +56,11 @@ class WebPdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            // Valid PNG fallback
             val fallbackPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
             val safeStamp = if (resources.stampBase64.startsWith("data:image")) resources.stampBase64 else fallbackPng
+
+            // We use the detected variable name (e.g. 'mt', 'a5')
+            val stampVar = resources.stampVarName
 
             val html = """
             <!DOCTYPE html>
@@ -75,7 +77,9 @@ class WebPdfGenerator(private val context: Context) {
                 let transcriptData = $transcriptJson; 
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
-                const mt = "$safeStamp"; 
+                
+                // Define the stamp using the CORRECT variable name found in the script
+                const $stampVar = "$safeStamp"; 
 
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
@@ -103,15 +107,17 @@ class WebPdfGenerator(private val context: Context) {
                                         const cr = parseInt(sub.credit || 0);
                                         sCred += cr; totalCredits += cr;
                                         
-                                        // --- FIX: FORCE 2 DECIMAL PLACES ---
                                         if(sub.exam_rule && sub.exam_rule.digital) {
-                                            let val = parseFloat(sub.exam_rule.digital);
-                                            if(!isNaN(val)) {
-                                                sub.exam_rule.digital = val.toFixed(2); 
-                                                sPoints += (val * cr);
-                                            }
+                                            let dig = parseFloat(sub.exam_rule.digital);
+                                            sub.exam_rule.digital = dig.toFixed(2); 
+                                            sPoints += (dig * cr);
+                                        }
+                                        if(sub.mark_list && sub.mark_list.total) {
+                                            let tot = parseFloat(sub.mark_list.total);
+                                            sub.mark_list.total = Math.round(tot).toString(); 
                                         }
                                     });
+                                    
                                     if(sCred > 0) s.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
                                     else s.gpa = 0;
                                     
