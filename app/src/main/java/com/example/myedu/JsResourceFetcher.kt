@@ -34,6 +34,7 @@ class JsResourceFetcher {
 
             // 4. MOCK IMPORTS
             val varsToMock = mutableSetOf<String>()
+            // Capture everything inside import { ... }
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
@@ -43,7 +44,8 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
+            // Do not mock these, we will provide real implementations for them
+            varsToMock.removeAll(setOf("J", "U", "K", "$", "mt", "ct"))
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -69,23 +71,26 @@ class JsResourceFetcher {
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 7. STAMP EXTRACTION (Diagnose)
+            // 7. STAMP EXTRACTION
             var stampBase64 = ""
             val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
                 ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
             if (signedJsName != null) {
-                logger("Found Signed JS: $signedJsName")
+                logger("Fetching Stamp File: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
                 
-                // Try to find ANY base64 image
+                // Matches: const A="data:image/jpeg;base64,..."
                 val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
-                stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
                 
-                if(stampBase64.isNotEmpty()) logger("Stamp Found! Length: ${stampBase64.length}")
-                else logger("WARNING: No image data found in Signed.js")
+                if (stampMatch != null) {
+                    stampBase64 = stampMatch.groupValues[1]
+                    logger("Stamp Found! Length: ${stampBase64.length}")
+                } else {
+                    logger("WARNING: No base64 image string found in Signed.js")
+                }
             } else {
-                logger("WARNING: Signed.js reference not found in code.")
+                logger("WARNING: Signed.js filename not found in imports.")
             }
 
             return@withContext PdfResources(stampBase64, finalScript)
