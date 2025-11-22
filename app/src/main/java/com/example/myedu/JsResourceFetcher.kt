@@ -35,33 +35,29 @@ class JsResourceFetcher {
             logger("Fetching Transcript JS: $transcriptJsName")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. EXTRACT & MOCK IMPORTS (Crucial Fix)
-            // Minified imports often look like: import{d as at,Y as lt}from"./index.js";
-            // We must find all variables (at, lt) and define them as dummies.
+            // 4. GENERATE DUMMY VARIABLES FOR IMPORTS
+            // Finds strings like: import { d as at, Y as lt } from ...
+            // Extracts 'at', 'lt' and makes them dummy variables so the script doesn't crash.
             val varsToMock = mutableSetOf<String>()
+            val importPattern = Regex("""import\s*\{([^}]*)\}\s*from\s*['"][^'"]*['"];?""")
             
-            // Regex handles spaces or no spaces (\s*)
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
-            
-            importRegex.findAll(transcriptJsContent).forEach { match ->
-                val content = match.groupValues[1] // Content inside { ... }
+            importPattern.findAll(transcriptJsContent).forEach { match ->
+                val content = match.groupValues[1]
                 content.split(",").forEach { item ->
                     val parts = item.trim().split(Regex("""\s+as\s+"""))
                     if (parts.size == 2) {
-                        varsToMock.add(parts[1].trim()) // Capture alias (e.g., 'at' from 'd as at')
-                    } else {
-                        varsToMock.add(parts[0].trim()) // Capture direct name
+                        varsToMock.add(parts[1].trim())
+                    } else if (parts[0].isNotBlank()) {
+                        varsToMock.add(parts[0].trim())
                     }
                 }
             }
 
-            // Remove manual mocks from the auto-generated list to avoid conflicts
+            // Remove variables we mock manually to avoid re-declaration errors
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
-            
-            // Create a Universal Dummy Object
-            // This Proxy intercepts ALL calls (get, apply, construct) and returns itself.
-            // This prevents crashes like "at(...) is not a function"
+
             val dummyScript = StringBuilder()
+            // Universal Dummy: a Proxy that returns itself for any property access or function call
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             
             if (varsToMock.isNotEmpty()) {
@@ -70,9 +66,9 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. STRIP IMPORTS/EXPORTS
+            // 5. REMOVE IMPORTS & EXPORTS
             transcriptJsContent = transcriptJsContent
-                .replace(importRegex, "") // Remove import lines
+                .replace(importPattern, "")
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
