@@ -2,17 +2,19 @@ package com.example.myedu
 
 import android.os.Bundle
 import android.util.Base64
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -22,365 +24,317 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-// --- Data Models for UI ---
-data class SubjectModel(
-    val name: String,
+// Simple data class for UI display
+data class TranscriptItem(
+    val subject: String,
     val credit: String,
+    val total: String,
     val grade: String
 )
 
-data class SemesterModel(
-    val name: String,
-    val subjects: List<SubjectModel>
-)
+class MainViewModel : ViewModel() {
+    // Inputs
+    var tokenInput by mutableStateOf("")
 
-// --- Activity ---
+    // State
+    var statusMessage by mutableStateOf("Ready")
+    var isBusy by mutableStateOf(false)
+    
+    // Display Data
+    var transcriptList = mutableStateListOf<TranscriptItem>()
+
+    // Cached Data for PDF Generation
+    private var cachedStudentId: Long = 0
+    private var cachedInfoJson: String? = null
+    private var cachedTranscriptJson: String? = null
+    private var cachedResources: PdfResources? = null
+
+    private val jsFetcher = JsResourceFetcher()
+
+    private fun getStudentIdFromToken(token: String): Long {
+        try {
+            val parts = token.split(".")
+            if (parts.size < 2) return 0L
+            val payload = String(Base64.decode(parts[1], Base64.URL_SAFE))
+            val json = JSONObject(payload)
+            return json.optLong("sub", 0L)
+        } catch (e: Exception) {
+            return 0L
+        }
+    }
+
+    fun fetchTranscriptData() {
+        if (tokenInput.isBlank()) {
+            statusMessage = "Error: Please enter a token."
+            return
+        }
+
+        viewModelScope.launch {
+            isBusy = true
+            statusMessage = "Initializing..."
+            transcriptList.clear()
+            
+            val token = tokenInput.removePrefix("Bearer ").trim()
+
+            try {
+                // Setup Networking
+                NetworkClient.cookieJar.setDebugCookies(token)
+                NetworkClient.interceptor.authToken = token
+                NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/"
+
+                // 1. Fetch JS Resources (needed later, but good to grab now)
+                statusMessage = "Fetching App Resources..."
+                val resources = jsFetcher.fetchResources()
+                cachedResources = resources
+
+                // 2. Fetch Student Info
+                statusMessage = "Fetching Student Info..."
+                val studentId = getStudentIdFromToken(token)
+                if (studentId == 0L) throw Exception("Invalid Token: Could not extract ID")
+                
+                val infoRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getStudentInfo(studentId).string()
+                }
+                val infoJson = JSONObject(infoRaw)
+                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
+                
+                cachedStudentId = studentId
+                cachedInfoJson = infoRaw
+
+                // 3. Fetch Transcript Data
+                statusMessage = "Downloading Grades..."
+                val transcriptRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptData(studentId, movementId).string()
+                }
+                cachedTranscriptJson = transcriptRaw
+
+                // 4. Parse and Display
+                parseAndDisplayTranscript(transcriptRaw)
+                statusMessage = "Transcript Fetched Successfully"
+
+            } catch (e: Exception) {
+                statusMessage = "Error: ${e.message}"
+                e.printStackTrace()
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    fun generatePdf(webGenerator: WebPdfGenerator, filesDir: File, onPdfReady: (File) -> Unit) {
+        if (cachedInfoJson == null || cachedTranscriptJson == null || cachedResources == null) {
+            statusMessage = "Error: Fetch data first!"
+            return
+        }
+
+        viewModelScope.launch {
+            isBusy = true
+            statusMessage = "Getting Document Key..."
+            
+            try {
+                // 1. Get Link/QR Data
+                val linkReq = DocIdRequest(cachedStudentId)
+                val linkRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptLink(linkReq).string()
+                }
+                val keyJson = JSONObject(linkRaw)
+                val linkId = keyJson.optLong("id")
+                val qrUrl = keyJson.optString("url") // Contains the key/hash
+
+                // 2. Generate PDF
+                statusMessage = "Generating PDF (JavaScript)..."
+                val pdfBytes = webGenerator.generatePdf(
+                    cachedInfoJson!!,
+                    cachedTranscriptJson!!,
+                    linkId,
+                    qrUrl,
+                    cachedResources!!
+                )
+
+                // 3. Save File
+                val pdfFile = File(filesDir, "transcript.pdf")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(pdfFile).use { it.write(pdfBytes) }
+                }
+
+                statusMessage = "PDF Saved: ${pdfFile.absolutePath}"
+                onPdfReady(pdfFile)
+
+            } catch (e: Exception) {
+                statusMessage = "PDF Error: ${e.message}"
+                e.printStackTrace()
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    private fun parseAndDisplayTranscript(jsonString: String) {
+        try {
+            val items = mutableListOf<TranscriptItem>()
+            val yearsArray = org.json.JSONArray(jsonString)
+
+            for (i in 0 until yearsArray.length()) {
+                val yearObj = yearsArray.optJSONObject(i)
+                val semesters = yearObj.optJSONArray("semesters")
+                
+                if (semesters != null) {
+                    for (j in 0 until semesters.length()) {
+                        val semObj = semesters.optJSONObject(j)
+                        val subjects = semObj.optJSONArray("subjects")
+                        
+                        if (subjects != null) {
+                            for (k in 0 until subjects.length()) {
+                                val sub = subjects.optJSONObject(k)
+                                val name = sub.optString("subject_name")
+                                val credit = sub.optString("credit")
+                                
+                                val examRule = sub.optJSONObject("exam_rule")
+                                val total = examRule?.optString("digital") ?: "-"
+                                val letter = examRule?.optString("letter") ?: "-"
+
+                                items.add(TranscriptItem(name, credit, total, letter))
+                            }
+                        }
+                    }
+                }
+            }
+            transcriptList.addAll(items)
+        } catch (e: Exception) {
+            statusMessage = "Parsing Error: ${e.message}"
+        }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Initialize helper classes
         val webGenerator = WebPdfGenerator(this)
-        val filesDir = this.filesDir
-
+        
         setContent {
             MaterialTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val viewModel: MainViewModel = viewModel()
-                    MainScreen(viewModel, webGenerator, filesDir)
+                    MainScreen(webGenerator, filesDir)
                 }
             }
         }
     }
 }
 
-// --- UI Composable ---
 @Composable
-fun MainScreen(viewModel: MainViewModel, webGenerator: WebPdfGenerator, filesDir: File) {
-    var tokenInput by remember { mutableStateOf("") }
+fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
+    val viewModel: MainViewModel = viewModel()
+    val context = LocalContext.current
+    val clipboardManager = LocalClipboardManager.current
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // 1. Token Input
+    Column(modifier = Modifier.padding(16.dp)) {
+        // Token Input
         OutlinedTextField(
-            value = tokenInput,
-            onValueChange = { tokenInput = it },
-            label = { Text("Paste JWT Token") },
-            placeholder = { Text("eyJ...") },
+            value = viewModel.tokenInput,
+            onValueChange = { viewModel.tokenInput = it },
+            label = { Text("Paste Bearer Token") },
             modifier = Modifier.fillMaxWidth(),
-            maxLines = 3
+            singleLine = true
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // 2. Buttons Row
+        // Status
+        Text(
+            text = viewModel.statusMessage,
+            color = if (viewModel.statusMessage.startsWith("Error")) Color.Red else Color.Blue,
+            fontSize = 14.sp
+        )
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Buttons Row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
-                onClick = { viewModel.fetchGrades(tokenInput) },
+                onClick = { viewModel.fetchTranscriptData() },
                 enabled = !viewModel.isBusy,
                 modifier = Modifier.weight(1f)
             ) {
-                Text("1. Get Grades")
+                Text("1. Fetch Grades")
             }
 
             Button(
-                onClick = { viewModel.generatePdf(webGenerator, filesDir) },
-                enabled = !viewModel.isBusy && viewModel.canGeneratePdf,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary
-                )
+                onClick = {
+                    viewModel.generatePdf(webGenerator, filesDir) { file ->
+                        Toast.makeText(context, "Saved to ${file.name}", Toast.LENGTH_LONG).show()
+                    }
+                },
+                enabled = !viewModel.isBusy && viewModel.transcriptList.isNotEmpty(),
+                modifier = Modifier.weight(1f)
             ) {
                 Text("2. Make PDF")
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Divider(modifier = Modifier.padding(vertical = 12.dp))
 
-        // 3. Status & Logs
-        Text(
-            text = viewModel.statusMessage,
-            color = if (viewModel.isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold
-        )
+        // List Header
+        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            Text("Subject", modifier = Modifier.weight(2f), fontWeight = FontWeight.Bold)
+            Text("Cred", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold)
+            Text("Scr", modifier = Modifier.width(40.dp), fontWeight = FontWeight.Bold)
+            Text("Grd", modifier = Modifier.width(30.dp), fontWeight = FontWeight.Bold)
+        }
 
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-        // 4. Content Area (List or Logs)
-        if (viewModel.semesters.isNotEmpty()) {
-            LazyColumn(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(viewModel.semesters) { semester ->
-                    SemesterCard(semester)
-                }
+        // Grades List
+        if (viewModel.isBusy && viewModel.transcriptList.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
         } else {
-            // Show logs if no data yet
-            SelectionContainer(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = viewModel.logs,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color.Gray
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun SemesterCard(semester: SemesterModel) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = semester.name,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Divider(color = Color.LightGray)
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            semester.subjects.forEach { subject ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 2.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = subject.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(0.7f)
-                    )
-                    Text(
-                        text = "${subject.grade} (${subject.credit})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(0.3f),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.End
-                    )
-                }
-            }
-        }
-    }
-}
-
-// --- ViewModel ---
-class MainViewModel : ViewModel() {
-    // UI State
-    var statusMessage by mutableStateOf("Ready")
-    var logs by mutableStateOf("")
-    var isBusy by mutableStateOf(false)
-    var isError by mutableStateOf(false)
-    
-    var semesters by mutableStateOf<List<SemesterModel>>(emptyList())
-    var canGeneratePdf by mutableStateOf(false)
-
-    // Internal Data Cache for PDF Generation
-    private var cachedResources: PdfResources? = null
-    private var cachedInfoRaw: String? = null
-    private var cachedTranscriptRaw: String? = null
-    private var cachedStudentId: Long = 0L
-
-    private val jsFetcher = JsResourceFetcher()
-
-    private fun log(msg: String) {
-        val time = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        logs += "[$time] $msg\n"
-    }
-
-    // Step 1: Fetch and Display Grades
-    fun fetchGrades(tokenInput: String) {
-        if (tokenInput.isBlank()) {
-            statusMessage = "Please enter a token"
-            isError = true
-            return
-        }
-
-        val token = tokenInput.removePrefix("Bearer ").trim()
-
-        viewModelScope.launch {
-            try {
-                isBusy = true
-                isError = false
-                canGeneratePdf = false
-                semesters = emptyList()
-                logs = ""
-                statusMessage = "Fetching Data..."
-
-                // Configure Networking
-                NetworkClient.cookieJar.setDebugCookies(token)
-                NetworkClient.interceptor.authToken = token
-
-                // A. Fetch JS (Required for PDF later, doing it now to ensure readiness)
-                log("Fetching JS Resources...")
-                cachedResources = jsFetcher.fetchResources()
-                log("JS Fetched.")
-
-                // B. Get Student ID from Token
-                cachedStudentId = getStudentIdFromToken(token)
-                if (cachedStudentId == 0L) throw Exception("Could not extract Student ID from token")
-
-                // C. Fetch Student Info (to get Movement ID)
-                log("Fetching Student Info ($cachedStudentId)...")
-                cachedInfoRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getStudentInfo(cachedStudentId).string()
-                }
-                
-                val infoJson = JSONObject(cachedInfoRaw!!)
-                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                
-                // D. Fetch Transcript Data
-                log("Fetching Transcript (Mov: $movementId)...")
-                cachedTranscriptRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(cachedStudentId, movementId).string()
-                }
-                log("Transcript Downloaded.")
-
-                // E. Parse for UI
-                parseAndSetDisplayData(cachedTranscriptRaw!!)
-                
-                statusMessage = "Grades Loaded. Ready to PDF."
-                canGeneratePdf = true
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-                isError = true
-                statusMessage = "Error: ${e.message}"
-                log("Crash: ${e.message}")
-            } finally {
-                isBusy = false
-            }
-        }
-    }
-
-    // Step 2: Generate PDF
-    fun generatePdf(webGenerator: WebPdfGenerator, filesDir: File) {
-        if (cachedResources == null || cachedInfoRaw == null || cachedTranscriptRaw == null) {
-            statusMessage = "Data missing. Fetch grades first."
-            return
-        }
-
-        viewModelScope.launch {
-            try {
-                isBusy = true
-                statusMessage = "Generating PDF..."
-                log("Starting PDF Generation...")
-
-                // A. Get Document Key/Link (Required for QR code in PDF)
-                val linkResponse = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
-                }
-                val linkJson = JSONObject(linkResponse)
-                val linkId = linkJson.optLong("id")
-                val qrUrl = linkJson.optString("url")
-                log("Link ID: $linkId, QR Generated.")
-
-                // B. Run Generation inside WebView
-                val pdfBytes = webGenerator.generatePdf(
-                    cachedInfoRaw!!,
-                    cachedTranscriptRaw!!,
-                    linkId,
-                    qrUrl,
-                    cachedResources!!
-                )
-
-                // C. Save to File
-                val fileName = "transcript_${System.currentTimeMillis()}.pdf"
-                val file = File(filesDir, fileName)
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(file).use { it.write(pdfBytes) }
-                }
-
-                log("PDF Created: ${file.absolutePath}")
-                statusMessage = "Saved: $fileName"
-
-            } catch (e: Exception) {
-                e.printStackTrace()
-                isError = true
-                statusMessage = "PDF Failed: ${e.message}"
-                log("PDF Error: ${e.message}")
-            } finally {
-                isBusy = false
-            }
-        }
-    }
-
-    private fun parseAndSetDisplayData(json: String) {
-        try {
-            val result = mutableListOf<SemesterModel>()
-            val yearsArray = JSONArray(json)
-
-            for (i in 0 until yearsArray.length()) {
-                val yearObj = yearsArray.getJSONObject(i)
-                val semestersArray = yearObj.optJSONArray("semesters") ?: continue
-
-                for (j in 0 until semestersArray.length()) {
-                    val semObj = semestersArray.getJSONObject(j)
-                    val semName = semObj.optJSONObject("semester")?.optString("name") ?: "Unknown Semester"
-                    val subjectsArray = semObj.optJSONArray("subjects") ?: continue
-                    
-                    val subjectsList = mutableListOf<SubjectModel>()
-
-                    for (k in 0 until subjectsArray.length()) {
-                        val subObj = subjectsArray.getJSONObject(k)
-                        
-                        // Name might be in a nested object or direct
-                        val name = subObj.optJSONObject("subject")?.optString("name") 
-                            ?: subObj.optString("name", "Subject")
-                        
-                        val credit = subObj.optString("credit", "0")
-                        
-                        // Grade logic
-                        val examRule = subObj.optJSONObject("exam_rule")
-                        val grade = examRule?.let {
-                            it.optString("literal").takeIf { s -> s.isNotEmpty() }
-                            ?: it.optString("digital")
-                        } ?: "-"
-
-                        subjectsList.add(SubjectModel(name, credit, grade))
-                    }
-                    if (subjectsList.isNotEmpty()) {
-                        result.add(SemesterModel(semName, subjectsList))
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(viewModel.transcriptList) { item ->
+                    Card(elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = item.subject,
+                                modifier = Modifier.weight(2f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = item.credit,
+                                modifier = Modifier.width(40.dp),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = item.total,
+                                modifier = Modifier.width(40.dp),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = item.grade,
+                                modifier = Modifier.width(30.dp),
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
-            semesters = result
-        } catch (e: Exception) {
-            log("Parse Error: ${e.message}")
-        }
-    }
-
-    private fun getStudentIdFromToken(token: String): Long {
-        return try {
-            val parts = token.split(".")
-            if (parts.size < 2) return 0L
-            val payload = String(Base64.decode(parts[1], Base64.URL_SAFE))
-            JSONObject(payload).optLong("sub", 0L)
-        } catch (e: Exception) {
-            0L
         }
     }
 }
