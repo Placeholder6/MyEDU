@@ -118,13 +118,13 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Requesting Key...")
+                log("A. Key...")
                 val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating PDF...")
+                log("B. Generating...")
                 val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, cachedResources!!) { log(it) }
                 
                 val file = File(filesDir, "transcript.pdf")
@@ -132,7 +132,7 @@ class MainViewModel : ViewModel() {
                 log("SAVED: ${file.name}")
                 onPdfReady(file)
             } catch (e: Throwable) { 
-                log("PDF ERROR: ${e.message}") 
+                log("PDF Error: ${e.message}") 
                 e.printStackTrace()
             }
             finally { isBusy = false }
@@ -167,24 +167,6 @@ class MainViewModel : ViewModel() {
     }
 }
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        try {
-            val webGenerator = WebPdfGenerator(this)
-            setContent {
-                MaterialTheme {
-                    Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        MainScreen(webGenerator, filesDir)
-                    }
-                }
-            }
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
-    }
-}
-
 @Composable
 fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
     val viewModel: MainViewModel = viewModel()
@@ -209,7 +191,6 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
             }
         }
         
-        Text("Debug Console", fontWeight = FontWeight.Bold)
         Box(Modifier.height(150.dp).fillMaxWidth().background(Color.Black).padding(4.dp)) {
             LazyColumn(state = state) {
                 items(viewModel.logs) { Text("> $it", color = Color.Green, fontSize = 10.sp) }
