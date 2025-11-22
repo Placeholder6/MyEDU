@@ -56,10 +56,8 @@ class WebPdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            // Valid fallback PNG (1x1 pixel)
+            // Valid PNG fallback
             val fallbackPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-            
-            // Ensure stamp is a valid image data URL, else fallback
             val safeStamp = if (resources.stampBase64.startsWith("data:image")) resources.stampBase64 else fallbackPng
 
             val html = """
@@ -74,12 +72,11 @@ class WebPdfGenerator(private val context: Context) {
                 window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
                 
                 const studentInfo = $studentInfoJson;
-                let transcriptData = $transcriptJson; // Mutable
+                let transcriptData = $transcriptJson; 
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
-                const mt = "$safeStamp"; // Stamp variable used by logic
+                const mt = "$safeStamp"; 
 
-                // --- MOCKS ---
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
                 function K(obj, pathArray) { if(!pathArray) return ''; return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj); }
@@ -96,7 +93,6 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver started.");
 
-                        // CLEAN DATA & CALC STATS
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         
                         if (Array.isArray(transcriptData)) {
@@ -107,23 +103,15 @@ class WebPdfGenerator(private val context: Context) {
                                         const cr = parseInt(sub.credit || 0);
                                         sCred += cr; totalCredits += cr;
                                         
-                                        // FIX EXCESS ZEROS
+                                        // --- FIX: FORCE 2 DECIMAL PLACES ---
                                         if(sub.exam_rule && sub.exam_rule.digital) {
-                                            // Parse, fix float, convert back to string for PDF display
-                                            let dig = parseFloat(sub.exam_rule.digital);
-                                            // The injected logic multiplies by 100, ceils, divides by 100.
-                                            // We pre-clean it so it doesn't get messy.
-                                            sub.exam_rule.digital = dig.toFixed(2); 
-                                            sPoints += (dig * cr);
-                                        }
-                                        // Fix total score excessive precision
-                                        if(sub.mark_list && sub.mark_list.total) {
-                                            let tot = parseFloat(sub.mark_list.total);
-                                            sub.mark_list.total = Math.round(tot).toString(); // Round to int usually
+                                            let val = parseFloat(sub.exam_rule.digital);
+                                            if(!isNaN(val)) {
+                                                sub.exam_rule.digital = val.toFixed(2); 
+                                                sPoints += (val * cr);
+                                            }
                                         }
                                     });
-                                    
-                                    // Recalc GPA to be safe
                                     if(sCred > 0) s.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
                                     else s.gpa = 0;
                                     
