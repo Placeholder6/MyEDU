@@ -75,7 +75,6 @@ class WebPdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const mt = "$validStamp";
 
-                // MOCKS
                 const ${'$'} = function(d) {
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") };
                 };
@@ -98,9 +97,8 @@ class WebPdfGenerator(private val context: Context) {
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver starting...");
+                        AndroidBridge.log("JS: Starting...");
                         
-                        // Stats Calculation
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
@@ -120,18 +118,13 @@ class WebPdfGenerator(private val context: Context) {
                         const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
                         const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-                        if (typeof window.PDFGenerator !== 'function') {
-                            throw "PDFGenerator is undefined. Logic extraction failed.";
-                        }
+                        if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator undefined.";
 
-                        AndroidBridge.log("JS: Calling PDFGenerator...");
+                        AndroidBridge.log("JS: Calling Generator...");
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
-                        
-                        AndroidBridge.log("JS: creating PDF binary...");
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
-                        
                     } catch(e) {
-                        AndroidBridge.returnError("Driver Error: " + e.toString());
+                        AndroidBridge.returnError("Driver: " + e.toString());
                     }
                 }
             </script>
