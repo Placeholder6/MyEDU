@@ -24,22 +24,29 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-data class DocIdRequest(val id: Long)
-data class DocKeyRequest(val key: String)
+// Request Models
+data class DocIdRequest(val id: Long) // Used for form13link
+data class DocKeyRequest(val key: String) // Used for showlink
 
 interface OshSuApi {
+    // 1. Get User Info (to get ID)
     @GET("public/api/searchstudentinfo")
     suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
 
+    // 2. Get Transcript Data (Grades)
+    // Logs show: public/api/studenttranscript?id_student=...&id_movement=...
     @GET("public/api/studenttranscript")
     suspend fun getTranscriptData(
         @Query("id_student") studentId: Long,
         @Query("id_movement") movementId: Long
     ): ResponseBody
 
+    // 3. Get Document Link/Key
+    // Logs show: POST public/api/student/doc/form13link with body {"id": ...}
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
+    // 4. Upload PDF (Skipped for now, but defined for reference)
     @Multipart
     @POST("public/api/student/doc/form13")
     suspend fun uploadPdf(
@@ -48,12 +55,14 @@ interface OshSuApi {
         @Part pdf: MultipartBody.Part
     ): ResponseBody
 
+    // 5. Resolve Link (Skipped for now)
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
 class DebugCookieJar : CookieJar {
     private val cookieStore = ArrayList<Cookie>()
+
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         cookies.forEach { newCookie ->
             val iterator = cookieStore.iterator()
@@ -63,27 +72,57 @@ class DebugCookieJar : CookieJar {
             cookieStore.add(newCookie)
         }
     }
+
     override fun loadForRequest(url: HttpUrl): List<Cookie> = ArrayList(cookieStore)
+
     fun setDebugCookies(token: String) {
         cookieStore.clear()
+        // Clean token if user pasted "Bearer " prefix
         val cleanToken = token.removePrefix("Bearer ").trim()
-        cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("myedu-jwt-token").value(cleanToken).build())
+        
+        // Add the main JWT cookie expected by the server
+        cookieStore.add(
+            Cookie.Builder()
+                .domain("myedu.oshsu.kg")
+                .path("/")
+                .name("myedu-jwt-token")
+                .value(cleanToken)
+                .build()
+        )
+        
+        // Add a timestamp cookie which some systems require
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
-        cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("my_edu_update").value(sdf.format(Date())).build())
+        cookieStore.add(
+            Cookie.Builder()
+                .domain("myedu.oshsu.kg")
+                .path("/")
+                .name("my_edu_update")
+                .value(sdf.format(Date()))
+                .build()
+        )
     }
 }
 
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
     var currentReferer: String = "https://myedu.oshsu.kg/" 
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
+        
+        // Mimic browser headers from your logs
         builder.header("Accept", "application/json, text/plain, */*")
-        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
+        builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Mobile Safari/537.36")
         builder.header("Origin", "https://myedu.oshsu.kg")
         builder.header("Referer", currentReferer)
-        if (authToken != null) builder.header("Authorization", "Bearer ${authToken!!.removePrefix("Bearer ").trim()}")
+        
+        // Inject Authorization header if token is set
+        if (authToken != null) {
+            val tokenVal = authToken!!.removePrefix("Bearer ").trim()
+            builder.header("Authorization", "Bearer $tokenVal")
+        }
+        
         return chain.proceed(builder.build())
     }
 }
@@ -92,9 +131,9 @@ object NetworkClient {
     val cookieJar = DebugCookieJar()
     val interceptor = DebugInterceptor()
     
-    // FIXED: Using main domain instead of 'api' subdomain
+    // API host is api.myedu.oshsu.kg based on logs
     val api: OshSuApi = Retrofit.Builder()
-        .baseUrl("https://myedu.oshsu.kg/") 
+        .baseUrl("https://api.myedu.oshsu.kg/") 
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(interceptor)
