@@ -18,48 +18,75 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Get Index HTML
             logger("Downloading index.html...")
             val indexHtml = fetchString("$baseUrl/")
-            // Find main entry JS: src="/assets/index.HASH.js"
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
-                ?: throw Exception("Main JS not found in HTML")
+                ?: throw Exception("Main JS not found")
             
-            // 2. Get Main JS
-            logger("Downloading Main JS: $mainJsName")
+            logger("Found Main JS: $mainJsName")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-
-            // 3. Find Transcript JS inside Main JS
-            // It looks like: import("./Transcript.HASH.js")
-            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
-                ?: throw Exception("Transcript module not found in Index JS")
             
-            logger("Found Transcript module: $transcriptJsName")
-
-            // 4. Download Transcript JS
+            // Find Transcript chunk
+            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
+                ?: throw Exception("Transcript JS not found in index.js")
+            
+            logger("Found Transcript JS: $transcriptJsName")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 5. Sanitize Code (Remove imports/exports)
-            // This allows the code to run in a simple WebView script tag
-            val originalLen = transcriptJsContent.length
-            transcriptJsContent = transcriptJsContent
-                .replace(Regex("""import\s+.*?from\s+['"].*?['"];?"""), "") // Remove imports
-                .replace(Regex("""export\s+default"""), "const TranscriptModule =") // Convert export default
-                .replace(Regex("""export\s+\{.*?\}"""), "") // Remove named exports
+            // --- FIX START: GENERATE DUMMY VARIABLES ---
+            // 1. Extract all imported names: import { d as at, Y as lt } from ...
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
+            val allImports = importRegex.findAll(transcriptJsContent)
             
-            logger("Sanitized JS (${originalLen} -> ${transcriptJsContent.length} chars)")
+            val varsToMock = mutableSetOf<String>()
+            allImports.forEach { match ->
+                val content = match.groupValues[1]
+                val parts = content.split(",")
+                parts.forEach { part ->
+                    val trimmed = part.trim()
+                    if (trimmed.contains(" as ")) {
+                        varsToMock.add(trimmed.split(" as ")[1].trim())
+                    } else if (trimmed.isNotEmpty()) {
+                        varsToMock.add(trimmed)
+                    }
+                }
+            }
 
-            // 6. Try to find Stamp (Signed.js)
-            // This is optional but nice to have. It might be in Main JS.
+            // Exclude vars we manually mock in WebPdfGenerator
+            val manualMocks = setOf("J", "U", "K", "$", "mt")
+            varsToMock.removeAll(manualMocks)
+
+            // Generate JS code that defines these as dummies
+            val dummyDecl = StringBuilder()
+            dummyDecl.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
+            
+            if (varsToMock.isNotEmpty()) {
+                dummyDecl.append("var ")
+                dummyDecl.append(varsToMock.joinToString(", ") { "$it = UniversalDummy" })
+                dummyDecl.append(";\n")
+            }
+            // --- FIX END ---
+
+            // 2. Sanitize Code: Remove imports/exports
+            transcriptJsContent = transcriptJsContent
+                .replace(Regex("""import\s+.*?from\s+['"].*?['"];?"""), "")
+                .replace(Regex("""export\s+default"""), "const TranscriptModule =")
+                .replace(Regex("""export\s+\{.*?\}"""), "")
+
+            // Prepend the dummies
+            val finalScript = dummyDecl.toString() + "\n" + transcriptJsContent
+            
+            logger("Prepared JS: ${finalScript.length} chars (Dummies: ${varsToMock.size})")
+
+            // 3. Fetch Stamp (Optional)
             var stampBase64 = ""
             val signedJsName = findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
             if (signedJsName != null) {
-                logger("Downloading Stamp from: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
                 stampBase64 = findMatch(signedContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") ?: ""
             }
 
-            return@withContext PdfResources(stampBase64, transcriptJsContent)
+            return@withContext PdfResources(stampBase64, finalScript)
 
         } catch (e: Exception) {
             logger("Fetch Failed: ${e.message}")
