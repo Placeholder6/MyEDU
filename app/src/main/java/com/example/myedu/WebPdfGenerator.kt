@@ -76,11 +76,62 @@ class WebPdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const mt = "$safeStamp"; 
 
+                // --- REAL LOGIC FROM UPLOADED FILES ---
+
+                // from helpers.js (Name Formatter)
+                const ct = (...e) => {
+                    let t = "";
+                    e.forEach(a => {
+                        // Check for "null" string and undefined
+                        if (a && a !== "null") t += a + " ";
+                    });
+                    return t.trim();
+                };
+
+                // from PdfStyle.js
+                const J = {
+                    header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
+                    subheader: { fontSize: 16, bold: true, margin: [0, 10, 0, 5] },
+                    tableExample: { margin: [0, 5, 0, 20] },
+                    tableHeader: { bold: true, fontSize: 13, color: "black" },
+                    textLeft: { alignment: "left" },
+                    textRight: { alignment: "right" },
+                    quote: { italics: true },
+                    fb: { bold: true },
+                    f0: { fontSize: 0 }, f2: { fontSize: 2 }, f4: { fontSize: 4 }, f6: { fontSize: 6 }, f65: { fontSize: 6.5 },
+                    f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 },
+                    f12: { fontSize: 12 }, f13: { fontSize: 13 }, f14: { fontSize: 14 }, f15: { fontSize: 15 }, f16: { fontSize: 16 },
+                    f18: { fontSize: 18 }, f20: { fontSize: 20 }, f22: { fontSize: 22 }, f24: { fontSize: 23 },
+                    c1: { color: "#000" }, c2: { color: "#222" }, c3: { color: "#444" }, c4: { color: "#666" },
+                    c5: { color: "#888" }, c6: { color: "#aaa" }, c7: { color: "#ccc" }, c8: { color: "#eee" },
+                    small: { fontSize: 8 },
+                    footLTitle: { color: "#333", fontSize: 8, margin: [40, 0, 0, 0] },
+                    footRTitle: { color: "#333", fontSize: 8, margin: [0, 0, 40, 0], alignment: "right" },
+                    textCenter: { alignment: "center" },
+                    textJustify: { alignment: "justify" },
+                    italic: { italics: true },
+                    l2: { margin: [0, 5, 0, 0] },
+                    px1: { margin: [5, 0, 5, 0] },
+                    px2: { margin: [10, 0, 10, 0] },
+                    colorFFF: { color: "#fff" }
+                };
+
+                // from PdfFooter4.js
+                const U = (t, e) => ({
+                    columns: [
+                        { text: `MYEDU ${'$'}{new Date().toLocaleDateString()}`, style: ["footLTitle"] },
+                        { text: `Страница ${'$'}{t.toString()} из ${'$'}{e}`, style: ["footRTitle"] }
+                    ],
+                    margin: [0, 0, -15, 0]
+                });
+
+                // from KeysValue.js
+                const K = (n, e) => e.length == 0 ? n : n[e[0]] != null ? K(n[e[0]], e.slice(1)) : "";
+
+                // Basic Mocks
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
-                function K(obj, pathArray) { if(!pathArray) return ''; return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj); }
-                const U = (cp, pc) => ({ margin: [40, 0, 25, 0], columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] });
-                const J = { textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' }, fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 }, l2: {}, tableExample: { margin: [0, 5, 0, 15] } };
+
             </script>
             <script>
                 try {
@@ -92,8 +143,8 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver started.");
 
-                        // FIX: Excess Zeros
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
+                        
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
                                 if(y.semesters) y.semesters.forEach(s => {
@@ -102,13 +153,18 @@ class WebPdfGenerator(private val context: Context) {
                                         const cr = parseInt(sub.credit || 0);
                                         sCred += cr; totalCredits += cr;
                                         
-                                        // Round Digital Score
+                                        // FIX EXCESS ZEROS
                                         if(sub.exam_rule && sub.exam_rule.digital) {
-                                            let d = parseFloat(sub.exam_rule.digital);
-                                            if(!isNaN(d)) sub.exam_rule.digital = d.toFixed(2); 
-                                            sPoints += (d * cr);
+                                            let dig = parseFloat(sub.exam_rule.digital);
+                                            sub.exam_rule.digital = dig.toFixed(2); 
+                                            sPoints += (dig * cr);
+                                        }
+                                        if(sub.mark_list && sub.mark_list.total) {
+                                            let tot = parseFloat(sub.mark_list.total);
+                                            sub.mark_list.total = Math.round(tot).toString(); 
                                         }
                                     });
+                                    
                                     if(sCred > 0) s.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
                                     else s.gpa = 0;
                                     
