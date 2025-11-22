@@ -1,5 +1,6 @@
 package com.example.myedu
 
+import android.util.Log
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
@@ -8,8 +9,7 @@ import java.util.regex.Pattern
 
 data class PdfResources(
     val stampBase64: String,
-    val logicCode: String,
-    val mainFuncName: String
+    val logicCode: String
 )
 
 class JsResourceFetcher {
@@ -19,76 +19,51 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Get Index HTML to find the main entry point JS
+            // 1. Get Index HTML to find main JS
             val indexHtml = fetchString("$baseUrl/")
-            
-            // Regex to find: src="/assets/index.HASH.TIMESTAMP.js"
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
-                ?: throw Exception("Main JS file not found in index.html")
+                ?: throw Exception("Main JS not found")
             
-            // 2. Get Main JS content
+            // 2. Get Main JS content to find Transcript JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
+            
+            // Look for Transcript import in the main bundle
+            // Pattern matches: import("./Transcript.1ba68965.1762755934747.js")
+            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
+                ?: throw Exception("Transcript JS not found in index.js")
 
-            // 3. Find Transcript JS filename inside Main JS
-            // The app splits code, so Main JS contains references like "./Transcript.HASH.js"
-            val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"']+\.js)""")
-                ?: throw Exception("Transcript JS module not found in index.js")
-            
-            // 4. Find Signed JS filename (contains the stamp image)
-            // It might be in Main JS or Transcript JS
-            var signedJsName = findMatch(mainJsContent, """(Signed\.[^"']+\.js)""")
-            
-            // 5. Get Transcript JS Content
-            val transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
-            
-            // If Signed JS wasn't in Main, check Transcript JS
-            if (signedJsName == null) {
-                signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"']+\.js)""")
-                    ?: throw Exception("Signed JS module not found")
+            // 3. Fetch Transcript JS Content
+            var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
+
+            // 4. Sanitize Transcript JS for WebView usage
+            // Remove imports and exports so it runs as a standard script
+            transcriptJsContent = transcriptJsContent
+                .replace(Regex("""import\s+.*?from\s+['"].*?['"];?"""), "")
+                .replace(Regex("""export\s+default"""), "const TranscriptModule =")
+                .replace(Regex("""export\s+\{.*?\}"""), "")
+
+            // 5. Fetch Stamp (Optional - usually in Signed.js or encoded in Transcript)
+            // We try to find Signed.js in the main bundle just in case
+            var stampBase64 = ""
+            val signedJsName = findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
+            if (signedJsName != null) {
+                 val signedJsContent = fetchString("$baseUrl/assets/$signedJsName")
+                 stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") ?: ""
             }
 
-            // 6. Get Stamp Image from Signed JS
-            // Looks for "data:image/..." string
-            val signedJsContent = fetchString("$baseUrl/assets/$signedJsName")
-            val stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""")
-                ?: ""
-
-            // 7. Extract the PDF generation logic from Transcript JS
-            // We look for the variable where the logic starts (often 'const yt=' or similar minified name)
-            // and where the export definition starts.
-            // NOTE: These markers ("const yt=" and "export{") are heuristic based on common Vite/Rollup builds.
-            // You may need to adjust "const yt=" if the minification changes variable names.
-            val startMarker = "const yt=" 
-            val endMarker = "export{"
-            val startIndex = transcriptJsContent.indexOf(startMarker)
-            val endIndex = transcriptJsContent.lastIndexOf(endMarker)
-
-            val logicCode = if (startIndex != -1 && endIndex != -1) {
-                 transcriptJsContent.substring(startIndex, endIndex)
-            } else {
-                // Fallback: pass whole file if specific block not found (might be messy but functional)
-                transcriptJsContent
-            }
-
-            // 8. Find the main function name used to export the logic
-            // Look for pattern: const FunctionName = (arg1, arg2, arg3, arg4)
-            // In your logs/code it seemed to be "Y" or similar short variable.
-            val mainFuncMatch = findMatch(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)""")
-                ?: "Y" // Default fallback
-
-            return@withContext PdfResources(stampBase64, logicCode, mainFuncMatch)
+            return@withContext PdfResources(stampBase64, transcriptJsContent)
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Return empty/default resources so app doesn't crash, just fails to generate PDF
-            PdfResources("", "", "") 
+            // Return dummy data so app doesn't crash, but PDF will likely fail
+            PdfResources("", "// JS Fetch Failed: ${e.message}")
         }
     }
 
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("Failed to fetch $url: ${response.code}")
+            if (!response.isSuccessful) throw Exception("Failed to fetch $url")
             return response.body?.string() ?: ""
         }
     }
@@ -96,7 +71,6 @@ class JsResourceFetcher {
     private fun findMatch(content: String, regex: String): String? {
         val matcher = Pattern.compile(regex).matcher(content)
         return if (matcher.find()) {
-            // Return the capture group if available, otherwise the whole match
             if (matcher.groupCount() >= 1) matcher.group(1) else matcher.group(0)
         } else {
             null
