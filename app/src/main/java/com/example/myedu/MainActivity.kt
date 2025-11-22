@@ -87,7 +87,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                log("1. Resources...")
+                log("1. JS Resources...")
                 cachedResources = jsFetcher.fetchResources { log(it) }
 
                 log("2. Student Info...")
@@ -98,12 +98,16 @@ class MainViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(sId).string()
                 }
                 
-                // --- FIX: NAME CLEANING ---
+                // --- FIX: CLEAN NULL NAMES ---
                 val infoJson = JSONObject(infoRaw)
+                
+                // Helper to strip "null" strings returned by API
                 fun clean(key: String): String {
                     val v = infoJson.optString(key, "")
-                    return if (v == "null") "" else v
+                    return if (v == "null" || v == "null ") "" else v
                 }
+                
+                // We construct it here for logging, but the JS will also reconstruct it using helpers.js logic
                 val fullName = "${clean("last_name")} ${clean("name")} ${clean("father_name")}".trim()
                 infoJson.put("fullName", fullName)
                 
@@ -114,7 +118,6 @@ class MainViewModel : ViewModel() {
                 log("Student: $fullName")
 
                 log("3. Grades...")
-                // Fix: Use correct movementId variable
                 val transcriptRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptData(sId, movementId).string()
                 }
@@ -137,13 +140,13 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Key...")
+                log("A. Document Key...")
                 val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating...")
+                log("B. Generating PDF...")
                 val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, cachedResources!!) { log(it) }
                 
                 val file = File(filesDir, "transcript.pdf")
@@ -158,24 +161,18 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    private fun parseAndDisplayTranscript(jsonString: String) {
+    private fun parseAndDisplayTranscript(json: String) {
         try {
             val items = mutableListOf<TranscriptItem>()
-            val arr = JSONArray(jsonString)
-
+            val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
-                val yearObj = arr.optJSONObject(i)
-                val sems = yearObj?.optJSONArray("semesters") ?: continue
-                
+                val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
                 for (j in 0 until sems.length()) {
-                    val semObj = sems.optJSONObject(j)
-                    val subs = semObj?.optJSONArray("subjects") ?: continue
-                    
+                    val subs = sems.optJSONObject(j)?.optJSONArray("subjects") ?: continue
                     for (k in 0 until subs.length()) {
                         val sub = subs.optJSONObject(k)
-                        
-                        val name = sub.optString("subject", "Unknown")
-                        val credit = sub.optString("credit", "0")
+                        val name = sub.optString("subject", "?")
+                        val cr = sub.optString("credit", "0")
                         val mark = sub.optJSONObject("mark_list")
                         val rule = sub.optJSONObject("exam_rule")
                         
@@ -183,12 +180,11 @@ class MainViewModel : ViewModel() {
                             ?: mark?.optString("total") ?: "-"
                         val grade = rule?.optString("alphabetic") ?: "-"
                         
-                        items.add(TranscriptItem(name, credit, total, grade))
+                        items.add(TranscriptItem(name, cr, total, grade))
                     }
                 }
             }
             transcriptList.addAll(items)
-            log("Parsed ${items.size} grades.")
         } catch (e: Exception) { log("Parse Error: ${e.message}") }
     }
 }
@@ -230,13 +226,8 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
         
         LazyColumn(Modifier.weight(1f)) {
             items(viewModel.transcriptList) { t -> 
-                Row(Modifier.padding(vertical = 4.dp)) {
-                    Text(t.subject, Modifier.weight(1f), fontSize = 12.sp)
-                    Text(t.credit, Modifier.width(30.dp), fontSize = 12.sp)
-                    Text(t.total, Modifier.width(30.dp), fontSize = 12.sp)
-                    Text(t.grade, Modifier.width(30.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                }
-                Divider(thickness = 0.5.dp, color = Color.LightGray)
+                Text("${t.subject} | ${t.credit} | ${t.total} | ${t.grade}", fontSize = 12.sp)
+                Divider()
             }
         }
         
