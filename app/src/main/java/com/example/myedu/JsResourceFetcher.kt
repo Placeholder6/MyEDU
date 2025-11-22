@@ -6,10 +6,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.regex.Pattern
 
+// This Data Class must match what WebPdfGenerator uses
 data class PdfResources(
     val stampBase64: String,
-    val logicCode: String,    // The full block of code from the server
-    val mainFuncName: String  // The name of the function to call (e.g. "Y")
+    val logicCode: String,    // Contains the full 'yt' and 'Y' functions
+    val mainFuncName: String  // The dynamic name of the main function (e.g. 'Y')
 )
 
 class JsResourceFetcher {
@@ -19,10 +20,10 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Find Main JS (Handles timestamps in filename)
+            // 1. Find Main JS (Handles timestamps like index.654edb4d.1762755934747.js)
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
-                ?: throw Exception("Main JS not found")
+                ?: throw Exception("Main JS not found in index.html")
             
             // 2. Find Transcript JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
@@ -42,25 +43,28 @@ class JsResourceFetcher {
                 ?: ""
 
             // 6. Extract Logic Block
-            // We grab from "const yt=" (table logic) down to "export"
+            // We grab everything from "const yt=" down to "export"
+            // This copies the exact PDF generation logic from the server.
             val startMarker = "const yt="
             val endMarker = "export{"
             val startIndex = transcriptJsContent.indexOf(startMarker)
             val endIndex = transcriptJsContent.lastIndexOf(endMarker)
 
-            if (startIndex == -1 || endIndex == -1) throw Exception("Logic block not found")
+            if (startIndex == -1 || endIndex == -1) {
+                // Fallback for safety if file format changes drastically
+                return@withContext PdfResources(stampBase64, "", "Y") 
+            }
             val logicCode = transcriptJsContent.substring(startIndex, endIndex)
 
             // 7. Find Main Function Name dynamically
-            // It has the signature: const Y = (C, a, c, d) =>
+            // Looks for: const Y = (C, a, c, d)
             val mainFuncMatch = findMatch(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)""") 
-                ?: "Y" // Fallback to 'Y' if regex fails
+                ?: "Y"
 
             return@withContext PdfResources(stampBase64, logicCode, mainFuncMatch)
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Return empty safety object to prevent crash
             return@withContext PdfResources("", "", "Y")
         }
     }

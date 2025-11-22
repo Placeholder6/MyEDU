@@ -12,6 +12,11 @@ import kotlin.coroutines.resumeWithException
 
 class WebPdfGenerator(private val context: Context) {
 
+    interface PdfCallback {
+        fun onPdfGenerated(base64: String)
+        fun onError(error: String)
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun generatePdf(
         studentInfoJson: String,
@@ -57,7 +62,8 @@ class WebPdfGenerator(private val context: Context) {
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-
+        
+        // We use ${'$'} to escape dollar signs in Kotlin string templates
         return """
 <!DOCTYPE html>
 <html>
@@ -73,9 +79,9 @@ class WebPdfGenerator(private val context: Context) {
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
     
-    // --- MOCKS ---
+    // --- MOCKS (Dependencies required by the fetched code) ---
     
-    // 1. Mock 'moment.js'
+    // Mock 'moment.js'
     const ${'$'} = function(d) {
         return {
             format: function(fmt) {
@@ -86,12 +92,12 @@ class WebPdfGenerator(private val context: Context) {
     };
     ${'$'}.locale = function() {};
 
-    // 2. Mock 'KeysValue.js'
+    // Mock 'KeysValue.js'
     function K(obj, pathArray) {
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
 
-    // 3. Mock 'PdfFooter4.js'
+    // Mock 'PdfFooter4.js'
     const U = function(currentPage, pageCount) {
         return { 
             margin: [40, 0, 25, 0],
@@ -102,10 +108,10 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
 
-    // 4. Mock 'Signed.js'
+    // Mock 'Signed.js'
     const mt = "$validStamp";
 
-    // 5. Mock 'PdfStyle.js'
+    // Mock 'PdfStyle.js'
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -120,15 +126,14 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- INJECT FETCHED LOGIC ---
-    ${res.tableGenCode}
-
-    ${res.docDefCode}
+    // --- INJECTED LOGIC FROM SERVER ---
+    // This injects the "const yt = ..." block we fetched
+    ${res.logicCode}
 
     // --- DRIVER LOGIC ---
     function startGeneration() {
         try {
-            // 1. Calculate Stats
+            // 1. Calculate Stats (Recreating 'W' logic)
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
@@ -144,7 +149,7 @@ class WebPdfGenerator(private val context: Context) {
                             sPoints += (parseFloat(sub.exam_rule.digital) * cr);
                         }
                     });
-                    if(sCred > 0) sem.gpa = (sPoints / sCred).toFixed(2);
+                    if(sCred > 0) sem.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
                     else sem.gpa = 0;
                     
                     if(parseFloat(sem.gpa) > 0) {
@@ -153,12 +158,13 @@ class WebPdfGenerator(private val context: Context) {
                     }
                 });
             });
-            const avgGpa = gpaCount > 0 ? (gpaSum / gpaCount).toFixed(2) : 0;
+            
+            const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
             const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-            // 2. Call Fetched Function
-            // We use eval here because the function name is dynamic (e.g. 'Y' or 'a1')
-            const docFunc = eval("${res.docDefName}");
+            // 2. Call Fetched Function using Dynamic Name
+            // Uses 'eval' to call the function by name (e.g. 'Y')
+            const docFunc = eval("${res.mainFuncName}");
             const docDef = docFunc(transcriptData, studentInfo, stats, qrCodeUrl);
             
             // 3. Generate
