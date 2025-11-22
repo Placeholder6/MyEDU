@@ -67,7 +67,7 @@ class WebPdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
                 
                 const studentInfo = $studentInfoJson;
                 const transcriptData = $transcriptJson;
@@ -75,43 +75,27 @@ class WebPdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const mt = "$validStamp";
 
-                const ${'$'} = function(d) {
-                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") };
-                };
+                // MOCKS
+                const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
-
-                function K(obj, pathArray) {
-                    if(!pathArray) return '';
-                    return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
-                }
-
-                const U = (cp, pc) => ({ 
-                    margin: [40, 0, 25, 0],
-                    columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] 
-                });
-
-                const J = {
-                    textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' },
-                    fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 },
-                    l2: {}, tableExample: { margin: [0, 5, 0, 15] }
-                };
+                function K(obj, pathArray) { if(!pathArray) return ''; return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj); }
+                const U = (cp, pc) => ({ margin: [40, 0, 25, 0], columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] });
+                const J = { textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' }, fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 }, l2: {}, tableExample: { margin: [0, 5, 0, 15] } };
             </script>
-
             <script>
                 try {
                     ${resources.logicCode}
                     AndroidBridge.log("JS: Logic injected.");
                 } catch(e) {
-                    AndroidBridge.returnError("Logic Injection Failed: " + e.message);
+                    AndroidBridge.returnError("JS Injection Error: " + e.message);
                 }
             </script>
-
             <script>
                 function startGeneration() {
                     try {
                         AndroidBridge.log("JS: Starting...");
                         
-                        // Stats
+                        // Calc Stats
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
@@ -131,16 +115,11 @@ class WebPdfGenerator(private val context: Context) {
                         const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
                         const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-                        if (typeof window.PDFGenerator !== 'function') {
-                            throw "PDFGenerator is undefined. Logic extraction failed.";
-                        }
+                        if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator not defined";
 
                         AndroidBridge.log("JS: Calling Generator...");
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
-                        
-                        AndroidBridge.log("JS: Creating PDF...");
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
-                        
                     } catch(e) {
                         AndroidBridge.returnError("Driver: " + e.toString());
                     }
@@ -149,13 +128,12 @@ class WebPdfGenerator(private val context: Context) {
             </body>
             </html>
             """
-
+            
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     webView.evaluateJavascript("startGeneration();", null)
                 }
             }
-            
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
         }
     }
