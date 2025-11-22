@@ -18,7 +18,7 @@ class WebPdfGenerator(private val context: Context) {
         transcriptJson: String,
         linkId: Long,
         qrUrl: String,
-        resources: PdfResources // <--- Dynamic Resources
+        resources: PdfResources
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
         android.os.Handler(android.os.Looper.getMainLooper()).post {
@@ -56,8 +56,11 @@ class WebPdfGenerator(private val context: Context) {
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
-        // Valid Stamp or Transparent Pixel
+        // Use fetched stamp or fallback pixel
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+        // Escape $ for Kotlin string templates
+        val $ = "$"
 
         return """
 <!DOCTYPE html>
@@ -68,32 +71,31 @@ class WebPdfGenerator(private val context: Context) {
 </head>
 <body>
 <script>
-    // --- INPUT DATA ---
+    // --- INPUTS ---
     const studentInfo = $info;
     const transcriptData = $transcript;
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
     
-    // --- MOCKS (Dependencies used by fetched code) ---
+    // --- MOCKS (Dependencies required by the fetched code) ---
     
-    // Mock 'moment.js': $(date).format("L") -> DD.MM.YYYY
+    // 1. Mock 'moment.js' ($)
     const $ = function(d) {
         return {
             format: function(fmt) {
-                const date = new Date(d);
+                const date = d ? new Date(d) : new Date();
                 return date.toLocaleDateString("ru-RU");
             }
         };
     };
-    // Add locale method to satisfy $.locale("ru", T) call if present
     $.locale = function() {};
 
-    // Mock 'KeysValue.js': K(obj, ['path', 'to', 'val'])
+    // 2. Mock 'KeysValue.js' (K)
     function K(obj, pathArray) {
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
 
-    // Mock 'PdfFooter4.js': U(page, total)
+    // 3. Mock 'PdfFooter4.js' (U)
     const U = function(currentPage, pageCount) {
         return { 
             margin: [40, 0, 25, 0],
@@ -104,10 +106,10 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
 
-    // Mock 'Signed.js' (We inject the image here)
+    // 4. Mock 'Signed.js' (mt) - This variable name comes from the minified code
     const mt = "$validStamp";
 
-    // Mock 'PdfStyle.js' (J)
+    // 5. Mock 'PdfStyle.js' (J)
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -122,19 +124,15 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- INJECTED FETCHED LOGIC ---
-    
-    // 1. Table Generator Function (yt)
-    ${res.tableGenCode}
-
-    // 2. Document Definition Function (Y)
-    ${res.docDefCode}
+    // --- INJECT FETCHED LOGIC HERE ---
+    // This inserts the 'const yt=...' and 'const Y=...' code directly from the server
+    ${res.logicCode}
 
     // --- DRIVER LOGIC ---
     function startGeneration() {
         try {
-            // 1. Calculate GPA (Recreating 'W' logic briefly here or relying on injected code if it was complete)
-            // Since 'W' is inside setup(), we replicate the calculation:
+            // 1. Calculate Stats (Credits, GPA)
+            // We recreate the 'W' logic from the original script here for safety
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
@@ -150,7 +148,6 @@ class WebPdfGenerator(private val context: Context) {
                             sPoints += (parseFloat(sub.exam_rule.digital) * cr);
                         }
                     });
-                    // Calc Sem GPA
                     if(sCred > 0) sem.gpa = (sPoints / sCred).toFixed(2);
                     else sem.gpa = 0;
                     
@@ -163,13 +160,11 @@ class WebPdfGenerator(private val context: Context) {
             const avgGpa = gpaCount > 0 ? (gpaSum / gpaCount).toFixed(2) : 0;
             const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-            // 2. Call the Extracted Function (Dynamic Name)
-            // The fetched code defined: const ${res.docDefName} = ...
-            // So we call window["${res.docDefName}"]
-            const docFunc = eval("${res.docDefName}"); // Safest way to access var by string name in local scope
+            // 2. Call the Fetched 'Y' function
+            // The extracted code defines 'const Y = ...' so it is available here.
+            const docDef = Y(transcriptData, studentInfo, stats, qrCodeUrl);
             
-            const docDef = docFunc(transcriptData, studentInfo, stats, qrCodeUrl);
-            
+            // 3. Create and Return
             pdfMake.createPdf(docDef).getBase64(function(encoded) {
                 AndroidBridge.returnPdf(encoded);
             });

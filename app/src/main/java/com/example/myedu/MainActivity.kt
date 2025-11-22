@@ -68,7 +68,7 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING DYNAMIC GENERATION ---")
+            log("--- STARTING AUTOMATION ---")
             
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
@@ -76,10 +76,14 @@ class DebugViewModel : ViewModel() {
             log("Configured.")
 
             try {
-                // 0. FETCH DYNAMIC RESOURCES (JS Logic + Stamp)
-                log(">>> STEP 0: Fetching JS & Assets...")
+                // 0. FETCH DYNAMIC RESOURCES
+                log(">>> STEP 0: Fetching JS Logic from Server...")
                 val resources = jsFetcher.fetchResources()
-                log("✔ Resources Fetched: ${resources.tableGenName} & Stamp")
+                if (resources.logicCode.isNotEmpty()) {
+                    log("✔ JS Logic Found")
+                } else {
+                    log("! JS Logic missing (Check regex)")
+                }
 
                 // 1. INFO
                 val studentId = getStudentIdFromToken(token)
@@ -108,15 +112,15 @@ class DebugViewModel : ViewModel() {
                 val qrUrl = keyJson.optString("url")
                 log("✔ Key: $key")
 
-                // 4. GENERATE PDF
-                log(">>> STEP 4: Generating PDF (JS Engine)...")
+                // 4. GENERATE PDF (Injecting Server Code)
+                log(">>> STEP 4: Generating PDF...")
                 
                 val pdfBytes = webGenerator.generatePdf(
                     infoRaw, 
                     transcriptJsonRaw, 
                     linkId, 
                     qrUrl,
-                    resources // <--- PASSING THE DYNAMIC RESOURCES
+                    resources
                 )
                 
                 log("✔ PDF Generated: ${pdfBytes.size} bytes")
@@ -153,7 +157,7 @@ class DebugViewModel : ViewModel() {
                 if (url.isNotEmpty()) {
                     log("✅ FINAL URL: $url")
                 } else {
-                    log("!!! FAIL: JSON valid but URL empty.")
+                    log("!!! FAIL: URL empty")
                 }
 
             } catch (e: Exception) {
@@ -188,7 +192,7 @@ fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel())
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU AUTO-UPDATER", color = Color.Cyan)
+        Text("MYEDU JS ENGINE", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = tokenInput, 
