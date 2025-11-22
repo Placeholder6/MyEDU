@@ -49,16 +49,14 @@ class WebPdfGenerator(private val context: Context) {
 
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("Web Error: $msg"))
+                    if (continuation.isActive) continuation.resumeWithException(Exception("JS: $msg"))
                 }
                 
                 @JavascriptInterface
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            // 1x1 Transparent PNG Fallback
-            val fallbackPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-            val validStamp = if (resources.stampBase64.length > 50) resources.stampBase64 else fallbackPng
+            val validStamp = if (resources.stampBase64.length > 50) resources.stampBase64 else "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
 
             val html = """
             <!DOCTYPE html>
@@ -69,54 +67,34 @@ class WebPdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                window.onerror = function(msg, url, line) { 
-                    AndroidBridge.returnError(msg + " @ Line " + line); 
-                };
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
                 
                 const studentInfo = $studentInfoJson;
                 const transcriptData = $transcriptJson;
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
-                
-                // Inject Stamp (sanitized)
-                let mt = "$validStamp";
-                if (!mt.startsWith("data:image")) mt = "$fallbackPng";
+                const mt = "$validStamp";
 
-                // Environment Mocks
-                const ${'$'} = function(d) {
-                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") };
-                };
+                const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
-
-                function K(obj, pathArray) {
-                    if(!pathArray) return '';
-                    return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
-                }
-
-                const U = (cp, pc) => ({ 
-                    margin: [40, 0, 25, 0],
-                    columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] 
-                });
-
-                const J = {
-                    textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' },
-                    fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 },
-                    l2: {}, tableExample: { margin: [0, 5, 0, 15] }
-                };
+                function K(obj, pathArray) { if(!pathArray) return ''; return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj); }
+                const U = (cp, pc) => ({ margin: [40, 0, 25, 0], columns: [{ text: 'MYEDU ' + new Date().toLocaleDateString("ru-RU"), fontSize: 8 }, { text: 'Страница ' + cp + ' из ' + pc, alignment: 'right', fontSize: 8 }] });
+                const J = { textCenter: { alignment: 'center' }, textRight: { alignment: 'right' }, textLeft: { alignment: 'left' }, fb: { bold: true }, f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 }, l2: {}, tableExample: { margin: [0, 5, 0, 15] } };
             </script>
-
+            
             <script>
-                AndroidBridge.log("JS: Injecting logic...");
-                ${resources.logicCode}
-                AndroidBridge.log("JS: Logic injected.");
+                try {
+                    ${resources.logicCode}
+                } catch(e) {
+                    AndroidBridge.returnError("Injection: " + e.message);
+                }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver started...");
+                        AndroidBridge.log("JS: Started.");
                         
-                        // Calculate Stats
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
@@ -136,19 +114,15 @@ class WebPdfGenerator(private val context: Context) {
                         const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
                         const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-                        // Check Generator
-                        if (typeof window.PDFGenerator !== 'function') {
-                            throw "window.PDFGenerator is undefined! Logic injection likely failed or variable name changed.";
-                        }
+                        if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator undefined";
 
-                        AndroidBridge.log("JS: Generating definition...");
+                        AndroidBridge.log("JS: Calling PDFGenerator...");
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
                         
-                        AndroidBridge.log("JS: Creating PDF binary...");
+                        AndroidBridge.log("JS: Encoding PDF...");
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
-                        
                     } catch(e) {
-                        AndroidBridge.returnError("Driver Error: " + e.toString());
+                        AndroidBridge.returnError("Driver: " + e.toString());
                     }
                 }
             </script>
