@@ -1,7 +1,6 @@
 package com.example.myedu
 
 import android.os.Bundle
-import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -22,16 +21,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
-import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import retrofit2.HttpException
-import java.io.File
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,19 +37,7 @@ class DebugViewModel : ViewModel() {
         logs += "[$time] $msg\n"
     }
 
-    private fun getStudentIdFromToken(token: String): Long {
-        try {
-            val parts = token.split(".")
-            if (parts.size < 2) return 0L
-            val payload = String(Base64.decode(parts[1], Base64.URL_SAFE))
-            val json = JSONObject(payload)
-            return json.optLong("sub", 0L)
-        } catch (e: Exception) {
-            return 0L
-        }
-    }
-
-    fun runDebug(tokenString: String, webGenerator: WebPdfGenerator, filesDir: File) {
+    fun runDebug(tokenString: String, webGenerator: WebPdfGenerator) {
         if (tokenString.isBlank()) {
             log("Error: Token is empty.")
             return
@@ -66,83 +46,31 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING JS ENGINE GENERATION ---")
-            
-            NetworkClient.cookieJar.setDebugCookies(token)
-            NetworkClient.interceptor.authToken = token
-            NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/"
-            log("Configured.")
+            log("--- STARTING AUTOMATION ---")
+            log("Loading website in background...")
 
             try {
-                // 1. INFO
-                val studentId = getStudentIdFromToken(token)
-                if (studentId == 0L) { log("!!! FAIL: Bad Token"); return@launch }
-                
-                val infoRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getStudentInfo(studentId).string()
-                }
-                val infoJson = JSONObject(infoRaw)
-                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                log("✔ Student Loaded")
+                // STEP 1: Automate the Website
+                // This loads the real site, clicks the button, and waits for the success redirect.
+                val key = webGenerator.generateAndUpload(token)
+                log("✔ Website Success! Key: $key")
 
-                // 2. DATA
-                val transcriptJsonRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(studentId, movementId).string()
-                }
-                log("✔ Data Loaded (${transcriptJsonRaw.length} chars)")
-
-                // 3. KEY
-                val step1Raw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
-                }
-                val keyJson = JSONObject(step1Raw)
-                val key = keyJson.optString("key")
-                val linkId = keyJson.optLong("id")
-                val qrUrl = keyJson.optString("url")
-                log("✔ Key: $key")
-
-                // 4. GENERATE PDF (USING WEBVIEW JS ENGINE)
-                log(">>> STEP 4: Running JS Generation Logic...")
-                val pdfBytes = webGenerator.generatePdf(infoRaw, transcriptJsonRaw, linkId, qrUrl)
-                log("✔ JS Generated PDF: ${pdfBytes.size} bytes")
-
-                // Save to temp file
-                val pdfFile = File(filesDir, "transcript.pdf")
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(pdfFile).use { it.write(pdfBytes) }
-                }
-
-                // 5. UPLOAD
-                log(">>> STEP 5: Uploading PDF...")
-                NetworkClient.interceptor.currentReferer = "https://myedu.oshsu.kg/#/document/$key"
-                
-                val plainType = "text/plain".toMediaTypeOrNull()
-                val pdfType = "application/pdf".toMediaTypeOrNull()
-
-                val idBody = linkId.toString().toRequestBody(plainType)
-                val studentBody = studentId.toString().toRequestBody(plainType)
-                
-                val fileReq = pdfBytes.toRequestBody(pdfType)
-                val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileReq)
-
-                val step2Raw = withContext(Dispatchers.IO) {
-                    // Using uploadPdf (Browser mimic style)
-                    NetworkClient.api.uploadPdf(idBody, studentBody, pdfPart).string()
-                }
-                log("✔ UPLOAD RESPONSE: $step2Raw")
-
-                delay(2000)
-
-                // 6. RESOLVE
+                // STEP 2: Resolve the Link
+                log(">>> Resolving Final URL...")
                 val step3Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string()
                 }
+                
                 val url = JSONObject(step3Raw).optString("url")
-                log("✅ FINAL URL: $url")
+                if (url.isNotEmpty()) {
+                    log("✅ FINAL PDF URL: $url")
+                } else {
+                    log("!!! FAIL: Key valid but URL empty.")
+                }
 
             } catch (e: Exception) {
                 log("💥 ERROR: ${e.message}")
-                e.printStackTrace()
+                // Often means token expired or network blocked
             } finally {
                 isRunning = false
                 log("--- END ---")
@@ -162,7 +90,6 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel()) {
     var tokenInput by remember { mutableStateOf("") }
-    val context = androidx.compose.ui.platform.LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val scrollState = rememberScrollState()
 
@@ -172,7 +99,7 @@ fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel())
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU JS ENGINE GENERATOR", color = Color.Cyan)
+        Text("MYEDU AUTOMATION", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = tokenInput, 
@@ -189,7 +116,7 @@ fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel())
         )
         Spacer(Modifier.height(16.dp))
         Row {
-            Button(onClick = { vm.runDebug(tokenInput, webGenerator, context.filesDir) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "..." else "GENERATE") }
+            Button(onClick = { vm.runDebug(tokenInput, webGenerator) }, enabled = !vm.isRunning, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Green, contentColor = Color.Black)) { Text(if (vm.isRunning) "RUNNING..." else "START") }
             Spacer(Modifier.width(8.dp))
             Button(onClick = { clipboardManager.setText(AnnotatedString(vm.logs)) }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)) { Text("COPY") }
         }
