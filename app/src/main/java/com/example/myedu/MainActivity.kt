@@ -329,15 +329,27 @@ fun HomeScreen(vm: MainViewModel) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(16.dp))
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Row(Modifier.fillMaxWidth()) {
-                    Column { 
-                        Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-                        Text(user?.name ?: "Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) 
-                    }
+            // Changed from Box to Row to prevent overlapping
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // 1. Greeting and Name (Weight ensures it doesn't overlap right side)
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { 
+                    Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                    Text(
+                        text = user?.name ?: "Student", 
+                        style = MaterialTheme.typography.titleMedium, 
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,                    // Keep on one line
+                        overflow = TextOverflow.Ellipsis // Add "..." if name is too long
+                    ) 
                 }
-                OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                // 2. Logo and Notification Icon
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp))
+                    Spacer(Modifier.width(8.dp))
                     Box(modifier = Modifier.size(40.dp).clickable { showNewsSheet = true }, contentAlignment = Alignment.Center) {
                         if (vm.newsList.isNotEmpty()) {
                             BadgedBox(badge = { Badge { Text("${vm.newsList.size}") } }) { Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.primary) }
@@ -362,8 +374,7 @@ fun HomeScreen(vm: MainViewModel) {
             }
             Spacer(Modifier.height(80.dp))
         }
-    }
-    
+    }    
     if (showNewsSheet) {
         ModalBottomSheet(onDismissRequest = { showNewsSheet = false }) { 
             Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { 
