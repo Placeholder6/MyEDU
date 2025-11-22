@@ -33,10 +33,10 @@ class JsResourceFetcher {
             logger("Fetching Transcript JS: $transcriptJsName")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. MOCK IMPORTS (Universal Dummy)
-            // We replace all imports with a dummy var to prevent "ReferenceError"
+            // 4. MOCK IMPORTS (Regex-based, crash proof)
             val varsToMock = mutableSetOf<String>()
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"][^'"]*['"];?""")
+            // Finds: import { d as at, ... } from ...
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
@@ -45,60 +45,47 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // Don't mock manually provided vars
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
 
             val dummyScript = StringBuilder()
-            // Universal Proxy: absorbs any call like G.someFunc() or at(...)
+            // Universal Proxy: prevents "ReferenceError" by swallowing all calls
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
-            
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
                 dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
                 dummyScript.append(";\n")
             }
 
-            // 5. CLEAN CODE
-            // Remove imports and exports
+            // 5. CLEAN CODE (Remove imports/exports)
             transcriptJsContent = transcriptJsContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE GENERATOR
-            // We look for: Y=(C,a,c,d)
-            // The regex allows for optional spaces or preceding commas
-            val funcNameMatch = findMatch(transcriptJsContent, """(?:[,;]|^)\s*(\w+)\s*=\s*\(C,a,c,d\)""")
+            // 6. EXPOSE GENERATOR FUNCTION
+            // Matches pattern: Y=(C,a,c,d)
+            // We find this name and attach it to window.PDFGenerator
+            val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
             
             if (funcNameMatch != null) {
                 logger("FOUND GENERATOR: $funcNameMatch")
-                // We append this line to make the function globally accessible
                 transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
-                logger("CRITICAL: Generator function signature (C,a,c,d) not found!")
+                logger("CRITICAL: Generator signature not found! PDF will fail.")
             }
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 7. GET STAMP (Signed.js)
+            // 7. STAMP
             var stampBase64 = ""
-            // The import looks like: import { S as mt } from "./Signed.HASH.js"
-            // We extract the filename for Signed.js from Transcript.js content
-            val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") // Check Transcript content first
-                ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""") // Fallback to Main JS
+            val signedJsName = findMatch(transcriptJsContent, """["']\./(Signed\.[^"']+\.js)["']""") 
+                ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
             if (signedJsName != null) {
                 logger("Fetching Stamp: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
-                
-                // Signed.js usually contains: const A = "data:image/..."
-                // We just grab the big base64 string
                 stampBase64 = findMatch(signedContent, """['"](data:image/[^;]+;base64,[^'"]+)['"]""") ?: ""
-                
-                if (stampBase64.isNotEmpty()) logger("Stamp extracted (${stampBase64.length} chars)")
-                else logger("WARNING: Stamp variable not found in Signed.js")
-            } else {
-                logger("WARNING: Signed.js reference not found.")
+                if(stampBase64.isNotEmpty()) logger("Stamp Size: ${stampBase64.length}")
             }
 
             return@withContext PdfResources(stampBase64, finalScript)
@@ -106,7 +93,6 @@ class JsResourceFetcher {
         } catch (e: Exception) {
             logger("Fetch Failed: ${e.message}")
             e.printStackTrace()
-            // Return empty so we can at least see the error in the app logs
             return@withContext PdfResources("", "")
         }
     }
