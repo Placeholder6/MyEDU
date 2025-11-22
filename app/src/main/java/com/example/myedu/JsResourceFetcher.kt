@@ -8,7 +8,8 @@ import java.util.regex.Pattern
 
 data class PdfResources(
     val stampBase64: String,
-    val logicCode: String // Contains 'yt', 'Y', 'ht' functions extracted from server
+    val logicCode: String,    // The full block of code from the server
+    val mainFuncName: String  // The name of the function to call (e.g. "Y")
 )
 
 class JsResourceFetcher {
@@ -18,14 +19,12 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Find Main JS from Index HTML
-            // Regex matches: src="/assets/index.HASH.TIMESTAMP.js"
+            // 1. Find Main JS (Handles timestamps in filename)
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
-                ?: throw Exception("Main JS not found in index.html")
+                ?: throw Exception("Main JS not found")
             
-            // 2. Find Transcript JS from Main JS
-            // Regex matches: import("./Transcript.HASH.TIMESTAMP.js")
+            // 2. Find Transcript JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"]+\.js)""") 
                 ?: throw Exception("Transcript JS name not found")
@@ -33,8 +32,7 @@ class JsResourceFetcher {
             // 3. Get Transcript JS Content
             val transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
             
-            // 4. Find Signed JS Name (for Stamp) within Transcript JS
-            // Regex matches: from"./Signed.HASH.TIMESTAMP.js"
+            // 4. Find Signed JS (Stamp)
             val signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"]+\.js)""") 
                 ?: throw Exception("Signed JS name not found")
             
@@ -43,34 +41,34 @@ class JsResourceFetcher {
             val stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""") 
                 ?: ""
 
-            // 6. Extract the PDF Logic Block
-            // We grab everything from "const yt=" up to "export{"
-            // This effectively copies the website's PDF generation logic source code.
+            // 6. Extract Logic Block
+            // We grab from "const yt=" (table logic) down to "export"
             val startMarker = "const yt="
             val endMarker = "export{"
-            
             val startIndex = transcriptJsContent.indexOf(startMarker)
             val endIndex = transcriptJsContent.lastIndexOf(endMarker)
 
-            if (startIndex == -1 || endIndex == -1) {
-                throw Exception("Could not extract logic block from Transcript.js")
-            }
-
+            if (startIndex == -1 || endIndex == -1) throw Exception("Logic block not found")
             val logicCode = transcriptJsContent.substring(startIndex, endIndex)
 
-            return@withContext PdfResources(stampBase64, logicCode)
+            // 7. Find Main Function Name dynamically
+            // It has the signature: const Y = (C, a, c, d) =>
+            val mainFuncMatch = findMatch(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)""") 
+                ?: "Y" // Fallback to 'Y' if regex fails
+
+            return@withContext PdfResources(stampBase64, logicCode, mainFuncMatch)
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Fallback to empty if offline/broken, to prevent crash
-            return@withContext PdfResources("", "")
+            // Return empty safety object to prevent crash
+            return@withContext PdfResources("", "", "Y")
         }
     }
 
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("Failed to fetch $url: ${response.code}")
+            if (!response.isSuccessful) throw Exception("Failed $url: ${response.code}")
             return response.body?.string() ?: ""
         }
     }
