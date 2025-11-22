@@ -100,30 +100,27 @@ class MainViewModel : ViewModel() {
                 
                 // --- FIX: NAME CLEANING ---
                 val infoJson = JSONObject(infoRaw)
-                
-                fun cleanName(key: String): String {
-                    val value = infoJson.optString(key, "")
-                    return if (value == "null") "" else value
+                fun clean(key: String): String {
+                    val v = infoJson.optString(key, "")
+                    return if (v == "null") "" else v
                 }
-
-                val lName = cleanName("last_name")
-                val fName = cleanName("name")
-                val pName = cleanName("father_name")
+                val fullName = "${clean("last_name")} ${clean("name")} ${clean("father_name")}".trim()
+                infoJson.put("fullName", fullName)
                 
-                // Construct clean full name
-                infoJson.put("fullName", "$lName $fName $pName".trim())
+                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
                 
-                val mId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                cachedStudentId = sId; cachedInfoJson = infoJson.toString()
-                log("Student: ${infoJson.getString("fullName")}")
+                cachedStudentId = sId
+                cachedInfoJson = infoJson.toString()
+                log("Student: $fullName")
 
                 log("3. Grades...")
-                val transRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(sId, mId).string()
+                // Fix: Use correct movementId variable
+                val transcriptRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptData(sId, movementId).string()
                 }
-                cachedTranscriptJson = transRaw
-                
-                parseAndDisplayTranscript(transRaw)
+                cachedTranscriptJson = transcriptRaw
+
+                parseAndDisplayTranscript(transcriptRaw)
                 log("Fetch Complete.")
 
             } catch (e: Throwable) {
@@ -140,38 +137,24 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Requesting Key...")
-                val linkRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
-                }
+                log("A. Key...")
+                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating PDF...")
-                val bytes = webGenerator.generatePdf(
-                    cachedInfoJson!!,
-                    cachedTranscriptJson!!,
-                    linkId,
-                    qrUrl,
-                    cachedResources!!
-                ) { msg -> log(msg) }
-
-                log("C. Saving...")
+                log("B. Generating...")
+                val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, cachedResources!!) { log(it) }
+                
                 val file = File(filesDir, "transcript.pdf")
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(file).use { it.write(bytes) }
-                }
-
-                log("SUCCESS: Saved to ${file.name}")
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+                log("SAVED: ${file.name}")
                 onPdfReady(file)
-
-            } catch (e: Throwable) {
-                log("PDF ERROR: ${e.message}")
+            } catch (e: Throwable) { 
+                log("PDF ERROR: ${e.message}") 
                 e.printStackTrace()
-            } finally {
-                isBusy = false
             }
+            finally { isBusy = false }
         }
     }
 
@@ -181,9 +164,13 @@ class MainViewModel : ViewModel() {
             val arr = JSONArray(jsonString)
 
             for (i in 0 until arr.length()) {
-                val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
+                val yearObj = arr.optJSONObject(i)
+                val sems = yearObj?.optJSONArray("semesters") ?: continue
+                
                 for (j in 0 until sems.length()) {
-                    val subs = sems.optJSONObject(j)?.optJSONArray("subjects") ?: continue
+                    val semObj = sems.optJSONObject(j)
+                    val subs = semObj?.optJSONArray("subjects") ?: continue
+                    
                     for (k in 0 until subs.length()) {
                         val sub = subs.optJSONObject(k)
                         
@@ -202,9 +189,7 @@ class MainViewModel : ViewModel() {
             }
             transcriptList.addAll(items)
             log("Parsed ${items.size} grades.")
-        } catch (e: Exception) {
-            log("Parse Error: ${e.message}")
-        }
+        } catch (e: Exception) { log("Parse Error: ${e.message}") }
     }
 }
 
