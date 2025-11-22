@@ -32,7 +32,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 
-// --- Data Model ---
+// Data Model
 data class TranscriptItem(
     val subject: String,
     val credit: String,
@@ -45,7 +45,6 @@ class MainViewModel : ViewModel() {
     var statusMessage by mutableStateOf("Ready")
     var isBusy by mutableStateOf(false)
     
-    // UI Data
     var transcriptList = mutableStateListOf<TranscriptItem>()
     var logs = mutableStateListOf<String>()
 
@@ -57,7 +56,6 @@ class MainViewModel : ViewModel() {
 
     private val jsFetcher = JsResourceFetcher()
 
-    // Logging helper
     fun log(msg: String) {
         viewModelScope.launch(Dispatchers.Main) {
             logs.add(msg)
@@ -99,9 +97,9 @@ class MainViewModel : ViewModel() {
                 cachedResources = jsFetcher.fetchResources { log(it) }
                 
                 if (cachedResources?.logicCode.isNullOrEmpty()) {
-                     log("WARNING: Failed to extract PDF logic. PDF generation will fail.")
+                     log("WARNING: Failed to extract PDF logic.")
                 } else {
-                     log("Success: Extracted PDF logic from server.")
+                     log("Success: Extracted PDF logic (${cachedResources?.logicCode?.length} chars).")
                 }
 
                 // 2. Fetch Student Info
@@ -142,7 +140,7 @@ class MainViewModel : ViewModel() {
 
     fun generatePdf(webGenerator: WebPdfGenerator, filesDir: File, onPdfReady: (File) -> Unit) {
         if (cachedInfoJson == null || cachedTranscriptJson == null || cachedResources == null) {
-            log("Error: Data missing. Please click 'Fetch Data' first.")
+            log("Error: Data missing. Click 'Fetch Data' first.")
             return
         }
 
@@ -170,7 +168,7 @@ class MainViewModel : ViewModel() {
                     linkId,
                     qrUrl,
                     cachedResources!!
-                ) { msg -> log(msg) } // Forward WebView logs to UI
+                ) { msg -> log(msg) }
 
                 // 3. Save File
                 log("Step C: Saving PDF...")
@@ -207,19 +205,18 @@ class MainViewModel : ViewModel() {
                     for (k in 0 until subjects.length()) {
                         val sub = subjects.optJSONObject(k)
                         
-                        // Corrected Fields based on your textfile (2).txt
-                        val name = sub.optString("subject", "Unknown") // Was "subject_name"
+                        // --- FIX: Updated Keys based on textfile (2).txt ---
+                        val name = sub.optString("subject", "Unknown")
                         val credit = sub.optString("credit", "0")
                         
                         val examRule = sub.optJSONObject("exam_rule")
                         val markList = sub.optJSONObject("mark_list")
                         
-                        // Logic: mark_list.finally usually overrides total, but check both
                         val total = markList?.optString("finally")?.takeIf { it != "0" && it != "null" }
                             ?: markList?.optString("total") 
                             ?: "-"
                             
-                        val letter = examRule?.optString("alphabetic") ?: "-" // Was "letter"
+                        val letter = examRule?.optString("alphabetic") ?: "-" // Was 'letter'
 
                         items.add(TranscriptItem(name, credit, total, letter))
                     }
@@ -255,7 +252,6 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
     val clipboardManager = LocalClipboardManager.current
     val listState = rememberLazyListState()
 
-    // Auto-scroll logs
     LaunchedEffect(viewModel.logs.size) {
         if(viewModel.logs.isNotEmpty()) listState.animateScrollToItem(viewModel.logs.size - 1)
     }
@@ -277,7 +273,7 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
                 onClick = { clipboardManager.getText()?.text?.let { viewModel.tokenInput = it } },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Paste Token")
+                Text("Paste from Clipboard")
             }
 
             Spacer(modifier = Modifier.height(12.dp))
