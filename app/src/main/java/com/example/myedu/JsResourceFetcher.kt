@@ -17,25 +17,23 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Get Index
+            // 1. Index
             logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
                 ?: throw Exception("Main JS not found")
             
-            // 2. Get Main JS
-            logger("Fetching Main JS...")
+            // 2. Main JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
                 ?: throw Exception("Transcript JS not found")
             
-            // 3. Get Transcript JS
-            logger("Fetching Transcript JS: $transcriptJsName")
+            // 3. Transcript JS
+            logger("Fetching $transcriptJsName...")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. MOCK IMPORTS (Regex-based, crash proof)
+            // 4. MOCK IMPORTS
             val varsToMock = mutableSetOf<String>()
-            // Finds: import { d as at, ... } from ...
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
@@ -48,7 +46,6 @@ class JsResourceFetcher {
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
 
             val dummyScript = StringBuilder()
-            // Universal Proxy: prevents "ReferenceError" by swallowing all calls
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
@@ -56,36 +53,38 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. CLEAN CODE (Remove imports/exports)
+            // 5. CLEAN CODE
             transcriptJsContent = transcriptJsContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE GENERATOR FUNCTION
-            // Matches pattern: Y=(C,a,c,d)
-            // We find this name and attach it to window.PDFGenerator
+            // 6. EXPOSE GENERATOR
             val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
-            
             if (funcNameMatch != null) {
-                logger("FOUND GENERATOR: $funcNameMatch")
                 transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
-                logger("CRITICAL: Generator signature not found! PDF will fail.")
+                logger("CRITICAL: Generator function not found!")
             }
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 7. STAMP
+            // 7. STAMP EXTRACTION
             var stampBase64 = ""
-            val signedJsName = findMatch(transcriptJsContent, """["']\./(Signed\.[^"']+\.js)["']""") 
+            // Try finding Signed.js in Transcript first, then Main
+            val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
                 ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
             if (signedJsName != null) {
                 logger("Fetching Stamp: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
-                stampBase64 = findMatch(signedContent, """['"](data:image/[^;]+;base64,[^'"]+)['"]""") ?: ""
-                if(stampBase64.isNotEmpty()) logger("Stamp Size: ${stampBase64.length}")
+                
+                // Look for: data:image/jpeg;base64,.......
+                // We grab everything between quotes that starts with data:image
+                val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
+                stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
+                
+                if(stampBase64.isNotEmpty()) logger("Stamp found (${stampBase64.length} chars)")
             }
 
             return@withContext PdfResources(stampBase64, finalScript)
