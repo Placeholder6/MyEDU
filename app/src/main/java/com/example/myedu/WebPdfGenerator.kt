@@ -49,7 +49,7 @@ class WebPdfGenerator(private val context: Context) {
 
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("JS Error: $msg"))
+                    if (continuation.isActive) continuation.resumeWithException(Exception("Web Error: $msg"))
                 }
                 
                 @JavascriptInterface
@@ -67,8 +67,10 @@ class WebPdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
-                
+                window.onerror = function(msg, url, line) { 
+                    AndroidBridge.returnError(msg + " @ Line " + line); 
+                };
+
                 const studentInfo = $studentInfoJson;
                 const transcriptData = $transcriptJson;
                 const linkId = $linkId;
@@ -102,17 +104,16 @@ class WebPdfGenerator(private val context: Context) {
                     ${resources.logicCode}
                     AndroidBridge.log("JS: Logic injected.");
                 } catch(e) {
-                    AndroidBridge.log("JS: Injection Failed! " + e.toString());
+                    AndroidBridge.returnError("JS Injection Error: " + e.message);
                 }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver started...");
-                        
-                        // Stats Calculation
+                        AndroidBridge.log("JS: Calculating Stats...");
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
+                        
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
                                 if(y.semesters) y.semesters.forEach(s => {
@@ -132,14 +133,17 @@ class WebPdfGenerator(private val context: Context) {
                         const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
                         if (typeof window.PDFGenerator !== 'function') {
-                            throw "window.PDFGenerator is undefined. Logic extraction failed.";
+                            throw "PDFGenerator is undefined. Logic extraction failed.";
                         }
 
+                        AndroidBridge.log("JS: Calling Generator...");
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
+                        
+                        AndroidBridge.log("JS: Creating PDF...");
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) {
-                        AndroidBridge.returnError("Driver: " + e.toString());
+                        AndroidBridge.returnError("Driver Error: " + e.toString());
                     }
                 }
             </script>
