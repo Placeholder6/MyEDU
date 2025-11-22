@@ -43,7 +43,6 @@ class MainViewModel : ViewModel() {
     var tokenInput by mutableStateOf("")
     var statusMessage by mutableStateOf("Ready")
     var isBusy by mutableStateOf(false)
-    
     var transcriptList = mutableStateListOf<TranscriptItem>()
     var logs = mutableStateListOf<String>()
 
@@ -88,7 +87,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                log("1. JS Resources...")
+                log("1. Fetching Resources...")
                 cachedResources = jsFetcher.fetchResources { log(it) }
 
                 log("2. Student Info...")
@@ -99,7 +98,7 @@ class MainViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(sId).string()
                 }
                 
-                // FIX: Construct fullName for the PDF generator
+                // FIX: Construct fullName for the PDF
                 val infoJson = JSONObject(infoRaw)
                 val lName = infoJson.optString("last_name", "")
                 val fName = infoJson.optString("name", "")
@@ -109,12 +108,13 @@ class MainViewModel : ViewModel() {
                 val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
                 
                 cachedStudentId = sId
-                cachedInfoJson = infoJson.toString() // Save the modified JSON
+                cachedInfoJson = infoJson.toString()
                 log("Student: ${infoJson.optString("fullName")}")
 
                 log("3. Downloading Grades...")
+                // FIX: Use 'movementId' here (was mId)
                 val transcriptRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(sId, mId).string()
+                    NetworkClient.api.getTranscriptData(sId, movementId).string()
                 }
                 cachedTranscriptJson = transcriptRaw
 
@@ -140,8 +140,9 @@ class MainViewModel : ViewModel() {
             isBusy = true
             try {
                 log("A. Requesting Key...")
+                val linkReq = DocIdRequest(cachedStudentId)
                 val linkRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
+                    NetworkClient.api.getTranscriptLink(linkReq).string()
                 }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
@@ -166,7 +167,7 @@ class MainViewModel : ViewModel() {
                 onPdfReady(file)
 
             } catch (e: Throwable) {
-                log("PDF ERROR: ${e.message}")
+                log("PDF FAILURE: ${e.message}")
                 e.printStackTrace()
             } finally {
                 isBusy = false
@@ -189,14 +190,12 @@ class MainViewModel : ViewModel() {
                     
                     for (k in 0 until subs.length()) {
                         val sub = subs.optJSONObject(k)
-                        
                         val name = sub.optString("subject", "Unknown")
                         val credit = sub.optString("credit", "0")
                         
                         val mark = sub.optJSONObject("mark_list")
                         val rule = sub.optJSONObject("exam_rule")
                         
-                        // Handle nulls gracefully for UI
                         val total = mark?.optString("finally")?.takeIf { it != "0" && it != "null" }
                             ?: mark?.optString("total") ?: "-"
                             
