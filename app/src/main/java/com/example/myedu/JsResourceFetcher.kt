@@ -7,8 +7,7 @@ import kotlinx.coroutines.withContext
 
 data class PdfResources(
     val stampBase64: String,
-    val logicCode: String,
-    val stampVarName: String // Added: The actual variable name used in the script
+    val logicCode: String
 )
 
 class JsResourceFetcher {
@@ -33,20 +32,7 @@ class JsResourceFetcher {
             logger("Fetching $transcriptJsName...")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. DETECT STAMP VARIABLE NAME
-            // We look for: import { S as SOMETHING } from "./Signed..."
-            // This tells us what variable name the script expects for the stamp.
-            var stampVarName = "mt" // Default fallback
-            val signedImportMatch = Regex("""import\s*\{\s*S\s+as\s+(\w+)\s*\}\s*from\s*["']\./Signed\.""").find(transcriptJsContent)
-            if (signedImportMatch != null) {
-                stampVarName = signedImportMatch.groupValues[1]
-                logger("Stamp Variable Detected: '$stampVarName'")
-            } else {
-                logger("WARNING: Could not detect stamp variable name. Defaulting to 'mt'.")
-            }
-
-            // 5. MOCK IMPORTS
-            // We must NOT mock the stamp variable, or we'll overwrite it with a dummy.
+            // 4. MOCK IMPORTS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
@@ -57,8 +43,7 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // CRITICAL: Remove manual mocks so we don't break them
-            varsToMock.removeAll(setOf("J", "U", "K", "$", stampVarName))
+            varsToMock.removeAll(setOf("J", "U", "K", "$", "mt"))
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -68,13 +53,13 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 6. CLEAN CODE
+            // 5. CLEAN CODE
             transcriptJsContent = transcriptJsContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 7. EXPOSE GENERATOR
+            // 6. EXPOSE GENERATOR
             val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
             if (funcNameMatch != null) {
                 transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
@@ -84,28 +69,31 @@ class JsResourceFetcher {
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 8. STAMP EXTRACTION
+            // 7. STAMP EXTRACTION (Diagnose)
             var stampBase64 = ""
             val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
                 ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
             if (signedJsName != null) {
-                logger("Fetching Stamp: $signedJsName")
+                logger("Found Signed JS: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
                 
+                // Try to find ANY base64 image
                 val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
                 stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
                 
-                if(stampBase64.isNotEmpty()) logger("Stamp Data Found (${stampBase64.length} chars)")
+                if(stampBase64.isNotEmpty()) logger("Stamp Found! Length: ${stampBase64.length}")
+                else logger("WARNING: No image data found in Signed.js")
+            } else {
+                logger("WARNING: Signed.js reference not found in code.")
             }
 
-            return@withContext PdfResources(stampBase64, finalScript, stampVarName)
+            return@withContext PdfResources(stampBase64, finalScript)
 
         } catch (e: Exception) {
             logger("Fetch Failed: ${e.message}")
             e.printStackTrace()
-            // Return safe empty object
-            return@withContext PdfResources("", "", "mt")
+            return@withContext PdfResources("", "")
         }
     }
 
