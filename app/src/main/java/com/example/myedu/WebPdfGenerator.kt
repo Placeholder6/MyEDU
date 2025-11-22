@@ -60,9 +60,6 @@ class WebPdfGenerator(private val context: Context) {
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String): String {
-        // We define a variable for the dollar sign to avoid Kotlin interpolation errors
-        val $ = "$"
-        
         return """
 <!DOCTYPE html>
 <html>
@@ -105,7 +102,7 @@ class WebPdfGenerator(private val context: Context) {
     const yt = (C, a) => {
         let c = [];
         C.forEach((d, h) => {
-            c.push({ margin: [0, 0, 0, 5], text: `Учебный год ${$}{d.edu_year}`, style: ["textCenter", "fb", "f10"] });
+            c.push({ margin: [0, 0, 0, 5], text: `Учебный год ${'$'}{d.edu_year}`, style: ["textCenter", "fb", "f10"] });
             d.semesters.forEach(o => {
                 c.push({ margin: [0, 0, 0, 5], text: o.semester, style: ["textCenter", "fb", "f9"] });
                 let n = [];
@@ -120,9 +117,9 @@ class WebPdfGenerator(private val context: Context) {
                 });
                 const credits = o.subjects.reduce((i, b) => i + parseInt(b.credit || 0), 0);
                 n.push([
-                    { text: `Зарегистрировано кредитов - ${$}{credits}`, style: ["textCenter", "fb", "f9"], colSpan: 6, alignment: "right" }, 
+                    { text: `Зарегистрировано кредитов - ${'$'}{credits}`, style: ["textCenter", "fb", "f9"], colSpan: 6, alignment: "right" }, 
                     {}, {}, {}, {}, {}, 
-                    { text: `GPA: ${$}{o.gpa || 0}`, style: ["textCenter", "fb", "f9"], colSpan: 3, alignment: "center" }, 
+                    { text: `GPA: ${'$'}{o.gpa || 0}`, style: ["textCenter", "fb", "f9"], colSpan: 3, alignment: "center" }, 
                     {}, {}
                 ]);
                 c.push({ margin: [0, 0, 0, 5], style: ["tableExample", "f8"], table: { headerRows: 1, widths: [10, 40, "*", 30, 45, 25, 25, 20, 35], body: n } });
