@@ -64,10 +64,12 @@ data class MovementInfo(
     @SerializedName("id_edu_form") val id_edu_form: Int?, 
     @SerializedName("avn_group_name") val avn_group_name: String?, 
     @SerializedName("speciality") val speciality: NameObj?, 
+    // Faculty is usually inside speciality, but we keep this just in case
     @SerializedName("faculty") val faculty: NameObj?, 
     @SerializedName("edu_form") val edu_form: NameObj?,
     @SerializedName("id_payment_form") val id_payment_form: Int?
 )
+
 data class NameObj(
     @SerializedName("name_en") val name_en: String?, 
     @SerializedName("name_ru") val name_ru: String?, 
@@ -75,7 +77,9 @@ data class NameObj(
     @SerializedName("short_name_en") val short_name_en: String?,
     @SerializedName("short_name_ru") val short_name_ru: String?,
     @SerializedName("short_name_kg") val short_name_kg: String?,
-    @SerializedName("code") val code: String?
+    @SerializedName("code") val code: String?,
+    // FIX: Add nested faculty field here because JSON nests it inside speciality
+    @SerializedName("faculty") val faculty: NameObj?
 ) {
     fun get(): String {
         val text = name_en ?: name_ru ?: name_kg ?: "Unknown"
