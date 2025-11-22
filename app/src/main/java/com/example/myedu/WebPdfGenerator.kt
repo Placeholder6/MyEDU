@@ -49,16 +49,19 @@ class WebPdfGenerator(private val context: Context) {
 
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("Web Error: $msg"))
+                    if (continuation.isActive) continuation.resumeWithException(Exception("JS: $msg"))
                 }
                 
                 @JavascriptInterface
-                fun log(msg: String) = logCallback(msg)
+                fun log(msg: String) {
+                    logCallback(msg)
+                }
             }, "AndroidBridge")
 
-            // We inject the scripts in specific order using separate tags to isolate errors.
+            // Use a fallback stamp if download failed
             val validStamp = if (resources.stampBase64.isNotEmpty()) resources.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
             
+            // We construct the HTML with separate script tags to isolate errors
             val html = """
             <!DOCTYPE html>
             <html>
@@ -77,6 +80,7 @@ class WebPdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const mt = "$validStamp";
 
+                // Mock Vue/Moment helpers used in Transcript.js
                 const ${'$'} = function(d) {
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") };
                 };
@@ -104,8 +108,7 @@ class WebPdfGenerator(private val context: Context) {
                     ${resources.logicCode}
                     AndroidBridge.log("JS: Logic injected successfully");
                 } catch(e) {
-                    AndroidBridge.log("JS: Injection Failed: " + e.toString());
-                    // We don't returnError here, we let the driver try to find what it can
+                    AndroidBridge.log("JS: Logic Injection Failed! " + e.toString());
                 }
             </script>
 
@@ -114,7 +117,7 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver started...");
                         
-                        // Stats Calculation
+                        // Helper: Calculate stats
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
@@ -134,16 +137,23 @@ class WebPdfGenerator(private val context: Context) {
                         const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
                         const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-                        // Find function
+                        // Find the generator function (Heuristic search)
                         let func = null;
+                        
+                        // 1. Try 'Y' (from your file)
                         if (typeof window['Y'] === 'function') func = window['Y'];
+                        
+                        // 2. Scan window for function(a,b,c,d)
                         if (!func) {
                              for (let k in window) {
                                  try {
-                                     if (typeof window[k] === 'function' && window[k].length === 4 && k.length < 4 && k !== 'set') {
-                                         func = window[k];
-                                         AndroidBridge.log("JS: Found candidate: " + k);
-                                         break;
+                                     if (typeof window[k] === 'function' && window[k].length === 4) {
+                                         // Filter out standard functions
+                                         if (k !== 'setTimeout' && k !== 'setInterval' && k.length < 4) {
+                                             func = window[k];
+                                             AndroidBridge.log("JS: Found candidate: " + k);
+                                             break;
+                                         }
                                      }
                                  } catch(e){}
                              }
@@ -152,6 +162,7 @@ class WebPdfGenerator(private val context: Context) {
                         if(!func) throw "Generator function not found";
 
                         const docDef = func(transcriptData, studentInfo, stats, qrCodeUrl);
+                        
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) {
