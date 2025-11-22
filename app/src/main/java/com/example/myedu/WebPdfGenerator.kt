@@ -20,17 +20,18 @@ class WebPdfGenerator(private val context: Context) {
         transcriptJson: String,
         linkId: Long,
         qrUrl: String,
-        resources: PdfResources
+        resources: PdfResources,
+        logCallback: (String) -> Unit
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val webView = WebView(context)
             webView.settings.javaScriptEnabled = true
             
-            // Log JS console errors to Android Logcat
+            // Capture JS Console Logs
             webView.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
-                    android.util.Log.d("WebViewConsole", "${cm.message()} -- From line ${cm.lineNumber()} of ${cm.sourceId()}")
+                    logCallback("[JS] ${cm.message()} (Line ${cm.lineNumber()})")
                     return true
                 }
             }
@@ -54,7 +55,7 @@ class WebPdfGenerator(private val context: Context) {
                 
                 @JavascriptInterface
                 fun log(msg: String) {
-                    android.util.Log.d("WebViewJS", msg)
+                    logCallback(msg)
                 }
             }, "AndroidBridge")
 
@@ -62,17 +63,17 @@ class WebPdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Start generation automatically when page loads
                     webView.evaluateJavascript("startGeneration();", null)
                 }
             }
             
+            // Load with correct base URL
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", htmlContent, "text/html", "UTF-8", null)
         }
     }
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
-        // Fallback pixel if stamp extraction failed
+        // Fallback if stamp is missing
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 
         return """
@@ -84,14 +85,21 @@ class WebPdfGenerator(private val context: Context) {
 </head>
 <body>
 <script>
-    // Data from Android
+    // 1. Global Error Handler
+    window.onerror = function(message, source, lineno, colno, error) {
+        AndroidBridge.returnError(message + " at line " + lineno);
+    };
+
+    // 2. Variables
     const studentInfo = $info;
     const transcriptData = $transcript;
     const linkId = $linkId;
     const qrCodeUrl = "$qrUrl";
-    const mt = "$validStamp"; 
+    const mt = "$validStamp"; // 'mt' is typically used for the signed image
 
-    // --- Mocks for Vue/Environment ---
+    // 3. MOCKS (Crucial for preventing crashes when imports are removed)
+    
+    // Mock Vue's date formatter ($)
     const ${'$'} = function(d) {
         return {
             format: function(fmt) {
@@ -101,10 +109,14 @@ class WebPdfGenerator(private val context: Context) {
         };
     };
     ${'$'}.locale = function() {};
+
+    // Mock Helper 'K' (deep access)
     function K(obj, pathArray) {
         if(!pathArray) return '';
         return pathArray.reduce((o, key) => (o && o[key] !== undefined) ? o[key] : '', obj);
     }
+
+    // Mock Footer 'U'
     const U = function(currentPage, pageCount) {
         return { 
             margin: [40, 0, 25, 0],
@@ -114,6 +126,8 @@ class WebPdfGenerator(private val context: Context) {
             ]
         };
     };
+
+    // Mock Styles 'J'
     const J = {
         textCenter: { alignment: 'center' },
         textRight: { alignment: 'right' },
@@ -128,17 +142,19 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- Injected Logic from Server ---
+    // 4. INJECT SERVER LOGIC
     try {
         ${res.logicCode}
     } catch(e) {
-        AndroidBridge.log("Error injecting logic: " + e.message);
+        AndroidBridge.returnError("Logic Injection Failed: " + e.message);
     }
 
+    // 5. DRIVER CODE
     function startGeneration() {
         try {
-            AndroidBridge.log("Calculating stats...");
-            // Calculate stats (Credits/GPA) locally to pass to the generator
+            AndroidBridge.log("JS: Calculating stats...");
+            
+            // Calculate GPA/Credits (Frontend logic)
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
@@ -169,36 +185,29 @@ class WebPdfGenerator(private val context: Context) {
                     }
                 });
             }
+            
             const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
             const statsArray = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-            AndroidBridge.log("Finding generator function...");
-            
-            // Heuristic: Find the function in the global scope (window) that takes 4 arguments.
-            // The original minified function usually looks like: function Y(C, a, c, d) { ... }
-            // We iterate over all window properties.
+            // FIND THE GENERATOR FUNCTION
+            // We look for a function in the global scope that accepts exactly 4 arguments.
+            // Original signature: (data, student, stats, qr)
             let generatorFunc = null;
             
-            // 1. Try common minified names if the heuristic fails
-            const potentialNames = ['Y', 'W', 'Z', 'K'];
-            for(let name of potentialNames) {
-                if (typeof window[name] === 'function' && window[name].length === 4) {
-                    generatorFunc = window[name];
-                    AndroidBridge.log("Found generator by name: " + name);
-                    break;
-                }
+            // 1. Check for common minified names (Y is in your file)
+            if (typeof window['Y'] === 'function' && window['Y'].length === 4) {
+                 generatorFunc = window['Y'];
             }
             
-            // 2. Search all global functions
+            // 2. Scan window if Y isn't found
             if (!generatorFunc) {
                 for (let key in window) {
                     try {
                         if (typeof window[key] === 'function' && window[key].length === 4) {
-                            // Check if it looks like our function (simple check)
-                            // This is risky but better than nothing
-                            if (key.length < 3) { // Minified names are short
+                            // Ignore standard functions
+                            if (key !== 'setTimeout' && key !== 'setInterval' && key !== 'alert' && key.length < 5) {
                                 generatorFunc = window[key];
-                                AndroidBridge.log("Found generator by signature: " + key);
+                                AndroidBridge.log("JS: Found candidate function: " + key);
                                 break;
                             }
                         }
@@ -206,13 +215,12 @@ class WebPdfGenerator(private val context: Context) {
                 }
             }
 
-            if (!generatorFunc) {
-                throw "Could not locate the PDF generation function. Code might have changed.";
-            }
+            if (!generatorFunc) throw "Generator function not found in scripts.";
 
-            AndroidBridge.log("Generating PDF...");
+            AndroidBridge.log("JS: Creating PDF definition...");
             const docDef = generatorFunc(transcriptData, studentInfo, statsArray, qrCodeUrl);
             
+            AndroidBridge.log("JS: Generating PDF binary...");
             pdfMake.createPdf(docDef).getBase64(function(encoded) {
                 AndroidBridge.returnPdf(encoded);
             });
