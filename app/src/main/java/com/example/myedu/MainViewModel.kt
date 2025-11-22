@@ -72,7 +72,7 @@ class MainViewModel : ViewModel() {
             newsList = p.loadList("news_list")
             fullSchedule = p.loadList("schedule_list")
             sessionData = p.loadList("session_list")
-            transcriptData = p.loadList("transcript_list")
+            transcriptData = p.loadList<TranscriptYear>("transcript_list")
             processScheduleLocally()
         }
     }
@@ -161,8 +161,8 @@ class MainViewModel : ViewModel() {
                 withContext(Dispatchers.Main) { 
                     isTranscriptLoading = true
                     showTranscriptScreen = true
-                    // Fix safe loadList call
-                    transcriptData = prefs?.let { it.loadList("transcript_list") } ?: emptyList() 
+                    // Explicit type call here for safety
+                    transcriptData = prefs?.loadList<TranscriptYear>("transcript_list") ?: emptyList() 
                 }
                 val uid = userData?.id ?: return@launch
                 val movId = profileData?.studentMovement?.id ?: return@launch 

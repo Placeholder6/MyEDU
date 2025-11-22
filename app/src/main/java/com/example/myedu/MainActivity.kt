@@ -1,7 +1,9 @@
 package com.example.myedu
 
+import android.Manifest
 import android.app.Activity
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -9,6 +11,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -51,6 +54,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
@@ -66,7 +70,6 @@ import java.util.Locale
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    // Since it is Blue, we use it for both Light and Dark modes.
     val url = "file:///android_asset/logo-dark4.svg"
 
     val imageLoader = remember {
@@ -85,13 +88,36 @@ fun OshSuLogo(modifier: Modifier = Modifier) {
 }
 
 class MainActivity : ComponentActivity() {
+    // Permission Request Handler
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        // Request Notification Permission on Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
         setContent { 
             val vm: MainViewModel = viewModel()
             val context = LocalContext.current
+            
+            // Init Session
             LaunchedEffect(Unit) { vm.initSession(context) }
+            
+            // TRIGGER NOTIFICATIONS WHEN SCHEDULE IS LOADED
+            LaunchedEffect(vm.fullSchedule, vm.timeMap) {
+                if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
+                    ScheduleAlarmManager(context).scheduleNotifications(vm.fullSchedule, vm.timeMap)
+                }
+            }
+
             MyEduTheme { AppContent(vm) } 
         }
     }
@@ -137,9 +163,7 @@ fun LoginScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.Center, 
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // BIG BLUE LOGO
                 OshSuLogo(modifier = Modifier.width(260.dp).height(100.dp))
-                
                 Spacer(Modifier.height(48.dp))
                 OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Spacer(Modifier.height(16.dp))
@@ -305,23 +329,15 @@ fun HomeScreen(vm: MainViewModel) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(16.dp))
-            
-            // --- HEADER WITH CENTERED LOGO ---
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                // Greeting on the Left
                 Row(Modifier.fillMaxWidth()) {
                     Column { 
                         Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                         Text(user?.name ?: "Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) 
                     }
                 }
-                
-                // Logo in Center (Small, Visible)
                 OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp))
-                
-                // Notification on the Right
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    // FIX: Square box for notification
                     Box(modifier = Modifier.size(40.dp).clickable { showNewsSheet = true }, contentAlignment = Alignment.Center) {
                         if (vm.newsList.isNotEmpty()) {
                             BadgedBox(badge = { Badge { Text("${vm.newsList.size}") } }) { Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.primary) }
@@ -331,8 +347,6 @@ fun HomeScreen(vm: MainViewModel) {
                     }
                 }
             }
-            // ----------------------------------
-
             Spacer(Modifier.height(24.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { 
                 StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f))
@@ -372,7 +386,6 @@ fun ScheduleScreen(vm: MainViewModel) {
     }
     val pagerState = rememberPagerState(initialPage = initialPage) { tabs.size }
 
-    // Header has centered LOGO instead of text
     Scaffold(topBar = { CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) }) { padding ->
         Column(Modifier.padding(padding)) {
             TabRow(
