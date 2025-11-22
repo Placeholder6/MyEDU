@@ -32,7 +32,7 @@ class JsResourceFetcher {
             logger("Fetching $transcriptJsName...")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. MOCK IMPORTS
+            // 4. MOCK IMPORTS (Prevent Crashes)
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
@@ -69,9 +69,9 @@ class JsResourceFetcher {
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
 
-            // 7. STAMP EXTRACTION
+            // 7. STAMP EXTRACTION (FIXED)
             var stampBase64 = ""
-            // Try finding Signed.js in Transcript first, then Main
+            // Find Signed.js filename in Transcript OR Main JS
             val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
                 ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
@@ -79,12 +79,18 @@ class JsResourceFetcher {
                 logger("Fetching Stamp: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
                 
-                // Look for: data:image/jpeg;base64,.......
-                // We grab everything between quotes that starts with data:image
+                // Regex: Find "data:image/..." inside ANY quotes (single or double)
+                // This ignores the variable name "const A" or "const mt"
                 val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
-                stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
                 
-                if(stampBase64.isNotEmpty()) logger("Stamp found (${stampBase64.length} chars)")
+                if (stampMatch != null) {
+                    stampBase64 = stampMatch.groupValues[1]
+                    logger("Stamp Found! (${stampBase64.length} chars)")
+                } else {
+                    logger("WARNING: No base64 image found in Signed.js")
+                }
+            } else {
+                logger("WARNING: Signed.js file reference not found.")
             }
 
             return@withContext PdfResources(stampBase64, finalScript)
