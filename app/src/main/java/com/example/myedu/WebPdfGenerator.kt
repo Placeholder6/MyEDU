@@ -67,10 +67,8 @@ class WebPdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                window.onerror = function(msg, url, line) { 
-                    AndroidBridge.returnError(msg + " @ Line " + line); 
-                };
-
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
+                
                 const studentInfo = $studentInfoJson;
                 const transcriptData = $transcriptJson;
                 const linkId = $linkId;
@@ -104,16 +102,17 @@ class WebPdfGenerator(private val context: Context) {
                     ${resources.logicCode}
                     AndroidBridge.log("JS: Logic injected.");
                 } catch(e) {
-                    AndroidBridge.returnError("JS Injection Error: " + e.message);
+                    AndroidBridge.returnError("Logic Injection Failed: " + e.message);
                 }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Calculating Stats...");
-                        let totalCredits = 0, gpaSum = 0, gpaCount = 0;
+                        AndroidBridge.log("JS: Starting...");
                         
+                        // Stats
+                        let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
                                 if(y.semesters) y.semesters.forEach(s => {
@@ -143,7 +142,7 @@ class WebPdfGenerator(private val context: Context) {
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) {
-                        AndroidBridge.returnError("Driver Error: " + e.toString());
+                        AndroidBridge.returnError("Driver: " + e.toString());
                     }
                 }
             </script>
