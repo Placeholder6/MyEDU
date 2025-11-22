@@ -13,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -21,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -68,7 +68,7 @@ class DebugViewModel : ViewModel() {
 
         viewModelScope.launch {
             isRunning = true
-            log("--- STARTING DYNAMIC FETCH ---")
+            log("--- STARTING AUTOMATED GENERATION ---")
             
             NetworkClient.cookieJar.setDebugCookies(token)
             NetworkClient.interceptor.authToken = token
@@ -77,12 +77,12 @@ class DebugViewModel : ViewModel() {
 
             try {
                 // 0. FETCH RESOURCES
-                log(">>> STEP 0: Scraping JS Resources...")
+                log(">>> STEP 0: Fetching JS Resources...")
                 val resources = jsFetcher.fetchResources()
                 if (resources.logicCode.isNotEmpty()) {
-                    log("✔ Code Fetched (${resources.logicCode.length} chars)")
+                    log("✔ JS Fetched: ${resources.mainFuncName}")
                 } else {
-                    log("! Code Missing")
+                    log("! JS Missing")
                 }
 
                 // 1. INFO
@@ -112,19 +112,11 @@ class DebugViewModel : ViewModel() {
                 val qrUrl = keyJson.optString("url")
                 log("✔ Key: $key")
 
-                // 4. GENERATE
+                // 4. GENERATE PDF
                 log(">>> STEP 4: Generating PDF...")
-                
-                val pdfBytes = webGenerator.generatePdf(
-                    infoRaw, 
-                    transcriptJsonRaw, 
-                    linkId, 
-                    qrUrl,
-                    resources
-                )
-                
-                log("✔ PDF Created: ${pdfBytes.size} bytes")
-                
+                val pdfBytes = webGenerator.generatePdf(infoRaw, transcriptJsonRaw, linkId, qrUrl, resources)
+                log("✔ PDF Generated: ${pdfBytes.size} bytes")
+
                 val pdfFile = File(filesDir, "transcript.pdf")
                 withContext(Dispatchers.IO) {
                     FileOutputStream(pdfFile).use { it.write(pdfBytes) }
@@ -145,7 +137,7 @@ class DebugViewModel : ViewModel() {
                 val step2Raw = withContext(Dispatchers.IO) {
                     NetworkClient.api.uploadPdf(idBody, studentBody, pdfPart).string()
                 }
-                log("✔ Upload Result: $step2Raw")
+                log("✔ Upload: $step2Raw")
 
                 delay(2000)
 
@@ -188,7 +180,7 @@ fun DebugScreen(webGenerator: WebPdfGenerator, vm: DebugViewModel = viewModel())
             .background(Color.Black)
             .padding(16.dp)
     ) {
-        Text("MYEDU DYNAMIC FETCHER", color = Color.Cyan)
+        Text("MYEDU PDF FETCHER", color = Color.Cyan)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = tokenInput, 

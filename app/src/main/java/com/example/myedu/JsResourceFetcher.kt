@@ -21,49 +21,47 @@ class JsResourceFetcher {
         try {
             // STEP 1: Fetch HTML to get the Entry Point (index.js)
             val indexHtml = fetchString("$baseUrl/")
-            // Matches: src="/assets/index.HASH.TIMESTAMP.js"
+            // Looks for: src="/assets/index.HASH.TIMESTAMP.js"
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
-                ?: throw Exception("Entry point (index.js) not found in HTML")
+                ?: throw Exception("Main JS not found in index.html")
             
             // STEP 2: Fetch Main Index JS
-            // This file contains the map/imports for all other modules
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
 
             // STEP 3: Find Target Files inside Index JS
-            // The filenames are strings inside the code, e.g., "Transcript.1ba6.172.js"
+            // Regex looks for "Transcript.HASH.TIMESTAMP.js" inside the code
             val transcriptJsName = findMatch(mainJsContent, """(Transcript\.[^"]+\.js)""")
-                ?: throw Exception("Transcript JS file definition not found in index.js")
+                ?: throw Exception("Transcript JS filename not found in index.js")
             
-            // The Signed.js file might be referenced in Transcript.js or Index.js
-            // We check Index JS first (as you suggested), then fallback to fetching Transcript to find it.
+            // Try to find Signed.js in Index JS, fallback to Transcript JS later
             var signedJsName = findMatch(mainJsContent, """(Signed\.[^"]+\.js)""")
             
-            // STEP 4: Fetch the Logic (Transcript.js)
+            // STEP 4: Fetch Transcript JS
             val transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
             
-            // If Signed.js wasn't in Index, it must be in Transcript.js
+            // If Signed.js wasn't in Index, check Transcript.js
             if (signedJsName == null) {
                 signedJsName = findMatch(transcriptJsContent, """(Signed\.[^"]+\.js)""")
-                    ?: throw Exception("Signed JS file definition not found")
+                    ?: throw Exception("Signed JS filename not found")
             }
 
-            // STEP 5: Fetch the Stamp (Signed.js)
+            // STEP 5: Fetch Stamp from Signed.js
             val signedJsContent = fetchString("$baseUrl/assets/$signedJsName")
             val stampBase64 = findMatch(signedJsContent, """"(data:image/[a-zA-Z]+;base64,[^"]+)"""")
                 ?: ""
 
-            // STEP 6: Extract Logic Block
-            // We grab the table generation logic ("const yt=") to the end of the file
+            // STEP 6: Extract PDF Logic from Transcript.js
+            // We extract the code block starting from "const yt=" (table generator)
             val startMarker = "const yt="
             val endMarker = "export{"
             val startIndex = transcriptJsContent.indexOf(startMarker)
             val endIndex = transcriptJsContent.lastIndexOf(endMarker)
 
-            if (startIndex == -1 || endIndex == -1) throw Exception("PDF Logic block not found")
+            if (startIndex == -1 || endIndex == -1) throw Exception("PDF Logic block not found in Transcript.js")
             val logicCode = transcriptJsContent.substring(startIndex, endIndex)
 
-            // STEP 7: Dynamic Function Name
-            // Finds: const Y = (C, a, c, d)
+            // STEP 7: Find the Main Function Name (dynamic)
+            // Looks for: const Y = (C, a, c, d)
             val mainFuncMatch = findMatch(transcriptJsContent, """const\s+([a-zA-Z0-9_${'$'}]+)\s*=\s*\(C,a,c,d\)""")
                 ?: "Y"
 
@@ -71,7 +69,7 @@ class JsResourceFetcher {
 
         } catch (e: Exception) {
             e.printStackTrace()
-            // Return safe empty object to prevent crash
+            // Return safe empty object to prevent crash, allowing retry
             return@withContext PdfResources("", "", "Y")
         }
     }
@@ -87,7 +85,6 @@ class JsResourceFetcher {
     private fun findMatch(content: String, regex: String): String? {
         val matcher = Pattern.compile(regex).matcher(content)
         return if (matcher.find()) {
-            // Prefer the captured group (inside parenthesis), else the whole match
             if (matcher.groupCount() >= 1) matcher.group(1) else matcher.group(0)
         } else {
             null

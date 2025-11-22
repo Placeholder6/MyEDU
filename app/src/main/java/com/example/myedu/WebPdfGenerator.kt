@@ -12,11 +12,6 @@ import kotlin.coroutines.resumeWithException
 
 class WebPdfGenerator(private val context: Context) {
 
-    interface PdfCallback {
-        fun onPdfGenerated(base64: String)
-        fun onError(error: String)
-    }
-
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun generatePdf(
         studentInfoJson: String,
@@ -62,7 +57,6 @@ class WebPdfGenerator(private val context: Context) {
 
     private fun getHtmlContent(info: String, transcript: String, linkId: Long, qrUrl: String, res: PdfResources): String {
         val validStamp = if (res.stampBase64.isNotEmpty()) res.stampBase64 else "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
-        val ${'$'} = "$"
 
         return """
 <!DOCTYPE html>
@@ -73,6 +67,7 @@ class WebPdfGenerator(private val context: Context) {
 </head>
 <body>
 <script>
+    // --- INPUTS ---
     const studentInfo = $info;
     const transcriptData = $transcript;
     const linkId = $linkId;
@@ -119,13 +114,13 @@ class WebPdfGenerator(private val context: Context) {
         tableExample: { margin: [0, 5, 0, 15] }
     };
 
-    // --- INJECTED SERVER LOGIC ---
+    // --- INJECTED LOGIC FROM SERVER ---
     ${res.logicCode}
 
     // --- DRIVER ---
     function startGeneration() {
         try {
-            // 1. Calculate Stats (Same logic as server)
+            // 1. Calculate Stats
             let totalCredits = 0;
             let gpaSum = 0; 
             let gpaCount = 0;
@@ -154,11 +149,11 @@ class WebPdfGenerator(private val context: Context) {
             const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
             const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
 
-            // 2. Execute Dynamic Function
+            // 2. Call Dynamic Function
             const docFunc = eval("${res.mainFuncName}");
             const docDef = docFunc(transcriptData, studentInfo, stats, qrCodeUrl);
             
-            // 3. Generate Base64
+            // 3. Generate
             pdfMake.createPdf(docDef).getBase64(function(encoded) {
                 AndroidBridge.returnPdf(encoded);
             });
