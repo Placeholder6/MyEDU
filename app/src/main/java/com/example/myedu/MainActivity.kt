@@ -105,7 +105,6 @@ class MainViewModel : ViewModel() {
                     val v = infoJson.optString(key, "")
                     return if (v == "null" || v == "null ") "" else v
                 }
-                // Construct clean full name
                 val fullName = "${clean("last_name")} ${clean("name")} ${clean("father_name")}".trim()
                 infoJson.put("fullName", fullName)
                 
@@ -136,32 +135,19 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Requesting Key...")
-                val linkRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
-                }
+                log("A. Key...")
+                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating PDF...")
-                val bytes = webGenerator.generatePdf(
-                    cachedInfoJson!!,
-                    cachedTranscriptJson!!,
-                    linkId,
-                    qrUrl,
-                    cachedResources!!
-                ) { msg -> log(msg) }
-
-                log("C. Saving...")
+                log("B. Generating...")
+                val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, cachedResources!!) { log(it) }
+                
                 val file = File(filesDir, "transcript.pdf")
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(file).use { it.write(bytes) }
-                }
-
-                log("SUCCESS: Saved to ${file.name}")
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+                log("SAVED: ${file.name}")
                 onPdfReady(file)
-
             } catch (e: Throwable) { 
                 log("PDF ERROR: ${e.message}") 
                 e.printStackTrace()
@@ -170,11 +156,10 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    private fun parseAndDisplayTranscript(jsonString: String) {
+    private fun parseAndDisplayTranscript(json: String) {
         try {
             val items = mutableListOf<TranscriptItem>()
-            val arr = JSONArray(jsonString)
-
+            val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
                 val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
                 for (j in 0 until sems.length()) {
@@ -229,53 +214,29 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
     LaunchedEffect(viewModel.logs.size) { if(viewModel.logs.isNotEmpty()) state.animateScrollToItem(viewModel.logs.size - 1) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        OutlinedTextField(
-            value = viewModel.tokenInput, 
-            onValueChange = { viewModel.tokenInput = it }, 
-            label = { Text("Token") }, 
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(value = viewModel.tokenInput, onValueChange = { viewModel.tokenInput = it }, label = { Text("Token") }, modifier = Modifier.fillMaxWidth())
         Button(onClick = { clipboard.getText()?.text?.let { viewModel.tokenInput = it } }, Modifier.fillMaxWidth()) { Text("Paste Token") }
         
         Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch") }
-            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("2. PDF") }
+            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("Fetch") }
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("PDF") }
         }
         
         LazyColumn(Modifier.weight(1f)) {
             items(viewModel.transcriptList) { t -> 
-                Row(Modifier.padding(vertical = 4.dp)) {
-                    Text(t.subject, Modifier.weight(1f), fontSize = 12.sp)
-                    Text(t.credit, Modifier.width(30.dp), fontSize = 12.sp)
-                    Text(t.total, Modifier.width(30.dp), fontSize = 12.sp)
-                    Text(t.grade, Modifier.width(30.dp), fontWeight = FontWeight.Bold, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                }
-                Divider(thickness = 0.5.dp, color = Color.LightGray)
+                Text("${t.subject} | ${t.credit} | ${t.total} | ${t.grade}", fontSize = 12.sp)
+                Divider()
             }
         }
         
-        // --- LOGS SECTION WITH COPY BUTTON ---
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Debug Console", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            Button(
-                onClick = {
-                    val text = viewModel.logs.joinToString("\n")
-                    clipboard.setText(AnnotatedString(text))
-                    Toast.makeText(context, "Logs copied!", Toast.LENGTH_SHORT).show()
-                },
-                modifier = Modifier.height(30.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
-            ) {
-                Text("Copy Logs", fontSize = 10.sp)
-            }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("Console", fontWeight = FontWeight.Bold)
+            Button(onClick = {
+                clipboard.setText(AnnotatedString(viewModel.logs.joinToString("\n")))
+                Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
+            }) { Text("Copy Logs") }
         }
-        
-        Box(Modifier.height(150.dp).fillMaxWidth().background(Color(0xFF1E1E1E)).padding(4.dp)) {
+        Box(Modifier.height(150.dp).fillMaxWidth().background(Color.Black).padding(4.dp)) {
             LazyColumn(state = state) {
                 items(viewModel.logs) { Text("> $it", color = Color.Green, fontSize = 10.sp) }
             }
