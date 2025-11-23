@@ -13,6 +13,7 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class ReferenceJsFetcher {
 
@@ -21,12 +22,13 @@ class ReferenceJsFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
-            logger("Fetching index.html...")
+            // 1. Fetch Main Script
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
+            // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
@@ -40,6 +42,7 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
+            // 3. LINK DEPENDENCIES (Dynamic Name Resolution)
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
@@ -78,15 +81,17 @@ class ReferenceJsFetcher {
                 dependencies.append("var $name = $defaultVal;\n")
             }
 
-            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")
-            linkModule("Signed", "S", "Signed_Fallback", "\"\"")
-            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")
-            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}")
-            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}")
-            linkModule("ru", "r", "Ru_Fallback", "{}")
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
+            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
+            linkModule("ru", "r", "Ru_Fallback", "{}")                      
 
+            // 4. MOCK OTHERS (FIXED REGEX to catch all imports)
             val varsToMock = mutableSetOf<String>()
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
+            // Use DOT_MATCHES_ALL to ensure we catch imports that might span lines
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""", RegexOption.DOT_MATCHES_ALL)
             importRegex.findAll(refContent).forEach { m ->
                 m.groupValues[1].split(",").forEach { 
                     val parts = it.trim().split(Regex("""\s+as\s+"""))
@@ -95,7 +100,7 @@ class ReferenceJsFetcher {
                 }
             }
             varsToMock.removeAll(linkedVars)
-            varsToMock.remove("$") 
+            varsToMock.remove("$") // Don't mock '$' as it is defined manually in HTML
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -103,17 +108,17 @@ class ReferenceJsFetcher {
                 dummyScript.append("var ${varsToMock.joinToString(",")} = UniversalDummy;\n")
             }
 
+            // 5. DYNAMIC EXTRACTION
             var cleanRef = cleanJs(refContent)
-            if (language == "en") {
-                cleanRef = translateScript(cleanRef)
-            }
 
+            // Extract 'at' Function (PDF Generator)
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
 
-            val arrayRegex = Regex("""const\s+(\w+)\s*=\s*\["1st","2nd"[^\]]*\]""")
-            val arrayMatch = arrayRegex.find(cleanRef) ?: Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""").find(cleanRef)
+            // Extract Course Names Array from source
+            val arrayRegex = Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""")
+            val arrayMatch = arrayRegex.find(cleanRef)
             val courseArrayName = arrayMatch?.groupValues?.get(1) ?: "h"
 
             val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayName;"
@@ -127,25 +132,6 @@ class ReferenceJsFetcher {
             e.printStackTrace()
             return@withContext PdfResources("")
         }
-    }
-
-    private fun translateScript(script: String): String {
-        var s = script
-        val map = mapOf(
-            "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC",
-            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
-            "СПРАВКА" to "CERTIFICATE",
-            "Настоящая справка подтверждает, что" to "This certificate confirms that",
-            "действительно является студентом (-кой)" to "is a student of the",
-            "года обучения" to "year of study",
-            "специальности/направление" to "specialty/direction",
-            "профиль:" to "profile:",
-            "Справка выдана по месту требования." to "Issued for submission to the place of demand.",
-            "Достоверность данного документа можно проверить отсканировав QR-код" to "Authenticity can be verified by scanning the QR code",
-            """["первого","второго","третьего","четвертого","пятого","шестого","седьмого"]""" to """["1st","2nd","3rd","4th","5th","6th","7th"]"""
-        )
-        map.forEach { (k, v) -> s = s.replace(k, v) }
-        return s
     }
 
     private fun cleanJs(content: String): String {
@@ -241,7 +227,6 @@ class ReferencePdfGenerator(private val context: Context) {
 
                 function translateData() {
                     if (lang !== "en") return;
-                    
                     const map = {
                         "Международный медицинский факультет": "International Medical Faculty",
                         "Лечебное дело": "General Medicine",
@@ -251,11 +236,10 @@ class ReferencePdfGenerator(private val context: Context) {
                         "Кыргызская Республика": "Kyrgyz Republic"
                     };
                     function t(str) { return map[str] || str; }
-
+                    
                     if (studentInfo.faculty_ru) studentInfo.faculty_ru = t(studentInfo.faculty_ru);
                     if (studentInfo.edu_form_ru) studentInfo.edu_form_ru = t(studentInfo.edu_form_ru);
                     if (studentInfo.speciality_ru) studentInfo.speciality_ru = t(studentInfo.speciality_ru);
-                    
                     if (studentInfo.lastStudentMovement) {
                         if (studentInfo.lastStudentMovement.speciality && studentInfo.lastStudentMovement.speciality.direction) {
                              studentInfo.lastStudentMovement.speciality.direction.name_ru = t(studentInfo.lastStudentMovement.speciality.direction.name_ru);
@@ -279,22 +263,33 @@ class ReferencePdfGenerator(private val context: Context) {
                 function startGeneration() {
                     try {
                         AndroidBridge.log("JS: Ref Driver started...");
-                        if (typeof window.RefDocGenerator !== 'function') throw "Generator missing";
+                        if (typeof window.RefDocGenerator !== 'function') throw "Generator function missing";
                         
                         translateData();
 
+                        // 1. Dynamic Course
                         const courses = window.RefCourseNames || ["1st","2nd","3rd","4th","5th","6th","7th"];
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        const courseStr = courses[Math.min(e, i)] || (Math.min(e, i)+1) + "-th";
+                        
+                        let courseStr = "Unknown";
+                        // If EN, map Russian array index to English ordinal
+                        if (lang === "en" && courses[0] === "первого") {
+                             const enCourses = ["1st","2nd","3rd","4th","5th","6th","7th"];
+                             courseStr = enCourses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-th";
+                        } else {
+                             courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-го";
+                        }
 
+                        // 2. ID String
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
 
+                        // 3. Data Object
                         const dataObj = {
                             id: docIdStr,
                             edunum: courseStr,
@@ -302,6 +297,7 @@ class ReferencePdfGenerator(private val context: Context) {
                             adress: univInfo.address_ru || "г. Ош, ул. Ленина 331"
                         };
 
+                        // 4. Generate
                         const docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
