@@ -11,7 +11,10 @@ import android.webkit.WebViewClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 class ReferenceJsFetcher {
 
@@ -20,121 +23,142 @@ class ReferenceJsFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Find Main Script to locate References7
-            logger("Fetching index...")
+            // 1. Index
+            logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") ?: throw Exception("Main JS missing")
+            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
+                ?: throw Exception("Main JS missing")
+            
+            // 2. Main JS
+            logger("Fetching Main JS...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 2. Find References7 path
+            // 3. Find References7
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Try finding via StudentDocuments if lazy-loaded
+                logger("Searching StudentDocuments...")
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
-                    val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
-                    refJsPath = findMatch(docsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
+                    val docsJsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
+                    refJsPath = findMatch(docsJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
                 }
             }
-            if (refJsPath == null) throw Exception("References7.js not found")
+            if (refJsPath == null) throw Exception("References7 JS missing")
             val refJsName = getName(refJsPath)
-            
+
+            // 4. Fetch References7 JS
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 3. LINK DEPENDENCIES (Dynamic Name Resolution)
+            // 5. LINK MODULES (Dynamic Name Resolution)
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
-            suspend fun linkModule(keyword: String, exportChar: String, fallback: String, defaultVal: String) {
-                // Regex to find what variable name the script uses: import { S as et } from ...
+            suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
                 var varName: String? = null
-                if (exportChar == "DEFAULT") {
-                    val r = Regex("""import\s*\{\s*(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
-                    varName = findMatch(refContent, r.pattern)
+                
+                // Try named or default import pattern based on arg
+                if (exportChar == "DEFAULT_OR_NAMED") {
+                     val regex = Regex("""import\s*\{\s*(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
+                     varName = findMatch(refContent, regex.pattern)
                 } else {
-                    val r = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
-                    varName = findMatch(refContent, r.pattern)
+                    val regex = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
+                    varName = findMatch(refContent, regex.pattern)
                 }
-                
-                val name = varName ?: fallback
-                linkedVars.add(name)
 
-                // Fetch file content
-                val fileRegex = Regex("""["']([^"']*$keyword\.[^"']+\.js)["']""")
-                val pathMatch = fileRegex.find(refContent) ?: fileRegex.find(mainJsContent)
+                if (varName == null) {
+                    varName = fallbackName
+                } else {
+                    logger("Linked $fileKeyword as '$varName'")
+                }
+                linkedVars.add(varName)
+
+                // Find File URL
+                val fileUrlRegex = Regex("""["']([^"']*$fileKeyword\.[^"']+\.js)["']""")
+                val fileNameMatch = fileUrlRegex.find(refContent) ?: fileUrlRegex.find(mainJsContent)
                 
-                if (pathMatch != null) {
+                var success = false
+                if (fileNameMatch != null) {
+                    val fileName = getName(fileNameMatch.groupValues[1])
                     try {
-                        val fName = getName(pathMatch.groupValues[1])
-                        val fContent = fetchString("$baseUrl/assets/$fName")
-                        // Extract the export body
-                        val exportRegex = if(exportChar == "DEFAULT") Regex("""export\s*\{\s*(\w+)\s*\}""") 
-                                          else Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""")
-                        val internalMatch = exportRegex.find(fContent)
+                        val fileContent = fetchString("$baseUrl/assets/$fileName")
                         
-                        if (internalMatch != null) {
-                            val internalVar = internalMatch.groupValues[1]
-                            // Remove imports/exports from dependency to clean it
-                            val clean = cleanJs(fContent)
-                            dependencies.append("var $name = (() => { $clean; return $internalVar; })();\n")
-                            return
+                        val exportRegex = if (exportChar == "DEFAULT_OR_NAMED") 
+                            Regex("""export\s*\{\s*(\w+)\s*\}""") 
+                        else 
+                            Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""") 
+                            
+                        val internalVarMatch = exportRegex.find(fileContent)
+                        
+                        if (internalVarMatch != null) {
+                            val internalVar = internalVarMatch.groupValues[1]
+                            val cleanContent = cleanJsContent(fileContent)
+                            // Use 'var' to allow redeclaration if minification conflicts
+                            dependencies.append("var $varName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
+                            success = true
                         }
-                    } catch (e: Exception) { logger("Link Err $name") }
+                    } catch (e: Exception) { logger("Fetch err $fileName") }
                 }
-                dependencies.append("var $name = $defaultVal;\n")
+
+                if (!success) dependencies.append("var $varName = $fallbackValue;\n")
             }
 
-            // Link the specific files required by References7
-            linkModule("PdfStyle", "P", "PdfStyle", "{}")
-            linkModule("Signed", "S", "Signed", "\"\"")
-            linkModule("LicenseYear", "L", "LicenseYear", "[]")
-            linkModule("SpecialityLincense", "S", "SpecLic", "{}")
-            linkModule("DocumentLink", "DEFAULT", "DocLink", "{}")
-            linkModule("ru", "r", "RuLang", "{}")
+            // --- LINK CONFIGURATION ---
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
+            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
+            linkModule("ru", "r", "Ru_Fallback", "{}")                      
 
-            // 4. MOCK OTHER IMPORTS (Vue, etc.)
+            // 6. MOCK OTHER IMPORTS
             val varsToMock = mutableSetOf<String>()
-            // Find all: import { a, b as c } from ...
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
-            importRegex.findAll(refContent).forEach { m ->
-                m.groupValues[1].split(",").forEach { 
-                    val parts = it.trim().split(Regex("""\s+as\s+"""))
-                    val v = if (parts.size > 1) parts[1] else parts[0]
-                    if (v.isNotBlank()) varsToMock.add(v.trim())
+            val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            genericImportRegex.findAll(refContent).forEach { match ->
+                match.groupValues[1].split(",").forEach { item ->
+                    val parts = item.trim().split(Regex("""\s+as\s+"""))
+                    val name = if (parts.size == 2) parts[1] else parts[0]
+                    if (name.isNotBlank()) varsToMock.add(name.trim())
                 }
             }
-            // Don't mock what we linked, and DO NOT mock '$' (we provide it manually)
+            
             varsToMock.removeAll(linkedVars)
-            varsToMock.remove("$") 
+            varsToMock.remove("$") // Fix: Don't mock $ because we define it manually
 
             val dummyScript = StringBuilder()
-            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy });\n")
+            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
-                dummyScript.append("var ${varsToMock.joinToString(",")} = UniversalDummy;\n")
+                dummyScript.append("var ")
+                dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
+                dummyScript.append(";\n")
             }
 
-            // 5. DYNAMIC EXTRACTION of Key Logic
-            // Extract the 'at' function (PDF Definition)
-            // Look for: const at = (o,d,v) => ...
-            // We assume it's a const function definition that eventually returns pageSize:"A4"
-            var cleanMain = cleanJs(refContent)
+            // 7. EXTRACT GENERATOR FUNCTION
+            var cleanRef = cleanJsContent(refContent)
             
-            // Regex to capture the function name for PDF generation
-            val genFuncRegex = Regex("""const\s+(\w+)\s*=\s*\(\w+,\w+,\w+\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
-            val genMatch = genFuncRegex.find(cleanMain)
-            val genFuncName = genMatch?.groupValues?.get(1) ?: "at" // Fallback to 'at'
-
-            // Extract the 'h' array (Course Names: "первого", "второго"...)
+            // Find the function that returns { pageSize: "A4", ... }
+            val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
+            val generatorMatch = generatorRegex.find(cleanRef)
+            
+            var exposeCode = ""
+            if (generatorMatch != null) {
+                val funcName = generatorMatch.groupValues[1]
+                logger("Found Generator: $funcName")
+                exposeCode = "\nwindow.RefDocGenerator = $funcName;"
+            } else {
+                logger("⚠️ Generator extraction failed, trying fallback 'at'")
+                exposeCode = "\nif(typeof at !== 'undefined') window.RefDocGenerator = at;"
+            }
+            
+            // Extract Course Names Array
             val courseArrayRegex = Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""")
-            val courseMatch = courseArrayRegex.find(cleanMain)
-            val courseArrayName = courseMatch?.groupValues?.get(1) ?: "h"
+            val courseMatch = courseArrayRegex.find(cleanRef)
+            if (courseMatch != null) {
+                 exposeCode += "\nwindow.RefCourseNames = ${courseMatch.groupValues[1]};"
+            }
 
-            // Expose them to window
-            val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayName;"
-
-            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanMain + exposeCode
-
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + exposeCode + "\n})();"
+            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -144,8 +168,7 @@ class ReferenceJsFetcher {
         }
     }
 
-    // Robust import stripper
-    private fun cleanJs(content: String): String {
+    private fun cleanJsContent(content: String): String {
         return content
             .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
@@ -154,7 +177,7 @@ class ReferenceJsFetcher {
             .replace(Regex("""export\s+default\s+"""), "")
     }
 
-    private fun getName(path: String) = path.split('/').last()
+    private fun getName(path: String): String = path.split('/').last()
 
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
@@ -165,7 +188,9 @@ class ReferenceJsFetcher {
     }
 
     private fun findMatch(content: String, regex: String): String? {
-        return Regex(regex).find(content)?.groupValues?.get(1)
+        return Regex(regex).find(content)?.let { match ->
+            if (match.groupValues.size > 1) match.groupValues[1] else match.groupValues[0]
+        }
     }
 }
 
@@ -179,6 +204,7 @@ class ReferencePdfGenerator(private val context: Context) {
         linkId: Long,
         qrUrl: String,
         resources: PdfResources,
+        language: String = "ru", // ADDED THIS PARAMETER BACK
         logCallback: (String) -> Unit
     ): ByteArray = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
         
@@ -188,7 +214,7 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
-                    logCallback("[JS] ${cm.message()}")
+                    logCallback("[JS Ref] ${cm.message()}")
                     return true
                 }
             }
@@ -199,18 +225,23 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         val clean = base64.replace("data:application/pdf;base64,", "")
                         val bytes = Base64.decode(clean, Base64.DEFAULT)
-                        if (continuation.isActive) continuation.resume(bytes)
+                        // FIXED: Use resumeWith(Result.success) for compatibility
+                        if (continuation.isActive) continuation.resumeWith(Result.success(bytes))
                     } catch (e: Exception) {
-                        if (continuation.isActive) continuation.resumeWithException(e)
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(e))
                     }
                 }
+
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("JS: $msg"))
+                    if (continuation.isActive) continuation.resumeWith(Result.failure(Exception("JS: $msg")))
                 }
+                
                 @JavascriptInterface
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
+
+            val dateLocale = if (language == "en") "en-US" else "ru-RU"
 
             val html = """
             <!DOCTYPE html>
@@ -221,14 +252,15 @@ class ReferencePdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                // 1. Mock Data
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
                 const studentInfo = $studentInfoJson;
                 const licenseInfo = $licenseInfoJson;
                 const univInfo = $univInfoJson;
+                const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
-                
-                // 2. Mock Moment.js (referenced as '$' in script)
-                // We declare it with 'var' so it doesn't conflict if the script tries to var-declare it too
+                const lang = "$language";
+
+                // Mock moment.js (variable name '$')
                 var ${'$'} = function(d) { 
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; 
                 };
@@ -236,39 +268,43 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // 3. Load Fetched Scripts
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("Scripts loaded successfully.");
-                } catch(e) { AndroidBridge.returnError("Script Load Error: " + e.message); }
+                    AndroidBridge.log("JS: Scripts loaded.");
+                } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("Starting PDF Generation...");
+                        AndroidBridge.log("JS: Ref Driver started...");
                         
-                        if (typeof window.RefDocGenerator !== 'function') throw "Generator function not found";
+                        if (typeof window.RefDocGenerator !== 'function') {
+                             throw "RefDocGenerator function not found. Extraction failed.";
+                        }
+
+                        // --- LOGIC REPLICATION ---
                         
-                        // 4. Dynamic Calculation (using extracted logic variables if available)
-                        // Use extracted 'RefCourseNames' array for courses, fallback if missing
+                        // 1. Course Name Array
                         const courses = window.RefCourseNames || ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
                         
+                        // 2. Calculate Course
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        const courseStr = courses[Math.min(e, i)] || "Unknown";
+                        const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-го";
 
-                        // Construct ID
-                        const second = studentInfo.second || "24";
+                        // 3. ID String
+                        const second = studentInfo.second || "24"; 
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
+                        
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
 
-                        // Data Object for Generator
-                        const d = {
+                        // 4. Data Object for generator (at(o, d, v))
+                        const dataObj = {
                             id: docIdStr,
                             edunum: courseStr,
                             date: new Date().toLocaleDateString("ru-RU"),
@@ -276,7 +312,7 @@ class ReferencePdfGenerator(private val context: Context) {
                         };
 
                         // 5. Generate
-                        const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
+                        const docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
