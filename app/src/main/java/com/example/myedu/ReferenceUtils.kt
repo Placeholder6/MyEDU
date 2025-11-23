@@ -135,6 +135,12 @@ class ReferenceJsFetcher {
             val arrayMatch = arrayRegex.find(cleanRef)
             val courseArrayLiteral = arrayMatch?.value ?: "['первого','второго','третьего','четвертого','пятого','шестого','седьмого']"
 
+            // NEW: TRANSLATE IF ENGLISH
+            if (language == "en") {
+                logger("Translating Reference Template...")
+                cleanRef = translateToEnglish(cleanRef)
+            }
+
             val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayLiteral;"
 
             // Assemble Script
@@ -147,6 +153,36 @@ class ReferenceJsFetcher {
             e.printStackTrace()
             return@withContext PdfResources("")
         }
+    }
+
+    private fun translateToEnglish(script: String): String {
+        var s = script
+        val map = mapOf(
+            "СПРАВКА" to "REFERENCE",
+            "Дана" to "Given to",
+            "в том, что он(а)" to "certifying that he/she",
+            "в том, что он" to "certifying that he",
+            "в том, что она" to "certifying that she",
+            "действительно обучается" to "is currently studying",
+            "в Ошском государственном университете" to "at Osh State University",
+            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
+            "МИНИСТЕРСТВО ОБРАЗОВАНИЯ И НАУКИ" to "MINISTRY OF EDUCATION AND SCIENCE",
+            "КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "OF THE KYRGYZ REPUBLIC",
+            "Форма обучения" to "Form of Study",
+            "Специальность" to "Specialty",
+            "Направление" to "Direction",
+            "Курс" to "Year",
+            "по настоящее время" to "to the present time",
+            "Приказ о зачислении" to "Enrollment Order",
+            "Примечание" to "Note",
+            "Ректор" to "Rector",
+            "Гербовая печать" to "Official Seal",
+            "Подпись" to "Signature",
+            "Адрес" to "Address",
+            "Телефон" to "Phone"
+        )
+        map.forEach { (ru, en) -> s = s.replace(ru, en) }
+        return s
     }
 
     private fun cleanJsContent(content: String): String {
@@ -240,7 +276,7 @@ class ReferencePdfGenerator(private val context: Context) {
 
                 // Mock moment.js (variable '$')
                 var ${'$'} = function(d) { 
-                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; 
+                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
                 };
                 ${'$'}.locale = function() {};
             </script>
@@ -253,41 +289,84 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
+                // Helper to replace Russian phrases within strings (preserving codes)
+                function translateString(str) {
+                    if (!str) return str;
+                    let s = str;
+                    const replacements = {
+                        "Лечебное дело": "General Medicine",
+                        "Очное (специалитет)": "Full-time (Specialist)",
+                        "Международный медицинский факультет": "International Medical Faculty",
+                        "Очное": "Full-time",
+                        "Заочное": "Part-time",
+                        "Ошский государственный университет": "Osh State University",
+                        "г. Ош, ул. Ленина 331": "Osh city, Lenin st. 331"
+                    };
+                    for (const [key, value] of Object.entries(replacements)) {
+                        s = s.split(key).join(value);
+                    }
+                    return s;
+                }
+                
+                function translateData() {
+                     if (lang !== "en") return;
+                     
+                     // Translate Dynamic Student Fields
+                     ["faculty_ru", "direction_ru", "speciality_ru"].forEach(field => {
+                        if (studentInfo[field]) studentInfo[field] = translateString(studentInfo[field]);
+                     });
+                     
+                     if (studentInfo.lastStudentMovement && studentInfo.lastStudentMovement.edu_form && studentInfo.lastStudentMovement.edu_form.name_ru) {
+                        studentInfo.lastStudentMovement.edu_form.name_ru = translateString(studentInfo.lastStudentMovement.edu_form.name_ru);
+                     }
+                }
+
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Ref Driver started...");
+                        AndroidBridge.log("JS: Ref Driver started (" + lang + ")...");
                         
                         if (typeof window.RefDocGenerator !== 'function') {
                              throw "Generator function not found. Extraction failed.";
                         }
-                        if (!window.RefCourseNames) {
-                             throw "Course names array not found. Extraction failed.";
+                        
+                        translateData();
+                        
+                        // 1. Calculate Dynamic Fields
+                        let courses = window.RefCourseNames;
+                        if (lang === "en") {
+                            courses = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
                         }
 
-                        // 1. Calculate Dynamic Fields
-                        const courses = window.RefCourseNames; // Uses the array extracted from server file
+                        if (!courses) throw "Course names array not found.";
                         
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-го";
+                        const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + (lang === "en" ? "th" : "-го");
 
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
+                        
+                        // Address Handling
+                        let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
+                        if (lang === "en" && univInfo.address_en) {
+                             address = univInfo.address_en;
+                        } else if (lang === "en") {
+                             address = translateString(address);
+                        }
 
-                        // 2. Construct Data Object (replicating Vue setup() logic)
+                        // 2. Construct Data Object
                         const d = {
                             id: docIdStr,
                             edunum: courseStr,
-                            date: new Date().toLocaleDateString("ru-RU"),
-                            adress: univInfo.address_ru || "г. Ош, ул. Ленина 331"
+                            date: new Date().toLocaleDateString("$dateLocale"),
+                            adress: address
                         };
 
                         // 3. Call Generator
-                        // window.RefDocGenerator is the extracted 'at' function from References7.js
                         const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
                         
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
