@@ -51,7 +51,6 @@ class ReferenceJsFetcher {
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
-                    // Check in refContent first, then docs, then main (dependencies might be shared)
                     val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(docsJsContent) ?: importRegex.find(mainJsContent)
                     if (fileNameMatch != null) {
                         val fileName = fileNameMatch.groupValues[1]
@@ -87,7 +86,6 @@ class ReferenceJsFetcher {
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
             // 7. EXPOSE
-            // We bind the module to window.PDFGeneratorRef
             val exposeCode = "\nwindow.PDFGeneratorRef = ReferenceModule;"
 
             val finalScript = dependencies.toString() + "\n" + cleanRef + exposeCode
@@ -196,9 +194,7 @@ class ReferencePdfGenerator(private val context: Context) {
                         AndroidBridge.log("JS: Ref Driver started...");
                         
                         if (typeof window.PDFGeneratorRef !== 'function') throw "PDFGeneratorRef missing";
-
-                        // We call the function exposed by the ReferenceModule (References7.js)
-                        // Based on typical usage for this specific doc type
+                        
                         const docDef = window.PDFGeneratorRef(studentInfo, licenseInfo, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
