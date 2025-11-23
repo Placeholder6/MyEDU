@@ -54,8 +54,6 @@ class MainViewModel : ViewModel() {
     private var cachedStudentId: Long = 0
     private var cachedInfoJson: String? = null
     private var cachedTranscriptJson: String? = null
-    
-    // Cache separate resources for RU and EN
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
 
@@ -137,7 +135,6 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                // Ensure resources for target language are loaded
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
                     log("Fetching $language resources...")
