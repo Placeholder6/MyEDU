@@ -116,25 +116,24 @@ class JsResourceFetcher {
 
     private fun translateToEnglish(script: String): String {
         var s = script
-        // Static Template Translations
         val map = mapOf(
             "Учебный год" to "Academic Year", 
-            "Семестр" to "Semester",
-            "Зарегистрировано кредитов" to "Credits Registered",
+            "Зарегистрировано кредитов" to "Registered Credits",
             "Дисциплины" to "Subjects", 
             "Кредит" to "Credits", 
             "Форма контроля" to "Control",
             "Баллы" to "Score",
-            "Цифр. экв." to "GPA",          // Changed from Digit
-            "Букв.сист." to "Grade",        // Changed from Letter
-            "Трад. сист." to "Performance", // Changed from Traditional
+            "Цифр. экв." to "GPA",          // Corrected
+            "Букв.сист." to "Grade",        // Corrected
+            "Трад. сист." to "Performance", // Corrected
             "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
             "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
+            "Международный медицинский факультет" to "International Medical Faculty", // Added
             "ТРАНСКРИПТ" to "TRANSCRIPT",
             "ФИО:" to "Full Name:", 
             "ID студента:" to "Student ID:", 
             "Дата рождения:" to "Date of Birth:",
-            "Направление:" to "Direction:", 
+            "Направление:" to "Course:",    // Corrected
             "Специальность:" to "Specialty:", 
             "Форма обучения:" to "Form of Study:",
             "Общий GPA:" to "Total GPA:", 
@@ -147,7 +146,6 @@ class JsResourceFetcher {
         
         map.forEach { (ru, en) -> s = s.replace(ru, en) }
         
-        // Fix Table Headers safely (The script uses header:"...")
         s = s.replace("header:\"№\"", "header:\"#\"")
         s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
         
