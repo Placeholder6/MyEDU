@@ -67,20 +67,20 @@ class ReferenceJsFetcher {
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
-                            // CRITICAL: Clean the content of the linked module too!
+                            // Clean the dependency content to avoid nested import errors
                             val cleanContent = cleanJsContent(fileContent)
                             
-                            dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
+                            // USE 'var' INSTEAD OF 'const' TO PREVENT "ALREADY DECLARED" ERRORS
+                            dependencies.append("var $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
                     }
                 } catch (e: Exception) { logger("Link Error ($finalVarName): ${e.message}") }
 
-                if (!success) dependencies.append("const $finalVarName = $fallbackValue;\n")
+                if (!success) dependencies.append("var $finalVarName = $fallbackValue;\n")
             }
 
             // Link Specific Dependencies for Reference (Form 8)
-            // Regex: matches from "..." or from '...'
             linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
             linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
@@ -90,9 +90,8 @@ class ReferenceJsFetcher {
 
             // 6. MOCK OTHER IMPORTS
             val varsToMock = mutableSetOf<String>()
-            // Helper to extract variable names before we delete the lines
-            val varExtractRegex = Regex("""import\s*\{(.*?)\}\s*from""")
-            varExtractRegex.findAll(refContent).forEach { match ->
+            val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            genericImportRegex.findAll(refContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
                     val parts = item.trim().split(Regex("""\s+as\s+"""))
                     val varName = if (parts.size == 2) parts[1] else parts[0]
@@ -102,15 +101,15 @@ class ReferenceJsFetcher {
             varsToMock.removeAll(setOf("J", "mt", "Ly", "Sl", "Dl", "T"))
 
             val dummyScript = StringBuilder()
+            // UniversalDummy handles missing dependencies gracefully
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
-                dummyScript.append("var ")
+                dummyScript.append("var ") // Use var here too
                 dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
                 dummyScript.append(";\n")
             }
 
             // 7. CLEAN MAIN SCRIPT
-            // Aggressively remove all import statements from the main Reference file
             var cleanRef = cleanJsContent(refContent)
                 .replace(Regex("""export\s+default"""), "const ReferenceModule =") 
                 .replace(Regex("""export\s*\{.*?\}"""), "")
@@ -127,18 +126,12 @@ class ReferenceJsFetcher {
         }
     }
 
-    // Shared cleaning function for both Main script and Dependencies
+    // Aggressive cleaning function for both Main script and Dependencies
     private fun cleanJsContent(content: String): String {
         return content
-            // 1. Remove imports with braces (multiline support): import { ... } from "..."
             .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
-            // 2. Remove default imports: import X from "..."
             .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
-            // 3. Remove side-effect imports: import "..."
             .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
-            // 4. Remove mixed imports (rare but possible): import X, { Y } from "..."
-            .replace(Regex("""import\s+[\w*]+,\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
-            // 5. Remove export statements (except default, which is handled separately in main)
             .replace(Regex("""export\s*\{[^}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
     }
 
