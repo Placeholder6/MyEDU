@@ -92,7 +92,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                log("1. Resources...")
+                log("1. Fetching & Linking Scripts...")
                 cachedResources = jsFetcher.fetchResources { log(it) }
 
                 log("2. Student Info...")
@@ -103,7 +103,7 @@ class MainViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(sId).string()
                 }
                 
-                // Clean Name Logic
+                // Fix "null" strings in name
                 val infoJson = JSONObject(infoRaw)
                 fun clean(key: String): String {
                     val v = infoJson.optString(key, "")
@@ -141,7 +141,7 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Key...")
+                log("A. Requesting Key...")
                 val linkRaw = withContext(Dispatchers.IO) {
                     NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
                 }
@@ -167,7 +167,7 @@ class MainViewModel : ViewModel() {
                 log("SUCCESS: Saved locally.")
                 onPdfReady(file)
 
-                // --- UPLOAD STEP ---
+                // Upload
                 uploadGeneratedPdf(file, linkId)
 
             } catch (e: Throwable) { 
@@ -180,25 +180,19 @@ class MainViewModel : ViewModel() {
 
     private suspend fun uploadGeneratedPdf(file: File, linkId: Long) {
         try {
-            log("D. Uploading to Server...")
-            
+            log("D. Uploading...")
             val plainText = "text/plain".toMediaTypeOrNull()
             val idBody = linkId.toString().toRequestBody(plainText)
             val studentIdBody = cachedStudentId.toString().toRequestBody(plainText)
-            
-            val pdfType = "application/pdf".toMediaTypeOrNull()
-            val fileBody = file.asRequestBody(pdfType)
+            val fileBody = file.asRequestBody("application/pdf".toMediaTypeOrNull())
             val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileBody)
 
             val response = withContext(Dispatchers.IO) {
                 NetworkClient.api.uploadPdf(idBody, studentIdBody, pdfPart).string()
             }
-            log("UPLOAD COMPLETE!")
-            log("Server Response: $response")
-            
+            log("UPLOAD DONE: $response")
         } catch(e: Exception) {
             log("UPLOAD FAILED: ${e.message}")
-            e.printStackTrace()
         }
     }
 
@@ -206,24 +200,19 @@ class MainViewModel : ViewModel() {
         try {
             val items = mutableListOf<TranscriptItem>()
             val arr = JSONArray(jsonString)
-
             for (i in 0 until arr.length()) {
                 val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
                 for (j in 0 until sems.length()) {
                     val subs = sems.optJSONObject(j)?.optJSONArray("subjects") ?: continue
                     for (k in 0 until subs.length()) {
                         val sub = subs.optJSONObject(k)
-                        
-                        val name = sub.optString("subject", "Unknown")
-                        val credit = sub.optString("credit", "0")
+                        val name = sub.optString("subject", "?")
+                        val cr = sub.optString("credit", "0")
                         val mark = sub.optJSONObject("mark_list")
                         val rule = sub.optJSONObject("exam_rule")
-                        
-                        val total = mark?.optString("finally")?.takeIf { it != "0" && it != "null" }
-                            ?: mark?.optString("total") ?: "-"
+                        val total = mark?.optString("finally")?.takeIf { it != "0" && it != "null" } ?: mark?.optString("total") ?: "-"
                         val grade = rule?.optString("alphabetic") ?: "-"
-                        
-                        items.add(TranscriptItem(name, credit, total, grade))
+                        items.add(TranscriptItem(name, cr, total, grade))
                     }
                 }
             }
@@ -245,9 +234,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
+        } catch (e: Throwable) { e.printStackTrace() }
     }
 }
 
@@ -257,22 +244,27 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val state = rememberLazyListState()
-    
     LaunchedEffect(viewModel.logs.size) { if(viewModel.logs.isNotEmpty()) state.animateScrollToItem(viewModel.logs.size - 1) }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         OutlinedTextField(value = viewModel.tokenInput, onValueChange = { viewModel.tokenInput = it }, label = { Text("Token") }, modifier = Modifier.fillMaxWidth())
-        Button(onClick = { clipboard.getText()?.text?.let { viewModel.tokenInput = it } }, Modifier.fillMaxWidth()) { Text("Paste Token") }
+        Button(onClick = { clipboard.getText()?.text?.let { viewModel.tokenInput = it } }, Modifier.fillMaxWidth().padding(vertical=8.dp)) { Text("Paste Token") }
         
-        Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch") }
             Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("2. PDF & Upload") }
         }
         
+        Divider(Modifier.padding(vertical=8.dp))
         LazyColumn(Modifier.weight(1f)) {
             items(viewModel.transcriptList) { t -> 
-                Text("${t.subject} | ${t.credit} | ${t.total} | ${t.grade}", fontSize = 12.sp)
-                Divider()
+                Row {
+                    Text(t.subject, Modifier.weight(1f), fontSize = 12.sp)
+                    Text(t.credit, Modifier.width(30.dp), fontSize = 12.sp)
+                    Text(t.total, Modifier.width(30.dp), fontSize = 12.sp)
+                    Text(t.grade, Modifier.width(30.dp), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                }
+                Divider(color=Color.LightGray, thickness=0.5.dp)
             }
         }
         
@@ -283,10 +275,8 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
                 Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show()
             }) { Text("Copy Logs") }
         }
-        Box(Modifier.height(150.dp).fillMaxWidth().background(Color.Black).padding(4.dp)) {
-            LazyColumn(state = state) {
-                items(viewModel.logs) { Text("> $it", color = Color.Green, fontSize = 10.sp) }
-            }
+        Box(Modifier.height(150.dp).fillMaxWidth().background(Color(0xFF1E1E1E)).padding(4.dp)) {
+            LazyColumn(state = state) { items(viewModel.logs) { Text("> $it", color = Color.Green, fontSize = 10.sp) } }
         }
     }
 }
