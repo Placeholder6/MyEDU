@@ -12,24 +12,24 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class ReferenceJsFetcher {
 
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
 
-    suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
+    suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Fetch Main Script to find sub-modules
+            // 1. Fetch Main Script
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 2. Fetch References7.js (The Form 8 Generator)
+            // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Fallback search in StudentDocuments
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -42,7 +42,7 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             var refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 3. LINK DEPENDENCIES (Re-assembling the split code)
+            // 3. LINK DEPENDENCIES
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
@@ -91,7 +91,7 @@ class ReferenceJsFetcher {
             linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
             linkModule("ru", "r", "Ru_Fallback", "{}")                      
 
-            // 4. MOCK REMAINING IMPORTS
+            // 4. MOCK OTHERS
             val varsToMock = mutableSetOf<String>()
             val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             genericImportRegex.findAll(refContent).forEach { match ->
@@ -102,7 +102,7 @@ class ReferenceJsFetcher {
                 }
             }
             varsToMock.removeAll(linkedVars)
-            varsToMock.remove("$") // Don't mock moment.js, we handle it manually
+            varsToMock.remove("$") 
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -115,32 +115,21 @@ class ReferenceJsFetcher {
             // 5. PROCESS SCRIPT CONTENT
             var cleanRef = cleanJsContent(refContent)
             
-            // --- TRANSLATION LOGIC ---
-            if (language == "en") {
-                logger("Translating Reference Template...")
+            // --- TRANSLATION LOGIC (TEMPLATE) ---
+            if (language == "en" && dictionary.isNotEmpty()) {
+                logger("Translating Reference Template with Dictionary...")
+                // Iterate dictionary and replace static strings in the JS code
+                dictionary.forEach { (ru, en) -> 
+                    cleanRef = cleanRef.replace(ru, en) 
+                }
                 
-                // 1. Replace Static Text (Exact matches from References7.js)
-                val replacements = mapOf(
-                    "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
-                    "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
-                    "СПРАВКА" to "REFERENCE",
-                    "Настоящая справка подтверждает, что" to "This reference confirms that",
-                    "действительно является студентом (-кой)" to "is indeed a student of the",
-                    "года обучения" to "year of study",
-                    "специальности/направление" to "specialty/direction",
-                    " [профиль: " to " [profile: ",
-                    "Справка выдана по месту требования." to "Reference issued for submission to the place of demand.",
-                    "Достоверность данного документа можно проверить отсканировав QR-код" to "The authenticity of this document can be verified by scanning the QR code"
-                )
-                replacements.forEach { (ru, en) -> cleanRef = cleanRef.replace(ru, en) }
-
-                // 2. Replace Course Array (e.g. "первого" -> "1st")
-                // Locates: const h=["первого", ... "седьмого"]
+                // Special handling for the course array if present in dictionary logic or hardcoded override
+                // We assume the dictionary might not cover array replacement logic, so we keep this safety check
+                // or mapping "первого"->"1st" in your JSON would handle it automatically if the script uses those strings.
                 val courseArrayRegex = Regex("""const\s+\w+\s*=\s*\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
                 cleanRef = cleanRef.replace(courseArrayRegex, """const h=["1st","2nd","3rd","4th","5th","6th","7th","8th"]""")
             }
 
-            // Extract Generator Function 'at'
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
@@ -192,6 +181,7 @@ class ReferencePdfGenerator(private val context: Context) {
         qrUrl: String,
         resources: PdfResources,
         language: String = "ru",
+        dictionary: Map<String, String> = emptyMap(),
         logCallback: (String) -> Unit
     ): ByteArray = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
         
@@ -227,8 +217,8 @@ class ReferencePdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            // Use US English date formatting if 'en' is selected
             val dateLocale = if (language == "en") "en-US" else "ru-RU"
+            val dictionaryJson = JSONObject(dictionary).toString()
 
             val html = """
             <!DOCTYPE html>
@@ -240,16 +230,14 @@ class ReferencePdfGenerator(private val context: Context) {
             <body>
             <script>
                 window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
-                
-                // Initialize Data
                 const studentInfo = $studentInfoJson;
                 const licenseInfo = $licenseInfoJson;
                 const univInfo = $univInfoJson;
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
+                const dictionary = $dictionaryJson; // INJECT DICTIONARY
 
-                // Mock moment.js to handle date formatting (removes dependency on moment.js files)
                 var ${'$'} = function(d) { 
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
                 };
@@ -264,32 +252,18 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // --- DATA TRANSLATION LAYER ---
-                // This dictionary translates dynamic API values not covered by the template
-                const dictionary = {
-                    "Лечебное дело": "General Medicine",
-                    "Международный медицинский факультет": "International Medical Faculty",
-                    "Ошский государственный университет": "Osh State University",
-                    "Очное (специалитет)": "Full-time (Specialist)",
-                    "Очное": "Full-time",
-                    "Заочное": "Part-time",
-                    "Дистантное": "Distance",
-                    "Вечернее": "Evening",
-                    "Контракт": "Contract",
-                    "Бюджет": "Budget",
-                    "г. Ош, ул. Ленина 331": "Osh city, Lenin st. 331"
-                };
-
                 function translateString(str) {
                     if (!str || typeof str !== 'string') return str;
                     
-                    // 1. Exact Match
+                    // 1. Exact Dictionary Match
                     if (dictionary[str]) return dictionary[str];
                     
-                    // 2. Partial Replacement
+                    // 2. Substring Replacement (if not exact match)
                     let s = str;
                     for (const [key, value] of Object.entries(dictionary)) {
-                        s = s.split(key).join(value);
+                        if (s.includes(key)) {
+                            s = s.split(key).join(value);
+                        }
                     }
                     return s;
                 }
@@ -297,35 +271,23 @@ class ReferencePdfGenerator(private val context: Context) {
                 function translateData() {
                      if (lang !== "en") return;
                      
-                     // Helper: Translate a field if it exists
                      const tr = (obj, key) => {
                         if (obj && obj[key]) obj[key] = translateString(obj[key]);
                      };
 
-                     // Translate Top-Level Student Info
                      tr(studentInfo, "faculty_ru");
                      tr(studentInfo, "speciality_ru");
+                     tr(studentInfo, "edu_form_ru");
+                     tr(studentInfo, "payment_form_name_ru");
                      
-                     // Translate Nested Info
                      if (studentInfo.lastStudentMovement) {
                          const lsm = studentInfo.lastStudentMovement;
-                         
-                         // Direction/Specialty Name
                          if (lsm.speciality && lsm.speciality.direction) {
                              tr(lsm.speciality.direction, "name_ru");
                          }
-                         
-                         // Edu Form (Full-time/Part-time)
-                         // Note: references7.js uses 'o.edu_form_ru' directly in some versions,
-                         // but often constructs it. We check common paths.
-                         tr(studentInfo, "edu_form_ru"); 
                          if (lsm.edu_form) tr(lsm.edu_form, "name_ru");
-
-                         // Payment Form (Contract/Budget)
                          if (lsm.payment_form) tr(lsm.payment_form, "name_ru");
                      }
-                     
-                     // Translate Address
                      tr(univInfo, "address_ru");
                 }
 
@@ -333,37 +295,17 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Ref Driver started (" + lang + ")...");
                         
-                        if (typeof window.RefDocGenerator !== 'function') {
-                             throw "Generator function not found. Extraction failed.";
-                        }
-                        
-                        // 1. Translate Data
                         translateData();
 
-                        // 2. Calculate Derived Values
-                        // Course calculation logic ported from References7.js
-                        // Note: The course array 'h' inside the script was already replaced by the Kotlin fetcher if lang=en.
-                        // We can't access 'h' here easily, but the script uses 'window.RefCourseNames' logic internally 
-                        // OR we rely on the replacement we did in fetcher.
-                        
-                        // We must mimic the parameters the 'at' function expects.
-                        // at(studentInfo, {id, edunum, date, adress}, qrCodeUrl)
-                        
-                        // Recalculate 'edunum' (Year of study)
+                        let courses = lang === "en" 
+                            ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] 
+                            : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
+                            
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        
-                        // Since we replaced the array inside the script, the generator will pick up "1st", "2nd" etc.
-                        // However, we need to pass 'edunum' string in the second argument object.
-                        
-                        const courses = lang === "en" 
-                            ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] 
-                            : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
-                            
                         const suffix = lang === "en" ? "" : "-го";
-                        // Logic matches References7.js: h[Math.min(e, i)]
                         const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + suffix;
 
                         const second = studentInfo.second || "24";
@@ -373,16 +315,14 @@ class ReferencePdfGenerator(private val context: Context) {
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
                         const address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
 
-                        const params = {
+                        const d = {
                             id: docIdStr,
                             edunum: courseStr,
                             date: new Date().toLocaleDateString("$dateLocale"),
                             adress: address
                         };
 
-                        // 3. Call The Generator
-                        const docDef = window.RefDocGenerator(studentInfo, params, qrCodeUrl);
-                        
+                        const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
