@@ -11,8 +11,8 @@ import android.webkit.WebViewClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
 class ReferenceJsFetcher {
 
@@ -21,13 +21,12 @@ class ReferenceJsFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Fetch Main Script
+            logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
@@ -41,7 +40,6 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 3. LINK DEPENDENCIES
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
@@ -80,14 +78,13 @@ class ReferenceJsFetcher {
                 dependencies.append("var $name = $defaultVal;\n")
             }
 
-            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
-            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
-            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
-            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
-            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
-            linkModule("ru", "r", "Ru_Fallback", "{}")                      
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")
+            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}")
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}")
+            linkModule("ru", "r", "Ru_Fallback", "{}")
 
-            // 4. MOCK OTHERS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
             importRegex.findAll(refContent).forEach { m ->
@@ -101,34 +98,22 @@ class ReferenceJsFetcher {
             varsToMock.remove("$") 
 
             val dummyScript = StringBuilder()
-            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy });\n")
+            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ${varsToMock.joinToString(",")} = UniversalDummy;\n")
             }
 
-            // 5. TRANSLATE & CLEAN
             var cleanRef = cleanJs(refContent)
-            
             if (language == "en") {
-                logger("Translating Reference Script to English...")
                 cleanRef = translateScript(cleanRef)
             }
 
-            // 6. DYNAMIC EXTRACTION
-            // Extract 'at' Function (PDF Generator)
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
 
-            // Extract Course Names Array (Handling potential translation)
-            val arrayRegex = if (language == "en") {
-                Regex("""const\s+(\w+)\s*=\s*\["1st","2nd"[^\]]*\]""")
-            } else {
-                Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""")
-            }
-            val arrayMatch = arrayRegex.find(cleanRef)
-            // If translation replaced it, the regex might need to match the new values, or we just trust the variable extraction
-            // Ideally, we find the var name that holds the array. In the original it's 'h'.
+            val arrayRegex = Regex("""const\s+(\w+)\s*=\s*\["1st","2nd"[^\]]*\]""")
+            val arrayMatch = arrayRegex.find(cleanRef) ?: Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""").find(cleanRef)
             val courseArrayName = arrayMatch?.groupValues?.get(1) ?: "h"
 
             val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayName;"
@@ -146,7 +131,7 @@ class ReferenceJsFetcher {
 
     private fun translateScript(script: String): String {
         var s = script
-        val replacements = mapOf(
+        val map = mapOf(
             "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC",
             "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
             "СПРАВКА" to "CERTIFICATE",
@@ -157,13 +142,9 @@ class ReferenceJsFetcher {
             "профиль:" to "profile:",
             "Справка выдана по месту требования." to "Issued for submission to the place of demand.",
             "Достоверность данного документа можно проверить отсканировав QR-код" to "Authenticity can be verified by scanning the QR code",
-            // Array replacement
             """["первого","второго","третьего","четвертого","пятого","шестого","седьмого"]""" to """["1st","2nd","3rd","4th","5th","6th","7th"]"""
         )
-        
-        replacements.forEach { (ru, en) -> 
-            s = s.replace(ru, en) 
-        }
+        map.forEach { (k, v) -> s = s.replace(k, v) }
         return s
     }
 
@@ -253,13 +234,11 @@ class ReferencePdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
 
-                // Mock moment.js
                 var ${'$'} = function(d) { 
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
                 };
                 ${'$'}.locale = function() {};
 
-                // Helper to translate Data
                 function translateData() {
                     if (lang !== "en") return;
                     
@@ -268,28 +247,24 @@ class ReferencePdfGenerator(private val context: Context) {
                         "Лечебное дело": "General Medicine",
                         "Очное (специалитет)": "Full-time (Specialist)",
                         "Контракт": "Contract",
-                        "Бюджет": "Budget"
+                        "Бюджет": "Budget",
+                        "Кыргызская Республика": "Kyrgyz Republic"
                     };
-
                     function t(str) { return map[str] || str; }
 
-                    // Translate Student Info fields used in Reference
                     if (studentInfo.faculty_ru) studentInfo.faculty_ru = t(studentInfo.faculty_ru);
                     if (studentInfo.edu_form_ru) studentInfo.edu_form_ru = t(studentInfo.edu_form_ru);
                     if (studentInfo.speciality_ru) studentInfo.speciality_ru = t(studentInfo.speciality_ru);
                     
                     if (studentInfo.lastStudentMovement) {
-                        if (studentInfo.lastStudentMovement.speciality) {
-                           if (studentInfo.lastStudentMovement.speciality.direction) {
-                               studentInfo.lastStudentMovement.speciality.direction.name_ru = 
-                                   t(studentInfo.lastStudentMovement.speciality.direction.name_ru);
-                           }
+                        if (studentInfo.lastStudentMovement.speciality && studentInfo.lastStudentMovement.speciality.direction) {
+                             studentInfo.lastStudentMovement.speciality.direction.name_ru = t(studentInfo.lastStudentMovement.speciality.direction.name_ru);
                         }
                         if (studentInfo.lastStudentMovement.payment_form) {
-                             studentInfo.lastStudentMovement.payment_form.name_ru = 
-                                 t(studentInfo.lastStudentMovement.payment_form.name_ru);
+                             studentInfo.lastStudentMovement.payment_form.name_ru = t(studentInfo.lastStudentMovement.payment_form.name_ru);
                         }
                     }
+                    if (univInfo.address_ru) univInfo.address_ru = univInfo.address_ru.replace("г. Ош", "Osh city").replace("ул.", "st.");
                 }
             </script>
 
@@ -304,13 +279,10 @@ class ReferencePdfGenerator(private val context: Context) {
                 function startGeneration() {
                     try {
                         AndroidBridge.log("JS: Ref Driver started...");
-                        
                         if (typeof window.RefDocGenerator !== 'function') throw "Generator missing";
                         
-                        // Translate Data if EN
                         translateData();
 
-                        // Logic from References7.js (Replicated)
                         const courses = window.RefCourseNames || ["1st","2nd","3rd","4th","5th","6th","7th"];
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
@@ -327,7 +299,7 @@ class ReferencePdfGenerator(private val context: Context) {
                             id: docIdStr,
                             edunum: courseStr,
                             date: new Date().toLocaleDateString("$dateLocale"),
-                            adress: univInfo.address_ru || "Osh city, Lenin st. 331"
+                            adress: univInfo.address_ru || "г. Ош, ул. Ленина 331"
                         };
 
                         const docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
