@@ -2,6 +2,7 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
