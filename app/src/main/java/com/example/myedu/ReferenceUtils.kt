@@ -34,7 +34,6 @@ class ReferenceJsFetcher {
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
             // 3. Find References7 (Try Main JS first, then StudentDocuments)
-            // Regex allows for ./ prefix or just the name
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             
             if (refJsPath == null) {
@@ -51,15 +50,15 @@ class ReferenceJsFetcher {
 
             // 4. Fetch References7 JS
             logger("Fetching $refJsName...")
-            var refContent = fetchString("$baseUrl/assets/$refJsName")
+            val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 5. LINK MODULES
+            // 5. LINK MODULES (Same strategy as Transcript)
             val dependencies = StringBuilder()
             
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
-                    // Search in Ref content first, then Main JS
+                    // Check both Reference file and Main Bundle for the import
                     val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(mainJsContent)
                     if (fileNameMatch != null) {
                         val fileName = getName(fileNameMatch.groupValues[1])
@@ -69,10 +68,10 @@ class ReferenceJsFetcher {
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
-                            val cleanContent = fileContent
-                                .replace(Regex("""export\s*\{.*?\}"""), "")
-                                .replace(Regex("""export\s+default\s+\w+;?"""), "") // Remove export default
+                            // Clean export statements to turn it into a simple script block
+                            val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
                             
+                            // Wrap in IIFE to simulate module scope and return the export
                             dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
@@ -83,34 +82,52 @@ class ReferenceJsFetcher {
             }
 
             // Link Specific Dependencies for Reference (Form 8)
-            // We capture the full relative path from the import string
+            // Matching logic: import { P as J } from './PdfStyle...';
             linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
             linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
-            // 'Lincense' typo is intentional to match website source
-             linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
+            // Typo 'Lincense' matches the actual website filename from logs
+            linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
             linkModule(Regex("""from\s*["']([^"']*DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
             linkModule(Regex("""from\s*["']([^"']*ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 6. CLEAN SCRIPT (Aggressive Cleaning)
-            // Remove ALL import statements to prevent "Cannot use import statement outside a module"
-            var cleanRef = refContent
-                // Remove imports with braces: import { A, B } from './C.js'
-                .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?"""), "")
-                // Remove default/namespace imports: import A from './C.js' or import * as A from...
-                .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
-                // Remove side-effect imports: import './C.js'
-                .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
-                // Handle exports
-                .replace(Regex("""export\s+default"""), "const ReferenceModule =")
-                .replace(Regex("""export\s*\{[^}]*\}"""), "")
+            // 6. MOCK OTHER IMPORTS (Critical for preventing "import outside module" errors)
+            val varsToMock = mutableSetOf<String>()
+            // Regex to find: import { a, b as c } from "..."
+            val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            
+            genericImportRegex.findAll(refContent).forEach { match ->
+                match.groupValues[1].split(",").forEach { item ->
+                    val parts = item.trim().split(Regex("""\s+as\s+"""))
+                    val varName = if (parts.size == 2) parts[1] else parts[0]
+                    if (varName.isNotBlank()) varsToMock.add(varName.trim())
+                }
+            }
+            // Remove the variables we genuinely linked above so we don't overwrite them with dummies
+            varsToMock.removeAll(setOf("J", "mt", "Ly", "Sl", "Dl", "T"))
 
-            // 7. EXPOSE
-            // If "export default" wasn't found/replaced correctly, we might need a fallback,
-            // but usually the regex matches. We force assignment to window.
+            val dummyScript = StringBuilder()
+            // Create a UniversalDummy proxy that handles any property access or function call gracefully
+            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
+            if (varsToMock.isNotEmpty()) {
+                dummyScript.append("var ")
+                dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
+                dummyScript.append(";\n")
+            }
+
+            // 7. CLEAN & PREPARE SCRIPT
+            var cleanRef = refContent
+                .replace(genericImportRegex, "") // Remove named imports
+                .replace(Regex("""import\s+.*from\s*['"].*['"];?"""), "") // Remove default imports
+                .replace(Regex("""import\s*['"].*['"];?"""), "") // Remove side-effect imports
+                .replace(Regex("""export\s+default"""), "const ReferenceModule =") // Capture default export
+                .replace(Regex("""export\s*\{.*?\}"""), "") // Remove named exports
+
+            // 8. EXPOSE TO WINDOW
             val exposeCode = "\nwindow.PDFGeneratorRef = ReferenceModule;"
 
-            val finalScript = dependencies.toString() + "\n" + cleanRef + exposeCode
+            // Combine: Dummies -> Linked Modules -> Clean Script -> Expose
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanRef + exposeCode
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -210,7 +227,7 @@ class ReferencePdfGenerator(private val context: Context) {
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts linked.");
+                    AndroidBridge.log("JS: Scripts loaded.");
                 } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
@@ -221,6 +238,8 @@ class ReferencePdfGenerator(private val context: Context) {
                         
                         if (typeof window.PDFGeneratorRef !== 'function') throw "PDFGeneratorRef missing";
                         
+                        // The reference generator likely expects (studentInfo, licenseInfo, qrCode)
+                        // We pass them in that order based on typical signature
                         const docDef = window.PDFGeneratorRef(studentInfo, licenseInfo, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
