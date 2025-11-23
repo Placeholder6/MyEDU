@@ -32,18 +32,16 @@ class ReferenceJsFetcher {
             logger("Fetching Main JS...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 3. Find References7 (Try Main JS first, then StudentDocuments)
+            // 3. Find References7
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
-            
             if (refJsPath == null) {
                 logger("Searching StudentDocuments...")
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
-                    ?: throw Exception("StudentDocuments JS missing")
-                
-                val docsJsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
-                refJsPath = findMatch(docsJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
+                if (docsJsPath != null) {
+                    val docsJsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
+                    refJsPath = findMatch(docsJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
+                }
             }
-
             if (refJsPath == null) throw Exception("References7 JS missing")
             val refJsName = getName(refJsPath)
 
@@ -51,42 +49,57 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 5. LINK MODULES
+            // 5. LINK MODULES (Dynamic Name Resolution)
             val dependencies = StringBuilder()
-            
-            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
+            val linkedVars = mutableSetOf<String>()
+
+            suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
+                // 1. Find what variable name the script actually uses for this module
+                // Looks for: import { <ExportChar> as <VarName> } from "...<FileKeyword>..."
+                // e.g. import { S as mt } from "./Signed.js" -> returns "mt"
+                val importNameRegex = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
+                var varName = findMatch(refContent, importNameRegex.pattern)
+                
+                if (varName == null) {
+                    logger("Warn: Could not detect var name for $fileKeyword. Using fallback: $fallbackName")
+                    varName = fallbackName
+                }
+                linkedVars.add(varName)
+
+                // 2. Find the file URL
+                val fileUrlRegex = Regex("""["']([^"']*$fileKeyword\.[^"']+\.js)["']""")
+                val fileNameMatch = fileUrlRegex.find(refContent) ?: fileUrlRegex.find(mainJsContent)
+                
                 var success = false
-                try {
-                    // Check both Reference file and Main Bundle for the import
-                    val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(mainJsContent)
-                    if (fileNameMatch != null) {
-                        val fileName = getName(fileNameMatch.groupValues[1])
-                        logger("Linking $finalVarName from $fileName")
+                if (fileNameMatch != null) {
+                    val fileName = getName(fileNameMatch.groupValues[1])
+                    logger("Linking $varName from $fileName")
+                    try {
                         val fileContent = fetchString("$baseUrl/assets/$fileName")
-                        
+                        // Find the export in the dependency file
+                        val exportRegex = Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""")
                         val internalVarMatch = exportRegex.find(fileContent)
+                        
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
-                            // Clean the dependency content to avoid nested import errors
                             val cleanContent = cleanJsContent(fileContent)
-                            
-                            // USE 'var' INSTEAD OF 'const' TO PREVENT "ALREADY DECLARED" ERRORS
-                            dependencies.append("var $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
+                            // Inject using var to avoid "already declared" errors if minification clashes
+                            dependencies.append("var $varName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
-                    }
-                } catch (e: Exception) { logger("Link Error ($finalVarName): ${e.message}") }
+                    } catch (e: Exception) { logger("Fetch error $fileName: ${e.message}") }
+                }
 
-                if (!success) dependencies.append("var $finalVarName = $fallbackValue;\n")
+                if (!success) dependencies.append("var $varName = $fallbackValue;\n")
             }
 
-            // Link Specific Dependencies for Reference (Form 8)
-            linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
-            linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
-            linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
-             linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
-            linkModule(Regex("""from\s*["']([^"']*DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
-            linkModule(Regex("""from\s*["']([^"']*ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
+            // Link dependencies by finding their specific Export Character and File Keyword
+            linkModule("PdfStyle", "P", "J", "{}")
+            linkModule("Signed", "S", "mt", "\"\"")
+            linkModule("LicenseYear", "L", "Ly", "[]")
+            linkModule("SpecialityLincense", "S", "Sl", "{}") // "Lincense" typo is in website
+            linkModule("DocumentLink", "D", "Dl", "{}")
+            linkModule("ru", "r", "T", "{}")
 
             // 6. MOCK OTHER IMPORTS
             val varsToMock = mutableSetOf<String>()
@@ -94,29 +107,28 @@ class ReferenceJsFetcher {
             genericImportRegex.findAll(refContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
                     val parts = item.trim().split(Regex("""\s+as\s+"""))
-                    val varName = if (parts.size == 2) parts[1] else parts[0]
-                    if (varName.isNotBlank()) varsToMock.add(varName.trim())
+                    val name = if (parts.size == 2) parts[1] else parts[0]
+                    if (name.isNotBlank()) varsToMock.add(name.trim())
                 }
             }
-            varsToMock.removeAll(setOf("J", "mt", "Ly", "Sl", "Dl", "T"))
+            varsToMock.removeAll(linkedVars)
 
             val dummyScript = StringBuilder()
-            // UniversalDummy handles missing dependencies gracefully
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
-                dummyScript.append("var ") // Use var here too
+                dummyScript.append("var ")
                 dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
                 dummyScript.append(";\n")
             }
 
             // 7. CLEAN MAIN SCRIPT
             var cleanRef = cleanJsContent(refContent)
-                .replace(Regex("""export\s+default"""), "const ReferenceModule =") 
+                .replace(Regex("""export\s+default"""), "const ReferenceModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            val exposeCode = "\nwindow.PDFGeneratorRef = ReferenceModule;"
-
-            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanRef + exposeCode
+            // Wrap main script in IIFE to prevent scope pollution/collisions with dependencies
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + "\nwindow.PDFGeneratorRef = ReferenceModule;\n})();"
+            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -126,18 +138,16 @@ class ReferenceJsFetcher {
         }
     }
 
-    // Aggressive cleaning function for both Main script and Dependencies
     private fun cleanJsContent(content: String): String {
         return content
+            // Remove all variations of import statements
             .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
             .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
             .replace(Regex("""export\s*\{[^}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
     }
 
-    private fun getName(path: String): String {
-        return path.split('/').last()
-    }
+    private fun getName(path: String): String = path.split('/').last()
 
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
@@ -216,10 +226,6 @@ class ReferencePdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
-
-                // Mock moment.js
-                const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
-                ${'$'}.locale = function() {};
             </script>
 
             <script>
