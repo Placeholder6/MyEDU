@@ -12,6 +12,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
 
 class ReferenceJsFetcher {
 
@@ -20,11 +21,13 @@ class ReferenceJsFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
-            logger("Fetching index...")
+            // 1. Fetch Main Script
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") ?: throw Exception("Main JS missing")
+            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
+                ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
+            // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
@@ -33,24 +36,23 @@ class ReferenceJsFetcher {
                     refJsPath = findMatch(docsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
                 }
             }
-            if (refJsPath == null) throw Exception("References7.js not found")
+            if (refJsPath == null) throw Exception("References7 JS missing")
             val refJsName = getName(refJsPath)
-            
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // --- LINK DEPENDENCIES ---
+            // 3. LINK DEPENDENCIES
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
             suspend fun linkModule(keyword: String, exportChar: String, fallback: String, defaultVal: String) {
                 var varName: String? = null
                 if (exportChar == "DEFAULT_OR_NAMED") {
-                    val r = Regex("""import\s*\{\s*(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
-                    varName = findMatch(refContent, r.pattern)
+                     val regex = Regex("""import\s*\{\s*(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
+                     varName = findMatch(refContent, regex.pattern)
                 } else {
-                    val r = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
-                    varName = findMatch(refContent, r.pattern)
+                    val regex = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$keyword[^'"]*['"]""")
+                    varName = findMatch(refContent, regex.pattern)
                 }
                 
                 val name = varName ?: fallback
@@ -78,14 +80,14 @@ class ReferenceJsFetcher {
                 dependencies.append("var $name = $defaultVal;\n")
             }
 
-            linkModule("PdfStyle", "P", "PdfStyle", "{}")
-            linkModule("Signed", "S", "Signed", "\"\"")
-            linkModule("LicenseYear", "L", "LicenseYear", "[]")
-            linkModule("SpecialityLincense", "S", "SpecLic", "{}")
-            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink", "{}")
-            linkModule("ru", "r", "RuLang", "{}")
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
+            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
+            linkModule("ru", "r", "Ru_Fallback", "{}")                      
 
-            // --- MOCK OTHERS ---
+            // 4. MOCK OTHERS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
             importRegex.findAll(refContent).forEach { m ->
@@ -104,23 +106,35 @@ class ReferenceJsFetcher {
                 dummyScript.append("var ${varsToMock.joinToString(",")} = UniversalDummy;\n")
             }
 
-            // --- DYNAMIC EXTRACTION ---
-            var cleanMain = cleanJs(refContent)
+            // 5. TRANSLATE & CLEAN
+            var cleanRef = cleanJs(refContent)
             
-            // Extract 'at' Function
+            if (language == "en") {
+                logger("Translating Reference Script to English...")
+                cleanRef = translateScript(cleanRef)
+            }
+
+            // 6. DYNAMIC EXTRACTION
+            // Extract 'at' Function (PDF Generator)
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
-            val generatorMatch = generatorRegex.find(cleanMain)
+            val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
 
-            // Extract Course Names Array
-            val arrayRegex = Regex("""\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
-            val arrayMatch = arrayRegex.find(cleanMain)
-            val courseArrayLiteral = arrayMatch?.value ?: "['первого','второго','третьего','четвертого','пятого','шестого','седьмого']"
+            // Extract Course Names Array (Handling potential translation)
+            val arrayRegex = if (language == "en") {
+                Regex("""const\s+(\w+)\s*=\s*\["1st","2nd"[^\]]*\]""")
+            } else {
+                Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""")
+            }
+            val arrayMatch = arrayRegex.find(cleanRef)
+            // If translation replaced it, the regex might need to match the new values, or we just trust the variable extraction
+            // Ideally, we find the var name that holds the array. In the original it's 'h'.
+            val courseArrayName = arrayMatch?.groupValues?.get(1) ?: "h"
 
-            val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayLiteral;"
+            val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;\nwindow.RefCourseNames = $courseArrayName;"
 
-            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanMain + exposeCode
-
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + exposeCode + "\n})();"
+            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -128,6 +142,29 @@ class ReferenceJsFetcher {
             e.printStackTrace()
             return@withContext PdfResources("")
         }
+    }
+
+    private fun translateScript(script: String): String {
+        var s = script
+        val replacements = mapOf(
+            "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC",
+            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
+            "СПРАВКА" to "CERTIFICATE",
+            "Настоящая справка подтверждает, что" to "This certificate confirms that",
+            "действительно является студентом (-кой)" to "is a student of the",
+            "года обучения" to "year of study",
+            "специальности/направление" to "specialty/direction",
+            "профиль:" to "profile:",
+            "Справка выдана по месту требования." to "Issued for submission to the place of demand.",
+            "Достоверность данного документа можно проверить отсканировав QR-код" to "Authenticity can be verified by scanning the QR code",
+            // Array replacement
+            """["первого","второго","третьего","четвертого","пятого","шестого","седьмого"]""" to """["1st","2nd","3rd","4th","5th","6th","7th"]"""
+        )
+        
+        replacements.forEach { (ru, en) -> 
+            s = s.replace(ru, en) 
+        }
+        return s
     }
 
     private fun cleanJs(content: String): String {
@@ -209,16 +246,51 @@ class ReferencePdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
                 const studentInfo = $studentInfoJson;
                 const licenseInfo = $licenseInfoJson;
                 const univInfo = $univInfoJson;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
 
+                // Mock moment.js
                 var ${'$'} = function(d) { 
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
                 };
                 ${'$'}.locale = function() {};
+
+                // Helper to translate Data
+                function translateData() {
+                    if (lang !== "en") return;
+                    
+                    const map = {
+                        "Международный медицинский факультет": "International Medical Faculty",
+                        "Лечебное дело": "General Medicine",
+                        "Очное (специалитет)": "Full-time (Specialist)",
+                        "Контракт": "Contract",
+                        "Бюджет": "Budget"
+                    };
+
+                    function t(str) { return map[str] || str; }
+
+                    // Translate Student Info fields used in Reference
+                    if (studentInfo.faculty_ru) studentInfo.faculty_ru = t(studentInfo.faculty_ru);
+                    if (studentInfo.edu_form_ru) studentInfo.edu_form_ru = t(studentInfo.edu_form_ru);
+                    if (studentInfo.speciality_ru) studentInfo.speciality_ru = t(studentInfo.speciality_ru);
+                    
+                    if (studentInfo.lastStudentMovement) {
+                        if (studentInfo.lastStudentMovement.speciality) {
+                           if (studentInfo.lastStudentMovement.speciality.direction) {
+                               studentInfo.lastStudentMovement.speciality.direction.name_ru = 
+                                   t(studentInfo.lastStudentMovement.speciality.direction.name_ru);
+                           }
+                        }
+                        if (studentInfo.lastStudentMovement.payment_form) {
+                             studentInfo.lastStudentMovement.payment_form.name_ru = 
+                                 t(studentInfo.lastStudentMovement.payment_form.name_ru);
+                        }
+                    }
+                }
             </script>
 
             <script>
@@ -229,120 +301,36 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // --- Translation Helpers ---
-                
-                // 1. Recursive Data Translator: Swaps _ru values with _en values
-                function translateObjectData(obj) {
-                    if (!obj || typeof obj !== 'object') return;
-                    
-                    for (const key in obj) {
-                        if (key.endsWith('_ru')) {
-                            const enKey = key.replace('_ru', '_en');
-                            if (obj.hasOwnProperty(enKey) && obj[enKey]) {
-                                // Overwrite RU value with EN value
-                                obj[key] = obj[enKey];
-                            }
-                        }
-                        if (typeof obj[key] === 'object') {
-                            translateObjectData(obj[key]); // Recurse
-                        }
-                    }
-                }
-
-                // 2. Static Text Translator: Replaces hardcoded Russian strings
-                const dictionary = {
-                    "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ": "MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC",
-                    "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ": "OSH STATE UNIVERSITY",
-                    "Настоящая справка подтверждает, что": "This certificate confirms that",
-                    "действительно является студентом (-кой)": "is a student of the",
-                    "года обучения": "year of study",
-                    "специальности/направление": "specialty/direction",
-                    "Справка выдана по месту требования.": "Issued for submission to demanding authority.",
-                    "Достоверность данного документа можно проверить отсканировав QR-код": "The authenticity of this document can be verified by scanning the QR code",
-                    "профиль": "profile",
-                    "первого": "1st", "второго": "2nd", "третьего": "3rd", "четвертого": "4th", 
-                    "пятого": "5th", "шестого": "6th", "седьмого": "7th"
-                };
-
-                function translateDocDef(node) {
-                    if (!node) return;
-                    if (Array.isArray(node)) {
-                        node.forEach(translateDocDef);
-                    } else if (typeof node === 'object') {
-                        if (node.text && typeof node.text === 'string') {
-                            // Check full match first
-                            if (dictionary[node.text]) {
-                                node.text = dictionary[node.text];
-                            } else {
-                                // Partial replacements
-                                for (const [ru, en] of Object.entries(dictionary)) {
-                                    if (node.text.includes(ru)) {
-                                        node.text = node.text.replace(ru, en);
-                                    }
-                                }
-                            }
-                            // Fix header "СПРАВКА №..." -> "REFERENCE №..."
-                            if (node.text.startsWith && node.text.startsWith("СПРАВКА")) {
-                                node.text = node.text.replace("СПРАВКА", "REFERENCE");
-                            }
-                        }
-                        // Recurse into columns, stack, etc.
-                        ["columns", "stack", "table", "body"].forEach(k => {
-                            if (node[k]) translateDocDef(node[k]);
-                        });
-                    }
-                }
-
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Gen Start (" + lang + ")...");
+                        AndroidBridge.log("JS: Ref Driver started...");
                         
-                        if (typeof window.RefDocGenerator !== 'function') throw "RefDocGenerator missing";
+                        if (typeof window.RefDocGenerator !== 'function') throw "Generator missing";
+                        
+                        // Translate Data if EN
+                        translateData();
 
-                        // A. Translate Data if needed
-                        if (lang === 'en') {
-                            translateObjectData(studentInfo);
-                            translateObjectData(licenseInfo);
-                            translateObjectData(univInfo);
-                        }
-
-                        // B. Calc Dynamic Fields
-                        const courses = window.RefCourseNames || ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
+                        // Logic from References7.js (Replicated)
+                        const courses = window.RefCourseNames || ["1st","2nd","3rd","4th","5th","6th","7th"];
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        let courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1);
-                        
-                        // Translate Course String manually if needed
-                        if (lang === 'en' && dictionary[courseStr]) {
-                            courseStr = dictionary[courseStr];
-                        }
+                        const courseStr = courses[Math.min(e, i)] || (Math.min(e, i)+1) + "-th";
 
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
-                        
-                        // Address translation logic
-                        let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
-                        if (lang === 'en' && univInfo.address_en) address = univInfo.address_en;
 
                         const dataObj = {
                             id: docIdStr,
                             edunum: courseStr,
                             date: new Date().toLocaleDateString("$dateLocale"),
-                            adress: address
+                            adress: univInfo.address_ru || "Osh city, Lenin st. 331"
                         };
 
-                        // C. Generate Document Definition
                         const docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
-                        
-                        // D. Translate Static Text in DocDef
-                        if (lang === 'en') {
-                            translateDocDef(docDef.content);
-                        }
-
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
