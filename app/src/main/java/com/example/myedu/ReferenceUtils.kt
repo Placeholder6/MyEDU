@@ -49,12 +49,12 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 5. LINK MODULES (Dynamic Name Resolution)
+            // 5. LINK MODULES
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
             suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
-                // 1. Detect Variable Name
+                // 1. Detect Variable Name (e.g. import { S as et } -> "et")
                 var varName: String? = null
                 
                 if (exportChar == "DEFAULT_OR_NAMED") {
@@ -66,7 +66,7 @@ class ReferenceJsFetcher {
                 }
 
                 if (varName == null) {
-                    logger("⚠️ Using fallback name '$fallbackName' for $fileKeyword")
+                    // If not used in the main script, we might not need to link it, but we fallback to be safe
                     varName = fallbackName
                 } else {
                     logger("✅ Linked $fileKeyword as '$varName'")
@@ -105,10 +105,10 @@ class ReferenceJsFetcher {
             // --- LINK CONFIGURATION ---
             linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
             linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
-            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
             linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
             linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
             linkModule("ru", "r", "Ru_Fallback", "{}")                      
+            // Skip LicenseYear (side-effect only) or others if not strictly imported with variables
 
             // 6. MOCK OTHER IMPORTS
             val varsToMock = mutableSetOf<String>()
@@ -121,9 +121,8 @@ class ReferenceJsFetcher {
                 }
             }
             
-            // CRITICAL FIX: Remove variables we linked AND '$' (since it is manually defined in HTML)
             varsToMock.removeAll(linkedVars)
-            varsToMock.remove("$") // <-- This fixes the "Identifier '$' has already been declared" error
+            varsToMock.remove("$") // Prevent conflict with HTML mock
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -133,12 +132,23 @@ class ReferenceJsFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 7. CLEAN & ASSEMBLE
-            var cleanRef = cleanJsContent(refContent)
-                .replace(Regex("""export\s+default"""), "const ReferenceModule =")
-                .replace(Regex("""export\s*\{.*?\}"""), "")
+            // 7. DETECT MAIN EXPORT NAME
+            // We look for: export { Nt as default }
+            var mainExportName = "UniversalDummy"
+            val exportDefaultRegex = Regex("""export\s*\{\s*(\w+)\s+as\s+default\s*\}""")
+            val exportMatch = exportDefaultRegex.find(refContent)
+            if (exportMatch != null) {
+                mainExportName = exportMatch.groupValues[1]
+                logger("Found Main Export: $mainExportName")
+            }
 
-            val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + "\nwindow.PDFGeneratorRef = ReferenceModule;\n})();"
+            // 8. CLEAN MAIN SCRIPT
+            val cleanRef = cleanJsContent(refContent)
+            
+            // 9. EXPOSE TO WINDOW
+            val exposeCode = "\nwindow.PDFGeneratorRef = $mainExportName;"
+
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + exposeCode + "\n})();"
             
             return@withContext PdfResources(finalScript)
 
@@ -155,6 +165,7 @@ class ReferenceJsFetcher {
             .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
             .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
             .replace(Regex("""export\s*\{[^}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
+            .replace(Regex("""export\s+default\s+"""), "")
     }
 
     private fun getName(path: String): String = path.split('/').last()
@@ -254,10 +265,48 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Ref Driver started...");
                         
-                        if (typeof window.PDFGeneratorRef !== 'function') throw "PDFGeneratorRef missing";
+                        if (typeof window.PDFGeneratorRef !== 'function') {
+                             // Fallback: check if it's a Vue object or default export
+                             // Sometimes the export is the Vue component itself.
+                             // We might need to manually run the logic if it is a Vue setup function.
+                             throw "PDFGeneratorRef missing or not a function";
+                        }
+
+                        // IMPORTANT: The References7 script is a Vue Component (defineComponent({ setup()... })).
+                        // It does NOT expose a direct generation function like Transcript.js did.
+                        // We must extract the logic or mock the Vue setup() execution.
                         
-                        const docDef = window.PDFGeneratorRef(studentInfo, licenseInfo, qrCodeUrl);
-                        pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
+                        // Heuristic: The script likely returns a Vue component definition object.
+                        // We need to run its 'setup()' function to get the generation logic.
+                        
+                        const component = window.PDFGeneratorRef;
+                        if (component && component.setup) {
+                           // Mock Vue Composition API hooks
+                           const props = {};
+                           
+                           // We need to capture the PDF generation function returned by setup()
+                           // setup() returns bindings. We look for 'F' (based on source: const F=async()=>{...})
+                           
+                           // Mock Vue hooks
+                           const mockRef = (val) => ({ value: val });
+                           const mockUseStore = () => ({ student: { studentMovement: studentInfo.lastStudentMovement } });
+                           
+                           // We can't easily execute the setup() because it relies on imports we mocked (ref, computed, etc).
+                           // However, we have replaced imports 'w' (ref), 'u' (ref), 'z' (store) with UniversalDummy.
+                           // The script WILL fail inside setup() if we don't provide working mocks for ref/useStore.
+                           
+                           // ALTERNATIVE STRATEGY:
+                           // Instead of running the script, we recreate the PDF generation logic here in JS.
+                           // The logic is simple: call createPdf with specific content.
+                           // See at() function in source.
+                           
+                           throw "Direct execution of Vue component not supported yet. Logic needs extraction.";
+                        }
+                        
+                        // If we reached here, we might be stuck. 
+                        // But wait! The user provided the source of References7.js.
+                        // It defines 'at' function which builds the DD (Document Definition).
+                        // We can just regex-extract that 'at' function and run it!
                         
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
                 }
