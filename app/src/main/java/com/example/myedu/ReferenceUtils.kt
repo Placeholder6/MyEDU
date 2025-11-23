@@ -29,19 +29,27 @@ class ReferenceJsFetcher {
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             
-            // 2. Main JS -> Find StudentDocuments
-            logger("Fetching $mainJsName...")
+            // 2. Main JS
+            logger("Fetching Main JS...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-            val docsJsName = findMatch(mainJsContent, """["']\./(StudentDocuments\.[^"']+\.js)["']""") 
-                ?: throw Exception("StudentDocuments JS missing")
+            
+            // 3. Find References7 (Try Main JS first, then StudentDocuments)
+            // Regex allows for ./ prefix or just the name
+            var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
+            
+            if (refJsPath == null) {
+                logger("Searching StudentDocuments...")
+                val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
+                    ?: throw Exception("StudentDocuments JS missing")
+                
+                val docsJsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
+                refJsPath = findMatch(docsJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
+            }
 
-            // 3. StudentDocuments JS -> Find References7
-            logger("Fetching $docsJsName...")
-            val docsJsContent = fetchString("$baseUrl/assets/$docsJsName")
-            val refJsName = findMatch(docsJsContent, """["']\./(References7\.[^"']+\.js)["']""") 
-                ?: throw Exception("References7 JS missing")
+            if (refJsPath == null) throw Exception("References7 JS missing")
+            val refJsName = getName(refJsPath)
 
-            // 4. References7 JS
+            // 4. Fetch References7 JS
             logger("Fetching $refJsName...")
             var refContent = fetchString("$baseUrl/assets/$refJsName")
 
@@ -51,9 +59,10 @@ class ReferenceJsFetcher {
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
-                    val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(docsJsContent) ?: importRegex.find(mainJsContent)
+                    // Search in Ref content first, then Main JS
+                    val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(mainJsContent)
                     if (fileNameMatch != null) {
-                        val fileName = fileNameMatch.groupValues[1]
+                        val fileName = getName(fileNameMatch.groupValues[1])
                         logger("Linking $finalVarName from $fileName")
                         var fileContent = fetchString("$baseUrl/assets/$fileName")
                         
@@ -70,14 +79,14 @@ class ReferenceJsFetcher {
                 if (!success) dependencies.append("const $finalVarName = $fallbackValue;\n")
             }
 
-            // Link Specific Dependencies
-            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
-            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
-            linkModule(Regex("""from\s*["']\./(LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
-            // Note: 'Lincense' typo matches actual website file name
-             linkModule(Regex("""from\s*["']\./(SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
-            linkModule(Regex("""from\s*["']\./(DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
-            linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
+            // Link Specific Dependencies for Reference (Form 8)
+            linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
+            linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
+            linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
+            // 'Lincense' typo is intentional to match website source
+             linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
+            linkModule(Regex("""from\s*["']([^"']*DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
+            linkModule(Regex("""from\s*["']([^"']*ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
             // 6. CLEAN SCRIPT
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
@@ -97,6 +106,10 @@ class ReferenceJsFetcher {
             e.printStackTrace()
             return@withContext PdfResources("")
         }
+    }
+
+    private fun getName(path: String): String {
+        return path.split('/').last()
     }
 
     private fun fetchString(url: String): String {
