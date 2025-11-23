@@ -71,7 +71,7 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
 
-                // Mock helper for moment.js (the only missing dependency not in other files)
+                // Mock moment.js (Only missing dep)
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
             </script>
@@ -79,7 +79,7 @@ class WebPdfGenerator(private val context: Context) {
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts linked successfully.");
+                    AndroidBridge.log("JS: Scripts linked.");
                 } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
@@ -88,7 +88,7 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver running...");
                         
-                        // --- EXACT GPA ALGORITHM FROM WEBSITE ---
+                        // --- EXACT GPA CALCULATION ---
                         let totalCredits = 0;
                         let yearlyGpas = [];
 
@@ -97,7 +97,7 @@ class WebPdfGenerator(private val context: Context) {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        // 1. Sum Credits (All subjects) & Round Digitals
+                                        // 1. Sum Credits
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
@@ -107,17 +107,17 @@ class WebPdfGenerator(private val context: Context) {
                                             });
                                         }
 
-                                        // 2. Filter for EXAMS only
+                                        // 2. Filter Exams
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
                                             r.exam_rule && r.mark_list && r.exam && r.exam.includes("Экзамен")
                                         ) : [];
 
-                                        // 3. Calculate Semester GPA
+                                        // 3. Calc Semester GPA
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
                                             const rawGpa = weightedSum / examCredits;
-                                            sem.gpa = Math.ceil(rawGpa * 100) / 100; // Ceiling Round
+                                            sem.gpa = Math.ceil(rawGpa * 100) / 100;
                                             semGpas.push(sem.gpa);
                                         } else {
                                             sem.gpa = 0;
@@ -139,7 +139,6 @@ class WebPdfGenerator(private val context: Context) {
                             cumulativeGpa = Math.ceil(rawAvg * 100) / 100;
                         }
                         
-                        AndroidBridge.log("JS: Final GPA = " + cumulativeGpa);
                         const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("ru-RU")];
 
                         if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator missing";
