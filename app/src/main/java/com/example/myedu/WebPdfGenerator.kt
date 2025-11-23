@@ -71,23 +71,24 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
 
-                // Mock moment.js (only missing dep)
+                // Mock helper for moment.js (the only missing dependency not in other files)
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
             </script>
 
             <script>
                 try {
-                    ${resources.logicCode}
-                    AndroidBridge.log("JS: Logic injected.");
-                } catch(e) { AndroidBridge.returnError("Injection Error: " + e.message); }
+                    ${resources.combinedScript}
+                    AndroidBridge.log("JS: Scripts linked successfully.");
+                } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver starting...");
+                        AndroidBridge.log("JS: Driver running...");
                         
+                        // --- EXACT GPA ALGORITHM FROM WEBSITE ---
                         let totalCredits = 0;
                         let yearlyGpas = [];
 
@@ -96,11 +97,10 @@ class WebPdfGenerator(private val context: Context) {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        // 1. Sum Total Credits (All subjects)
+                                        // 1. Sum Credits (All subjects) & Round Digitals
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
-                                                // Fix digital score: Ceiling round to 2 decimals
                                                 if (sub.exam_rule && sub.exam_rule.digital) {
                                                     sub.exam_rule.digital = Math.ceil(Number(sub.exam_rule.digital) * 100) / 100;
                                                 }
