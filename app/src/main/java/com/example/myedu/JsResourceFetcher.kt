@@ -29,14 +29,15 @@ class JsResourceFetcher {
             
             // 3. Transcript JS
             logger("Fetching $transcriptJsName...")
-            var transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
+            val transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
             // 4. LINK DEPENDENCIES (With Scope Isolation)
             val dependencies = StringBuilder()
             
-            // Function to safely wrap and link a module
-            suspend fun linkModule(importRegex: Regex, exportAlias: String, finalVarName: String) {
-                // Find the filename (e.g., PdfStyle.hash.js)
+            // Helper to fetch, wrap, and link a module
+            // Wraps code in (() => { ... return exportedVar; })() to prevent "const t" collisions.
+            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackName: String = "") {
+                // Try to find filename in Transcript.js, then Main.js
                 val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
                 
                 if (fileNameMatch != null) {
@@ -44,55 +45,79 @@ class JsResourceFetcher {
                     logger("Linking $finalVarName from $fileName")
                     val fileContent = fetchString("$baseUrl/assets/$fileName")
                     
-                    // Find what internal variable maps to the export alias
-                    // Example: export { t as P } -> We want 't' when looking for 'P'
-                    // Regex handles: "export{t as P}" or "export { t as P, ... }"
-                    val exportRegex = Regex("""export\s*\{[^}]*?(\w+)\s+as\s+$exportAlias[^}]*?\}""")
+                    // Find the internal variable name (e.g. export { t as P })
                     val internalVarMatch = exportRegex.find(fileContent)
                     
                     if (internalVarMatch != null) {
                         val internalVar = internalVarMatch.groupValues[1]
                         
-                        // Clean content: remove export statement
+                        // Strip export statement
                         val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
                         
-                        // Wrap in IIFE (Immediately Invoked Function Expression) to isolate scope
-                        // const J = (() => { [CONTENT]; return t; })();
+                        // Wrap in IIFE to isolate scope
                         dependencies.append("const $finalVarName = (() => {\n")
                         dependencies.append(cleanContent).append("\n")
                         dependencies.append("return $internalVar;\n")
                         dependencies.append("})();\n")
-                        
                     } else {
-                        logger("WARNING: Could not find export '$exportAlias' in $fileName")
+                        logger("WARNING: Export not found in $fileName")
                     }
                 } else {
                     logger("WARNING: Import for $finalVarName not found.")
+                    // If critical (like T), provide a dummy fallback
+                    if (fallbackName.isNotEmpty()) {
+                        dependencies.append("const $finalVarName = $fallbackName;\n")
+                    }
                 }
             }
 
-            // A. PdfStyle -> J (Import: P as J, File exports: t as P) -> J = t
-            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), "P", "J")
+            // A. PdfStyle -> J (Import: P as J, Export: t as P)
+            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J")
             
-            // B. PdfFooter -> U (Import: P as U, File exports: o as P) -> U = o
-            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), "P", "U")
+            // B. PdfFooter -> U (Import: P as U, Export: o as P)
+            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U")
             
-            // C. KeysValue -> K (Import: k as K, File exports: t as k) -> K = t
-            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), "k", "K")
+            // C. KeysValue -> K (Import: k as K, Export: t as k)
+            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K")
             
-            // D. Signed -> mt (Import: S as mt, File exports: A as S) -> mt = A
-            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), "S", "mt")
+            // D. Signed -> mt (Import: S as mt, Export: A as S)
+            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt")
 
-            // E. Helpers -> ct (Import: e as ct, File exports: d as e) -> ct = d
-            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), "e", "ct")
+            // E. Helpers -> ct (Import: e as ct, Export: d as e)
+            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct")
 
-            // 5. PREPARE TRANSCRIPT.JS
+            // F. Ru Locale -> T (Import: r as T, Export: a as r) -> Fallback to empty obj
+            linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
+
+            // 5. PREPARE DUMMY VARIABLES FOR OTHERS
+            // Extract all other imports (like Vue's 'at') and make them dummies so the script doesn't crash.
+            val varsToMock = mutableSetOf<String>()
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            importRegex.findAll(transcriptContent).forEach { match ->
+                match.groupValues[1].split(",").forEach { item ->
+                    val parts = item.trim().split(Regex("""\s+as\s+"""))
+                    val varName = if (parts.size == 2) parts[1] else parts[0]
+                    if (varName.isNotBlank()) varsToMock.add(varName.trim())
+                }
+            }
+            // Don't mock the ones we just linked manually
+            varsToMock.removeAll(setOf("J", "U", "K", "mt", "ct", "T", "$"))
+
+            val dummyScript = StringBuilder()
+            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
+            if (varsToMock.isNotEmpty()) {
+                dummyScript.append("var ")
+                dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
+                dummyScript.append(";\n")
+            }
+
+            // 6. PREPARE TRANSCRIPT.JS
             val cleanTranscript = transcriptContent
-                .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?"""), "")
+                .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE GENERATOR
+            // 7. EXPOSE GENERATOR
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) {
                 "\nwindow.PDFGenerator = $funcNameMatch;"
@@ -101,8 +126,9 @@ class JsResourceFetcher {
                 ""
             }
 
-            // 7. COMBINE
-            val finalScript = dependencies.toString() + "\n" + cleanTranscript + exposeCode
+            // 8. COMBINE
+            // Order: Dummies -> Dependencies -> Main Script -> Expose
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanTranscript + exposeCode
             
             return@withContext PdfResources(finalScript)
 
