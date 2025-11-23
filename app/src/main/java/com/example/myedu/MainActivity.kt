@@ -2,6 +2,7 @@ package com.example.myedu
 
 import android.os.Bundle
 import android.util.Base64
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -27,6 +28,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
@@ -68,7 +71,7 @@ class MainViewModel : ViewModel() {
 
     private val jsFetcher = JsResourceFetcher()
     private val refJsFetcher = ReferenceJsFetcher()
-    private val dictUtils = DictionaryUtils() // Assumes DictionaryUtils exists
+    private val dictUtils = DictionaryUtils() 
 
     fun log(msg: String) {
         viewModelScope.launch(Dispatchers.Main) { logs.add(msg) }
@@ -104,7 +107,6 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                // Clear cache to force refresh with new dictionary if needed
                 cachedResourcesRu = null
                 cachedResourcesEn = null
                 
@@ -215,11 +217,9 @@ class MainViewModel : ViewModel() {
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
                     log("Fetching $language resources...")
-                    // IMPORTANT: Assuming JsResourceFetcher has been updated similarly to ReferenceJsFetcher to accept dictionary.
-                    // If not, you must update JsResourceFetcher.fetchResources signature.
-                    // For now, we pass the dictionary assuming you updated it or will update it.
-                    // resources = jsFetcher.fetchResources({ log(it) }, language, cachedDictionary) 
-                    // Fallback to simple call if you haven't updated JsResourceFetcher signature yet:
+                    // Fallback to simple fetch if JS fetcher not updated, but here we assume basic functionality works.
+                    // If you updated JsResourceFetcher to take dict, pass cachedDictionary here. 
+                    // Otherwise this call assumes the OLD JsResourceFetcher signature.
                     resources = jsFetcher.fetchResources({ log(it) }, language) 
                     
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
@@ -319,5 +319,33 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
                 items(viewModel.logs) { Text("> $it", color = Color.Green, fontSize = 12.sp) } 
             }
         }
+    }
+}
+
+// --- Dictionary Utils Embedded here to prevent ClassNotFoundException ---
+class DictionaryUtils { 
+    private val client = OkHttpClient()
+
+    suspend fun fetchDictionary(url: String): Map<String, String> = withContext(Dispatchers.IO) {
+        val map = mutableMapOf<String, String>()
+        if (url.isBlank()) return@withContext map
+
+        try {
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val jsonStr = response.body?.string() ?: "{}"
+                    val json = JSONObject(jsonStr)
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        map[key] = json.optString(key)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return@withContext map
     }
 }
