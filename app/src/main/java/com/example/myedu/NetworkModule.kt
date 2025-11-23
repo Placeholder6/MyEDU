@@ -39,6 +39,17 @@ interface OshSuApi {
 
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
+    
+    // --- New Endpoints for Reference (Form 8) ---
+    @GET("public/api/control/structure/specialitylicense")
+    suspend fun getSpecialityLicense(
+        @Query("id_speciality") specialityId: Int,
+        @Query("id_edu_form") eduFormId: Int
+    ): ResponseBody
+
+    @POST("public/api/student/doc/form8link")
+    suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
+    // -------------------------------------------
 
     @Multipart
     @POST("public/api/student/doc/form13")
