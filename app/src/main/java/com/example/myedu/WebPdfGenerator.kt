@@ -57,7 +57,10 @@ class WebPdfGenerator(private val context: Context) {
             }, "AndroidBridge")
 
             val fallbackPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-            val safeStamp = if (resources.stampBase64.startsWith("data:image")) resources.stampBase64 else fallbackPng
+            
+            // Use the extracted stamp if it exists, otherwise fallback
+            val isRealStamp = resources.stampBase64.startsWith("data:image")
+            val safeStamp = if (isRealStamp) resources.stampBase64 else fallbackPng
 
             val html = """
             <!DOCTYPE html>
@@ -75,20 +78,20 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const mt = "$safeStamp"; 
+                
+                if ($isRealStamp) {
+                    AndroidBridge.log("STAMP STATUS: Using Extracted Stamp (${resources.stampBase64.length} bytes)");
+                } else {
+                    AndroidBridge.log("STAMP STATUS: Using Fallback (Extraction Failed)");
+                }
 
-                // --- REAL LOGIC FROM UPLOADED FILES ---
-
-                // from helpers.js (Name Formatter)
+                // --- REAL HELPERS ---
                 const ct = (...e) => {
                     let t = "";
-                    e.forEach(a => {
-                        // Check for "null" string and undefined
-                        if (a && a !== "null") t += a + " ";
-                    });
+                    e.forEach(a => { if (a && a !== "null") t += a + " "; });
                     return t.trim();
                 };
 
-                // from PdfStyle.js
                 const J = {
                     header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
                     subheader: { fontSize: 16, bold: true, margin: [0, 10, 0, 5] },
@@ -116,7 +119,6 @@ class WebPdfGenerator(private val context: Context) {
                     colorFFF: { color: "#fff" }
                 };
 
-                // from PdfFooter4.js
                 const U = (t, e) => ({
                     columns: [
                         { text: `MYEDU ${'$'}{new Date().toLocaleDateString()}`, style: ["footLTitle"] },
@@ -125,10 +127,8 @@ class WebPdfGenerator(private val context: Context) {
                     margin: [0, 0, -15, 0]
                 });
 
-                // from KeysValue.js
                 const K = (n, e) => e.length == 0 ? n : n[e[0]] != null ? K(n[e[0]], e.slice(1)) : "";
 
-                // Basic Mocks
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
 
@@ -144,7 +144,6 @@ class WebPdfGenerator(private val context: Context) {
                         AndroidBridge.log("JS: Driver started.");
 
                         let totalCredits = 0, gpaSum = 0, gpaCount = 0;
-                        
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(y => {
                                 if(y.semesters) y.semesters.forEach(s => {
