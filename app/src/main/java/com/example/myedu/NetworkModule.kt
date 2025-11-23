@@ -24,7 +24,6 @@ import java.util.Locale
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
-// Request Models
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
 
@@ -69,41 +68,23 @@ class DebugCookieJar : CookieJar {
     fun setDebugCookies(token: String) {
         cookieStore.clear()
         val cleanToken = token.removePrefix("Bearer ").trim()
-        cookieStore.add(
-            Cookie.Builder()
-                .domain("myedu.oshsu.kg")
-                .path("/")
-                .name("myedu-jwt-token")
-                .value(cleanToken)
-                .build()
-        )
-        
+        cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("myedu-jwt-token").value(cleanToken).build())
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
-        cookieStore.add(
-            Cookie.Builder()
-                .domain("myedu.oshsu.kg")
-                .path("/")
-                .name("my_edu_update")
-                .value(sdf.format(Date()))
-                .build()
-        )
+        cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("my_edu_update").value(sdf.format(Date())).build())
     }
 }
 
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
     var currentReferer: String = "https://myedu.oshsu.kg/" 
-    
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Origin", "https://myedu.oshsu.kg")
         builder.header("Referer", currentReferer)
-        if (authToken != null) {
-            builder.header("Authorization", "Bearer ${authToken!!.removePrefix("Bearer ").trim()}")
-        }
+        if (authToken != null) builder.header("Authorization", "Bearer ${authToken!!.removePrefix("Bearer ").trim()}")
         return chain.proceed(builder.build())
     }
 }
@@ -111,18 +92,9 @@ class DebugInterceptor : Interceptor {
 object NetworkClient {
     val cookieJar = DebugCookieJar()
     val interceptor = DebugInterceptor()
-    
     val api: OshSuApi = Retrofit.Builder()
         .baseUrl("https://api.myedu.oshsu.kg/") 
-        .client(
-            OkHttpClient.Builder()
-                .cookieJar(cookieJar)
-                .addInterceptor(interceptor)
-                .connectTimeout(60, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .build()
-        )
+        .client(OkHttpClient.Builder().cookieJar(cookieJar).addInterceptor(interceptor).connectTimeout(60, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build())
         .addConverterFactory(GsonConverterFactory.create()) 
-        .build()
-        .create(OshSuApi::class.java)
+        .build().create(OshSuApi::class.java)
 }
