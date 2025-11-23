@@ -73,6 +73,7 @@ class WebPdfGenerator(private val context: Context) {
                 let transcriptData = $transcriptJson; 
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
+                const lang = "$language";
 
                 // Mock moment.js
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
@@ -87,10 +88,49 @@ class WebPdfGenerator(private val context: Context) {
             </script>
 
             <script>
+                function translateData(data) {
+                    // Data Translation Map
+                    const dict = {
+                        "Экзамен": "Exam",
+                        "Зачет": "Credit",
+                        "Курсовая работа": "Coursework",
+                        "Отлично": "Excellent",
+                        "Хорошо": "Good",
+                        "Удовл.": "Satisfactory",
+                        "Удовлетворительно": "Satisfactory",
+                        "Неудовл.": "Unsatisfactory",
+                        "Зачтено": "Passed",
+                        "Не зачтено": "Failed"
+                    };
+
+                    if(Array.isArray(data)) {
+                        data.forEach(year => {
+                            if(year.semesters) year.semesters.forEach(sem => {
+                                if(sem.subjects) sem.subjects.forEach(sub => {
+                                    // Translate Exam Type
+                                    if(sub.exam && dict[sub.exam]) sub.exam = dict[sub.exam];
+                                    
+                                    // Translate Grade Description
+                                    if(sub.exam_rule && sub.exam_rule.word_ru) {
+                                        const w = sub.exam_rule.word_ru;
+                                        if(dict[w]) sub.exam_rule.word_ru = dict[w];
+                                    }
+                                });
+                            });
+                        });
+                    }
+                }
+
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver running...");
+                        AndroidBridge.log("JS: Driver started (" + lang + ")...");
                         
+                        // 1. Translate Data if EN
+                        if (lang === "en") {
+                            translateData(transcriptData);
+                        }
+
+                        // 2. Calculate Stats
                         let totalCredits = 0, yearlyGpas = [];
 
                         if (Array.isArray(transcriptData)) {
@@ -98,6 +138,7 @@ class WebPdfGenerator(private val context: Context) {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
+                                        // Sum Credits
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
@@ -106,10 +147,14 @@ class WebPdfGenerator(private val context: Context) {
                                                 }
                                             });
                                         }
+                                        
+                                        // Filter Exams (Use "Exam" if translated, "Экзамен" if not)
+                                        const keyword = lang === "en" ? "Exam" : "Экзамен";
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
-                                            r.exam_rule && r.mark_list && r.exam && r.exam.includes("Экзамен")
+                                            r.exam_rule && r.mark_list && r.exam && r.exam.includes(keyword)
                                         ) : [];
 
+                                        // Calc GPA
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
@@ -125,6 +170,7 @@ class WebPdfGenerator(private val context: Context) {
                             });
                         }
 
+                        // Final GPA
                         let cumulativeGpa = 0;
                         if (yearlyGpas.length > 0) {
                             const rawAvg = yearlyGpas.reduce((a, b) => a + b, 0) / yearlyGpas.length;
