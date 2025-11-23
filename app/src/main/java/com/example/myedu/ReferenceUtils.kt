@@ -41,7 +41,6 @@ class ReferenceJsFetcher {
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
             val dependencies = StringBuilder()
-            
             suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
                 var varName: String? = null
                 if (exportChar == "DEFAULT_OR_NAMED") {
@@ -51,12 +50,9 @@ class ReferenceJsFetcher {
                     val regex = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
                     varName = findMatch(refContent, regex.pattern)
                 }
-
                 if (varName == null) varName = fallbackName
-
                 val fileUrlRegex = Regex("""["']([^"']*$fileKeyword\.[^"']+\.js)["']""")
                 val fileNameMatch = fileUrlRegex.find(refContent) ?: fileUrlRegex.find(mainJsContent)
-                
                 var success = false
                 if (fileNameMatch != null) {
                     val fileName = getName(fileNameMatch.groupValues[1])
@@ -66,7 +62,6 @@ class ReferenceJsFetcher {
                              Regex("""export\s*\{\s*(\w+)\s*\}""") 
                         else 
                              Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""")
-                        
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
@@ -107,10 +102,8 @@ class ReferenceJsFetcher {
 
             var cleanRef = cleanJsContent(refContent)
             if (language == "en" && dictionary.isNotEmpty()) {
-                logger("Translating Template...")
-                dictionary.forEach { (ru, en) -> 
-                    if (ru.length > 2) cleanRef = cleanRef.replace(ru, en) 
-                }
+                logger("Translating Reference Template...")
+                dictionary.forEach { (ru, en) -> if (ru.length > 2) cleanRef = cleanRef.replace(ru, en) }
                 val courseArrayRegex = Regex("""const\s+\w+\s*=\s*\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
                 cleanRef = cleanRef.replace(courseArrayRegex, """const h=["1st","2nd","3rd","4th","5th","6th","7th","8th"]""")
             }
@@ -118,12 +111,9 @@ class ReferenceJsFetcher {
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
-
             val exposeCode = "\nwindow.RefDocGenerator = $genFuncName;"
             val finalScript = dummyScript.toString() + dependencies.toString() + "\n(() => {\n" + cleanRef + exposeCode + "\n})();"
-            
             return@withContext PdfResources(finalScript)
-
         } catch (e: Exception) {
             logger("Ref Fetch Error: ${e.message}")
             e.printStackTrace()
@@ -173,14 +163,12 @@ class ReferencePdfGenerator(private val context: Context) {
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val webView = WebView(context)
             webView.settings.javaScriptEnabled = true
-            
             webView.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
                     logCallback("[JS Ref] ${cm.message()}")
                     return true
                 }
             }
-
             webView.addJavascriptInterface(object : Any() {
                 @JavascriptInterface
                 fun returnPdf(base64: String) {
@@ -192,12 +180,10 @@ class ReferencePdfGenerator(private val context: Context) {
                         if (continuation.isActive) continuation.resumeWith(Result.failure(e))
                     }
                 }
-
                 @JavascriptInterface
                 fun returnError(msg: String) {
                     if (continuation.isActive) continuation.resumeWith(Result.failure(Exception("JS: $msg")))
                 }
-                
                 @JavascriptInterface
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
@@ -223,93 +209,61 @@ class ReferencePdfGenerator(private val context: Context) {
                 const lang = "$language";
                 const dictionary = $dictionaryJson;
 
-                var ${'$'} = function(d) { 
-                    return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
-                };
+                var ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
                 ${'$'}.locale = function() {};
             </script>
-
             <script>
                 try {
                     ${resources.combinedScript}
                     AndroidBridge.log("JS: Scripts loaded.");
                 } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
-
             <script>
                 function translateString(str) {
                     if (!str || typeof str !== 'string') return str;
                     if (dictionary[str]) return dictionary[str];
                     let s = str;
                     for (const [key, value] of Object.entries(dictionary)) {
-                        if (key.length > 2 && s.includes(key)) {
-                            s = s.split(key).join(value);
-                        }
+                        if (key.length > 2 && s.includes(key)) { s = s.split(key).join(value); }
                     }
                     return s;
                 }
-
                 function translateData() {
                      if (lang !== "en") return;
-                     const tr = (obj, key) => {
-                        if (obj && obj[key]) obj[key] = translateString(obj[key]);
-                     };
+                     const tr = (obj, key) => { if (obj && obj[key]) obj[key] = translateString(obj[key]); };
                      tr(studentInfo, "faculty_ru");
                      tr(studentInfo, "speciality_ru");
                      tr(studentInfo, "edu_form_ru");
                      tr(studentInfo, "payment_form_name_ru");
-                     
                      if (studentInfo.lastStudentMovement) {
                          const lsm = studentInfo.lastStudentMovement;
-                         if (lsm.speciality && lsm.speciality.direction) {
-                             tr(lsm.speciality.direction, "name_ru");
-                         }
+                         if (lsm.speciality && lsm.speciality.direction) tr(lsm.speciality.direction, "name_ru");
                          if (lsm.edu_form) tr(lsm.edu_form, "name_ru");
                          if (lsm.payment_form) tr(lsm.payment_form, "name_ru");
                      }
                      tr(univInfo, "address_ru");
                 }
-
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Ref Driver started (" + lang + ")...");
-                        
-                        if (typeof window.RefDocGenerator !== 'function') {
-                             throw "Generator function not found.";
-                        }
-                        
+                        AndroidBridge.log("JS: Ref Driver started...");
+                        if (typeof window.RefDocGenerator !== 'function') throw "Generator function not found.";
                         translateData();
-
-                        let courses = lang === "en" 
-                            ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] 
-                            : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
-                            
+                        let courses = lang === "en" ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        
                         const suffix = lang === "en" ? "" : "-го"; 
                         const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + suffix;
-
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
-
                         let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
                         if(lang === "en") address = translateString(address);
-
-                        const d = {
-                            id: docIdStr,
-                            edunum: courseStr,
-                            date: new Date().toLocaleDateString("$dateLocale"),
-                            adress: address
-                        };
-
+                        const d = { id: docIdStr, edunum: courseStr, date: new Date().toLocaleDateString("$dateLocale"), adress: address };
                         const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
-                        
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
                 }
             </script>
