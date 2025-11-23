@@ -19,7 +19,9 @@ class DictionaryFetcher {
                 if (response.isSuccessful) {
                     val jsonStr = response.body?.string() ?: "{}"
                     val json = JSONObject(jsonStr)
-                    json.keys().forEach { key ->
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
                         map[key] = json.optString(key)
                     }
                 }
