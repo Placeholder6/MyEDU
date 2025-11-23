@@ -29,7 +29,6 @@ class ReferenceJsFetcher {
             // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Fallback: Check StudentDocuments if lazy loaded
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -83,7 +82,6 @@ class ReferenceJsFetcher {
                 if (!success) dependencies.append("var $varName = $fallbackValue;\n")
             }
 
-            // Link Modules
             linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
             linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
             linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
@@ -112,21 +110,21 @@ class ReferenceJsFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. TRANSLATE & PREPARE SCRIPT
+            // 5. PREPARE SCRIPT
             var cleanRef = cleanJsContent(refContent)
             
-            // Translate static template strings if English is requested
+            // Translate static template strings (Server-side replacement)
             if (language == "en") {
-                logger("Translating Reference Template to English...")
+                logger("Translating Template to English...")
                 cleanRef = translateToEnglish(cleanRef)
             }
 
-            // Extract 'at' Function (PDF Generator)
+            // Extract Generator Function
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
 
-            // Extract Course Names Array
+            // Extract Course Array
             val arrayRegex = Regex("""\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
             val arrayMatch = arrayRegex.find(cleanRef)
             val courseArrayLiteral = arrayMatch?.value ?: "['первого','второго','третьего','четвертого','пятого','шестого','седьмого']"
@@ -145,31 +143,36 @@ class ReferenceJsFetcher {
 
     private fun translateToEnglish(script: String): String {
         var s = script
+        // Comprehensive map covering static text in PDFMake definitions
         val map = mapOf(
-            "СПРАВКА" to "REFERENCE",
-            "Дана" to "Given to",
-            "в том, что он(а)" to "certifying that he/she",
-            "в том, что он" to "certifying that he",
-            "в том, что она" to "certifying that she",
-            "действительно обучается" to "is currently studying",
-            "в Ошском государственном университете" to "at Osh State University",
-            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
             "МИНИСТЕРСТВО ОБРАЗОВАНИЯ И НАУКИ" to "MINISTRY OF EDUCATION AND SCIENCE",
             "КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "OF THE KYRGYZ REPUBLIC",
+            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
+            "СПРАВКА" to "REFERENCE",
+            "Дана" to "Issued to",
+            "в том, что он действительно обучается" to "certifying that he is currently studying",
+            "в том, что она действительно обучается" to "certifying that she is currently studying",
+            "в том, что он(а) действительно обучается" to "certifying that he/she is currently studying",
+            "в Ошском государственном университете" to "at Osh State University",
+            "по настоящее время" to "to the present time",
             "Форма обучения" to "Form of study",
             "Специальность" to "Specialty",
             "Направление" to "Direction",
             "Курс" to "Year",
-            "по настоящее время" to "to the present time",
             "Приказ о зачислении" to "Enrollment Order",
             "Примечание" to "Note",
             "Ректор" to "Rector",
             "Гербовая печать" to "Official Seal",
             "Подпись" to "Signature",
             "Адрес" to "Address",
-            "Телефон" to "Phone"
+            "Телефон" to "Phone",
+            "Справка выдана для предъявления" to "Reference issued for submission to",
+            "по месту требования" to "place of demand",
+            "Место для печати" to "Place for seal",
+            "Контракт" to "Contract",
+            "Бюджет" to "Budget",
+            "семестр" to "semester"
         )
-        // Apply replacements to the script content
         map.forEach { (ru, en) -> s = s.replace(ru, en) }
         return s
     }
@@ -278,21 +281,31 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // Dynamic Data Translation Logic
+                // Client-side Dynamic Translation Dictionary
+                const dictionary = {
+                    "Лечебное дело": "General Medicine",
+                    "Международный медицинский факультет": "International Medical Faculty",
+                    "Ошский государственный университет": "Osh State University",
+                    "Очное": "Full-time",
+                    "Заочное": "Part-time",
+                    "Дистантное": "Distance",
+                    "Вечернее": "Evening",
+                    "Контракт": "Contract",
+                    "Бюджет": "Budget",
+                    "г. Ош, ул. Ленина 331": "Osh city, Lenin st. 331",
+                    "Кыргызстан": "Kyrgyzstan",
+                    "Ошская область": "Osh Region",
+                    "г. Ош": "Osh City"
+                };
+
                 function translateString(str) {
-                    if (!str) return str;
+                    if (!str || typeof str !== 'string') return str;
                     let s = str;
-                    const replacements = {
-                        "Лечебное дело": "General Medicine",
-                        "Очное (специалитет)": "Full-time (Specialist)",
-                        "Международный медицинский факультет": "International Medical Faculty",
-                        "Очное": "Full-time",
-                        "Заочное": "Part-time",
-                        "Ошский государственный университет": "Osh State University",
-                        "г. Ош, ул. Ленина 331": "Osh city, Lenin st. 331"
-                    };
-                    for (const [key, value] of Object.entries(replacements)) {
-                        // Replace all occurrences
+                    // 1. Dictionary Lookup
+                    if (dictionary[s]) return dictionary[s];
+                    
+                    // 2. Substring Replacement
+                    for (const [key, value] of Object.entries(dictionary)) {
                         s = s.split(key).join(value);
                     }
                     return s;
@@ -301,20 +314,17 @@ class ReferencePdfGenerator(private val context: Context) {
                 function translateData() {
                      if (lang !== "en") return;
                      
-                     // 1. Translate Student Info
-                     // We modify the object directly so the original generator uses English values
-                     const fields = ["faculty_ru", "direction_ru", "speciality_ru"];
+                     // Translate specific fields within Student Info
+                     const fields = ["faculty_ru", "direction_ru", "speciality_ru", "payment_form_name_ru"];
                      fields.forEach(field => {
-                        if (studentInfo[field]) {
-                            studentInfo[field] = translateString(studentInfo[field]);
-                        }
+                        if (studentInfo[field]) studentInfo[field] = translateString(studentInfo[field]);
                      });
                      
-                     if (studentInfo.lastStudentMovement && 
-                         studentInfo.lastStudentMovement.edu_form && 
-                         studentInfo.lastStudentMovement.edu_form.name_ru) {
-                        studentInfo.lastStudentMovement.edu_form.name_ru = 
-                            translateString(studentInfo.lastStudentMovement.edu_form.name_ru);
+                     // Translate deeply nested fields
+                     if (studentInfo.lastStudentMovement) {
+                        const m = studentInfo.lastStudentMovement;
+                        if (m.edu_form && m.edu_form.name_ru) m.edu_form.name_ru = translateString(m.edu_form.name_ru);
+                        if (m.payment_form && m.payment_form.name_ru) m.payment_form.name_ru = translateString(m.payment_form.name_ru);
                      }
                 }
 
@@ -326,25 +336,22 @@ class ReferencePdfGenerator(private val context: Context) {
                              throw "Generator function not found. Extraction failed.";
                         }
                         
-                        // 1. Translate Data Objects (JS side)
+                        // 1. Translate Dynamic Data
                         translateData();
 
-                        // 2. Handle Courses Array (extracted from server script)
+                        // 2. Handle Courses Array
                         let courses = window.RefCourseNames;
                         if (lang === "en") {
-                            // Use English ordinals
                             courses = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
                         }
 
                         if (!courses) throw "Course names array not found.";
                         
-                        // 3. Calculate Dynamic Strings
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
                         
-                        // Correct suffix logic
                         const suffix = lang === "en" ? "" : "-го"; 
                         const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + suffix;
 
@@ -353,15 +360,14 @@ class ReferencePdfGenerator(private val context: Context) {
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
 
-                        // 4. Address Logic
+                        // 3. Address Logic
                         let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
                         if (lang === "en") {
-                             // Prefer explicit English field if available, else translate
                              if (univInfo.address_en) address = univInfo.address_en;
                              else address = translateString(address);
                         }
 
-                        // 5. Construct Params Object
+                        // 4. Construct Data Object
                         const d = {
                             id: docIdStr,
                             edunum: courseStr,
@@ -369,8 +375,7 @@ class ReferencePdfGenerator(private val context: Context) {
                             adress: address
                         };
 
-                        // 6. Run Generator
-                        // The generator is already fetched with static string translations applied via ReferenceJsFetcher
+                        // 5. Call Generator
                         const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
                         
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
