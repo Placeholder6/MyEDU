@@ -5,6 +5,7 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// This data class holds the final executable script
 data class PdfResources(
     val combinedScript: String
 )
@@ -19,11 +20,13 @@ class JsResourceFetcher {
             // 1. Index
             logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") ?: throw Exception("Main JS missing")
+            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
+                ?: throw Exception("Main JS missing")
             
             // 2. Main JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""") ?: throw Exception("Transcript JS missing")
+            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""") 
+                ?: throw Exception("Transcript JS missing")
             
             // 3. Transcript JS
             logger("Fetching $transcriptJsName...")
@@ -34,22 +37,24 @@ class JsResourceFetcher {
             val dependencies = StringBuilder()
             
             // Helper to fetch and link a module
-            // import { P as J } from "./PdfStyle..." -> Link: const J = [RealVar];
+            // e.g. import { P as J } from "./PdfStyle..." -> turns into -> const J = t;
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, varName: String) {
+                // Try to find the import line in Transcript.js, fallback to Main.js
                 val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
+                
                 if (fileNameMatch != null) {
                     val fileName = fileNameMatch.groupValues[1]
                     logger("Linking $varName from $fileName")
                     val fileContent = fetchString("$baseUrl/assets/$fileName")
                     
-                    // Find the internal variable name it exports
+                    // Find the internal variable name it exports (e.g., export { t as P })
                     val internalVarMatch = exportRegex.find(fileContent)
                     if (internalVarMatch != null) {
                         val internalVar = internalVarMatch.groupValues[1]
-                        // Append file content (stripped of export)
+                        // Strip the export statement so it's valid in WebView
                         val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
                         dependencies.append(cleanContent).append("\n")
-                        // Glue: const J = t;
+                        // Glue the internal name to the name expected by Transcript.js
                         dependencies.append("const $varName = $internalVar;\n")
                     } else {
                         logger("WARNING: Could not find export in $fileName")
@@ -79,15 +84,16 @@ class JsResourceFetcher {
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
             // 6. EXPOSE GENERATOR (Y)
+            // Looks for Y=(C,a,c,d)
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) {
                 "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
-                logger("CRITICAL: Generator function not found!")
+                logger("CRITICAL: Generator function not found in Transcript.js!")
                 ""
             }
 
-            // 7. COMBINE
+            // 7. COMBINE EVERYTHING
             val finalScript = dependencies.toString() + "\n" + cleanTranscript + exposeCode
             
             return@withContext PdfResources(finalScript)
