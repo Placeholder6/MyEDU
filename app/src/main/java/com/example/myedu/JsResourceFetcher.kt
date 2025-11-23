@@ -15,7 +15,7 @@ class JsResourceFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
 
-    suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
+    suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String> = emptyMap()): PdfResources = withContext(Dispatchers.IO) {
         try {
             logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
@@ -89,8 +89,8 @@ class JsResourceFetcher {
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
             if (language == "en") {
-                logger("Translating Template to English...")
-                cleanTranscript = translateToEnglish(cleanTranscript)
+                logger("Applying Dictionary to Transcript Template...")
+                cleanTranscript = applyDictionary(cleanTranscript, dictionary)
             }
 
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
@@ -106,39 +106,19 @@ class JsResourceFetcher {
         }
     }
 
-    private fun translateToEnglish(script: String): String {
+    private fun applyDictionary(script: String, dictionary: Map<String, String>): String {
         var s = script
-        // Hardcoded map for Transcript
-        val map = mapOf(
-            "Учебный год" to "Academic Year", 
-            "Зарегистрировано кредитов" to "Registered Credits",
-            "Дисциплины" to "Subjects", 
-            "Кредит" to "Credits", 
-            "Форма контроля" to "Control",
-            "Баллы" to "Score",
-            "Цифр. экв." to "GPA",          
-            "Букв.сист." to "Grade",        
-            "Трад. сист." to "Performance", 
-            "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
-            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
-            "Международный медицинский факультет" to "International Medical Faculty", 
-            "ТРАНСКРИПТ" to "TRANSCRIPT",
-            "ФИО:" to "Full Name:", 
-            "ID студента:" to "Student ID:", 
-            "Дата рождения:" to "Date of Birth:",
-            "Направление:" to "Course:",    
-            "Специальность:" to "Specialty:", 
-            "Форма обучения:" to "Form of Study:",
-            "Общий GPA:" to "Total GPA:", 
-            "Всего зарегистрированых кредитов:" to "Total Credits:",
-            "ПРИМЕЧАНИЕ: 1 кредит составляет 30 академических часов." to "NOTE: 1 credit equals 30 academic hours.",
-            "Достоверность данного документа можно проверить отсканировав QR-код" to "Authenticity can be verified by scanning the QR code",
-            "Ректор" to "Rector", 
-            "Методист / Офис регистратор" to "Registrar"
-        )
-        map.forEach { (ru, en) -> s = s.replace(ru, en) }
+        // Iterate dictionary and replace matches
+        dictionary.forEach { (ru, en) -> 
+            if (ru.length > 2) {
+                s = s.replace(ru, en) 
+            }
+        }
+        
+        // Static header replacements (keep these if not in dictionary or as backup)
         s = s.replace("header:\"№\"", "header:\"#\"")
         s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
+        
         return s
     }
 
