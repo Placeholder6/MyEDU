@@ -21,6 +21,7 @@ class WebPdfGenerator(private val context: Context) {
         linkId: Long,
         qrUrl: String,
         resources: PdfResources,
+        language: String = "ru",
         logCallback: (String) -> Unit
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
@@ -56,6 +57,8 @@ class WebPdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
+            val dateLocale = if (language == "en") "en-US" else "ru-RU"
+
             val html = """
             <!DOCTYPE html>
             <html>
@@ -71,33 +74,29 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
 
-                // Mock moment.js (Used for simple date formatting)
-                const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
+                // Mock moment.js
+                const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
                 ${'$'}.locale = function() {};
             </script>
 
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts linked.");
+                    AndroidBridge.log("JS: Logic loaded ($language).");
                 } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver running...");
-                        
-                        // --- GPA CALCULATION (Replicated from Website Logic) ---
-                        let totalCredits = 0;
-                        let yearlyGpas = [];
+                        AndroidBridge.log("JS: Calculating Stats...");
+                        let totalCredits = 0, yearlyGpas = [];
 
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        // 1. Sum Credits (All subjects) & Fix Digital Precision
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
@@ -106,45 +105,35 @@ class WebPdfGenerator(private val context: Context) {
                                                 }
                                             });
                                         }
-
-                                        // 2. Filter for EXAMS only
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
                                             r.exam_rule && r.mark_list && r.exam && r.exam.includes("Экзамен")
                                         ) : [];
 
-                                        // 3. Calculate Semester GPA
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
-                                            const rawGpa = weightedSum / examCredits;
-                                            sem.gpa = Math.ceil(rawGpa * 100) / 100; // Ceiling Round
+                                            sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
                                             semGpas.push(sem.gpa);
                                         } else {
                                             sem.gpa = 0;
                                         }
                                     });
                                 }
-                                // 4. Year GPA
                                 const validSems = semGpas.filter(g => g > 0);
-                                if (validSems.length > 0) {
-                                    yearlyGpas.push(validSems.reduce((a, b) => a + b, 0) / validSems.length);
-                                }
+                                if (validSems.length > 0) yearlyGpas.push(validSems.reduce((a, b) => a + b, 0) / validSems.length);
                             });
                         }
 
-                        // 5. Final GPA (Avg of Yearly GPAs)
                         let cumulativeGpa = 0;
                         if (yearlyGpas.length > 0) {
                             const rawAvg = yearlyGpas.reduce((a, b) => a + b, 0) / yearlyGpas.length;
                             cumulativeGpa = Math.ceil(rawAvg * 100) / 100;
                         }
                         
-                        AndroidBridge.log("JS: Final GPA = " + cumulativeGpa);
-                        const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("ru-RU")];
+                        const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("$dateLocale")];
 
                         if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator missing";
 
-                        // Generate
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
