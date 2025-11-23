@@ -71,7 +71,7 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
 
-                // Mock moment.js (Only missing dep)
+                // Mock moment.js (Used for simple date formatting)
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
             </script>
@@ -88,7 +88,7 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver running...");
                         
-                        // --- EXACT GPA CALCULATION ---
+                        // --- GPA CALCULATION (Replicated from Website Logic) ---
                         let totalCredits = 0;
                         let yearlyGpas = [];
 
@@ -97,7 +97,7 @@ class WebPdfGenerator(private val context: Context) {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        // 1. Sum Credits
+                                        // 1. Sum Credits (All subjects) & Fix Digital Precision
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
@@ -107,17 +107,17 @@ class WebPdfGenerator(private val context: Context) {
                                             });
                                         }
 
-                                        // 2. Filter Exams
+                                        // 2. Filter for EXAMS only
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
                                             r.exam_rule && r.mark_list && r.exam && r.exam.includes("Экзамен")
                                         ) : [];
 
-                                        // 3. Calc Semester GPA
+                                        // 3. Calculate Semester GPA
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
                                             const rawGpa = weightedSum / examCredits;
-                                            sem.gpa = Math.ceil(rawGpa * 100) / 100;
+                                            sem.gpa = Math.ceil(rawGpa * 100) / 100; // Ceiling Round
                                             semGpas.push(sem.gpa);
                                         } else {
                                             sem.gpa = 0;
@@ -132,17 +132,19 @@ class WebPdfGenerator(private val context: Context) {
                             });
                         }
 
-                        // 5. Final GPA
+                        // 5. Final GPA (Avg of Yearly GPAs)
                         let cumulativeGpa = 0;
                         if (yearlyGpas.length > 0) {
                             const rawAvg = yearlyGpas.reduce((a, b) => a + b, 0) / yearlyGpas.length;
                             cumulativeGpa = Math.ceil(rawAvg * 100) / 100;
                         }
                         
+                        AndroidBridge.log("JS: Final GPA = " + cumulativeGpa);
                         const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("ru-RU")];
 
                         if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator missing";
 
+                        // Generate
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
