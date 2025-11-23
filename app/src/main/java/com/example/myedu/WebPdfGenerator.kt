@@ -9,6 +9,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.suspendCancellableCoroutine
+import org.json.JSONObject
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
@@ -22,6 +23,7 @@ class WebPdfGenerator(private val context: Context) {
         qrUrl: String,
         resources: PdfResources,
         language: String = "ru",
+        dictionary: Map<String, String> = emptyMap(),
         logCallback: (String) -> Unit
     ): ByteArray = suspendCancellableCoroutine { continuation ->
         
@@ -58,6 +60,7 @@ class WebPdfGenerator(private val context: Context) {
             }, "AndroidBridge")
 
             val dateLocale = if (language == "en") "en-US" else "ru-RU"
+            val dictionaryJson = JSONObject(dictionary).toString()
 
             val html = """
             <!DOCTYPE html>
@@ -74,8 +77,8 @@ class WebPdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
+                const dictionary = $dictionaryJson;
 
-                // Mock moment.js
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
                 ${'$'}.locale = function() {};
             </script>
@@ -88,28 +91,11 @@ class WebPdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // Helper to replace Russian phrases within strings (preserving codes)
                 function translateString(str) {
-                    if (!str) return str;
+                    if (!str || typeof str !== 'string') return str;
+                    if (dictionary[str]) return dictionary[str];
                     let s = str;
-                    const replacements = {
-                        "Лечебное дело": "General Medicine",
-                        "Очное (специалитет)": "Full-time (Specialist)",
-                        "Международный медицинский факультет": "International Medical Faculty",
-                        "Экзамен": "Exam",
-                        "Зачет": "Credit",
-                        "Курсовая работа": "Coursework",
-                        "Отлично": "Excellent",
-                        "Хорошо": "Good",
-                        "Удовл.": "Satisfactory",
-                        "Удовлетворительно": "Satisfactory",
-                        "Неудовл.": "Unsatisfactory",
-                        "Зачтено": "Passed",
-                        "Не зачтено": "Failed"
-                    };
-                    
-                    for (const [key, value] of Object.entries(replacements)) {
-                        // Global replace
+                    for (const [key, value] of Object.entries(dictionary)) {
                         s = s.split(key).join(value);
                     }
                     return s;
@@ -118,31 +104,25 @@ class WebPdfGenerator(private val context: Context) {
                 function translateData() {
                     if (lang !== "en") return;
                     
-                    // 1. Translate Student Info Fields
                     ["faculty_ru", "direction_ru", "speciality_ru"].forEach(field => {
                         if (studentInfo[field]) studentInfo[field] = translateString(studentInfo[field]);
                     });
                     
-                    if (studentInfo.lastStudentMovement && 
-                        studentInfo.lastStudentMovement.edu_form && 
-                        studentInfo.lastStudentMovement.edu_form.name_ru) {
+                    if (studentInfo.lastStudentMovement?.edu_form?.name_ru) {
                         studentInfo.lastStudentMovement.edu_form.name_ru = translateString(studentInfo.lastStudentMovement.edu_form.name_ru);
                     }
 
-                    // 2. Translate Transcript Data
                     if(Array.isArray(transcriptData)) {
                         transcriptData.forEach(year => {
                             if(year.semesters) year.semesters.forEach(sem => {
-                                // Format: "1-семестр" -> "Semester 1" (Handles spaces too)
                                 if (sem.semester) {
+                                    // Fallback semester logic if not in dictionary
                                     sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, "Semester ${'$'}1");
+                                    sem.semester = translateString(sem.semester);
                                 }
-                                
                                 if(sem.subjects) sem.subjects.forEach(sub => {
                                     if(sub.exam) sub.exam = translateString(sub.exam);
-                                    if(sub.exam_rule && sub.exam_rule.word_ru) {
-                                        sub.exam_rule.word_ru = translateString(sub.exam_rule.word_ru);
-                                    }
+                                    if(sub.exam_rule?.word_ru) sub.exam_rule.word_ru = translateString(sub.exam_rule.word_ru);
                                 });
                             });
                         });
@@ -152,19 +132,15 @@ class WebPdfGenerator(private val context: Context) {
                 function startGeneration() {
                     try {
                         AndroidBridge.log("JS: Driver started (" + lang + ")...");
-                        
-                        // TRANSLATE
                         translateData();
 
-                        // CALC STATS
+                        // Stats Logic
                         let totalCredits = 0, yearlyGpas = [];
-
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
                                 let semGpas = [];
                                 if (year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        // Sum Credits
                                         if (sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
@@ -173,22 +149,18 @@ class WebPdfGenerator(private val context: Context) {
                                                 }
                                             });
                                         }
-                                        
-                                        // Filter Exams (Keyword depends on lang)
-                                        const keyword = lang === "en" ? "Exam" : "Экзамен";
+                                        // Filter Exams (Look for translated "Exam" or original "Экзамен" in dictionary)
+                                        const keyword = dictionary["Экзамен"] || "Exam";
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
-                                            r.exam_rule && r.mark_list && r.exam && r.exam.includes(keyword)
+                                            r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
                                         ) : [];
 
-                                        // Calc GPA
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
                                             sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
                                             semGpas.push(sem.gpa);
-                                        } else {
-                                            sem.gpa = 0;
-                                        }
+                                        } else { sem.gpa = 0; }
                                     });
                                 }
                                 const validSems = semGpas.filter(g => g > 0);
@@ -196,7 +168,6 @@ class WebPdfGenerator(private val context: Context) {
                             });
                         }
 
-                        // Final GPA
                         let cumulativeGpa = 0;
                         if (yearlyGpas.length > 0) {
                             const rawAvg = yearlyGpas.reduce((a, b) => a + b, 0) / yearlyGpas.length;
@@ -204,8 +175,6 @@ class WebPdfGenerator(private val context: Context) {
                         }
                         
                         const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("$dateLocale")];
-
-                        if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator missing";
 
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
