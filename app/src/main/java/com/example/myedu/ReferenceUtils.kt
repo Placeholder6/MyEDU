@@ -49,23 +49,18 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 5. LINK MODULES
+            // 5. LINK MODULES (Dynamic Name Resolution)
             val dependencies = StringBuilder()
             val linkedVars = mutableSetOf<String>()
 
             suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
                 // 1. Detect Variable Name
-                // Matches: import { S as et } from ...Signed... -> "et"
-                // Matches: import { D } from ...DocumentLink... -> "D" (if exportChar is empty/special)
-                
                 var varName: String? = null
                 
                 if (exportChar == "DEFAULT_OR_NAMED") {
-                    // Try named import { D }
                      val regex = Regex("""import\s*\{\s*(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
                      varName = findMatch(refContent, regex.pattern)
                 } else {
-                    // Try aliased import { S as et }
                     val regex = Regex("""import\s*\{\s*$exportChar\s+as\s+(\w+)\s*\}\s*from\s*['"][^'"]*$fileKeyword[^'"]*['"]""")
                     varName = findMatch(refContent, regex.pattern)
                 }
@@ -88,19 +83,16 @@ class ReferenceJsFetcher {
                     try {
                         val fileContent = fetchString("$baseUrl/assets/$fileName")
                         
-                        // Find internal export variable
-                        // e.g. export { A as S } -> A
                         val exportRegex = if (exportChar == "DEFAULT_OR_NAMED") 
-                            Regex("""export\s*\{\s*(\w+)\s*\}""") // export { D }
+                            Regex("""export\s*\{\s*(\w+)\s*\}""") 
                         else 
-                            Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""") // export { A as S }
+                            Regex("""export\s*\{\s*(\w+)\s+as\s+$exportChar\s*\}""") 
                             
                         val internalVarMatch = exportRegex.find(fileContent)
                         
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
                             val cleanContent = cleanJsContent(fileContent)
-                            // Use 'var' to allow redeclaration if minification conflicts
                             dependencies.append("var $varName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
@@ -111,16 +103,14 @@ class ReferenceJsFetcher {
             }
 
             // --- LINK CONFIGURATION ---
-            // Based on your References7.js content:
-            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          // import { P as tt } -> tt
-            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            // import { S as et } -> et
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
             linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
-            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") // import { S as I } -> I
-            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") // import { D } -> D
-            linkModule("ru", "r", "Ru_Fallback", "{}")                      // import { r as W } -> W
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
+            linkModule("ru", "r", "Ru_Fallback", "{}")                      
 
             // 6. MOCK OTHER IMPORTS
-            // Mocks any imports we didn't explicitly link (like Vue components, helpers) so the script doesn't crash
             val varsToMock = mutableSetOf<String>()
             val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             genericImportRegex.findAll(refContent).forEach { match ->
@@ -130,7 +120,10 @@ class ReferenceJsFetcher {
                     if (name.isNotBlank()) varsToMock.add(name.trim())
                 }
             }
-            varsToMock.removeAll(linkedVars) // Don't mock the ones we just fetched!
+            
+            // CRITICAL FIX: Remove variables we linked AND '$' (since it is manually defined in HTML)
+            varsToMock.removeAll(linkedVars)
+            varsToMock.remove("$") // <-- This fixes the "Identifier '$' has already been declared" error
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -158,13 +151,9 @@ class ReferenceJsFetcher {
 
     private fun cleanJsContent(content: String): String {
         return content
-            // Remove imports: import { ... } from "..."
             .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
-            // Remove imports: import X from "..."
             .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
-            // Remove side-effects: import "..."
             .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
-            // Remove named exports: export { ... }
             .replace(Regex("""export\s*\{[^}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
     }
 
