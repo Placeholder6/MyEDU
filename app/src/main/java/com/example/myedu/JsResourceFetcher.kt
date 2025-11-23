@@ -31,67 +31,45 @@ class JsResourceFetcher {
             logger("Fetching $transcriptJsName...")
             var transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. LINK DEPENDENCIES
+            // 4. LINK MODULES
             val dependencies = StringBuilder()
             
-            // Helper: Tries to fetch and link. If ANY step fails, it writes the fallback.
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
-                    // Find filename
                     val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
-                    
                     if (fileNameMatch != null) {
                         val fileName = fileNameMatch.groupValues[1]
                         logger("Linking $finalVarName from $fileName")
                         var fileContent = fetchString("$baseUrl/assets/$fileName")
                         
-                        // Translate if needed (only for Footer U)
+                        // Footer Translation
                         if (language == "en" && finalVarName == "U") {
                             fileContent = fileContent.replace("Страница", "Page").replace("из", "of")
                         }
 
-                        // Find export
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
                             val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
-                            
-                            // Wrap in IIFE to isolate scope
-                            dependencies.append("const $finalVarName = (() => {\n")
-                            dependencies.append(cleanContent).append("\n")
-                            dependencies.append("return $internalVar;\n")
-                            dependencies.append("})();\n")
+                            dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
                     }
-                } catch (e: Exception) {
-                    logger("Link Error ($finalVarName): ${e.message}")
-                }
+                } catch (e: Exception) { logger("Link Error ($finalVarName): ${e.message}") }
 
-                // SAFETY NET: If linking failed, use fallback.
-                if (!success) {
-                    logger("WARNING: Using fallback for $finalVarName")
-                    dependencies.append("const $finalVarName = $fallbackValue;\n")
-                }
+                if (!success) dependencies.append("const $finalVarName = $fallbackValue;\n")
             }
 
-            // Link Modules (With explicit fallbacks)
-            // Styles (J)
+            // Link Dependencies
             linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
-            // Footer (U)
-            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U", "() => ({})")
-            // Keys (K)
-            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K", "(n) => n")
-            // Stamp (mt)
+            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U", "()=>({})")
+            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K", "(n)=>n")
             linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
-            // Helpers (ct)
-            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct", "(...a) => a.join(' ')")
-            // Locale (T) - Fixes "T is not defined"
+            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct", "(...a)=>a.join(' ')")
             linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 5. DUMMY OTHER IMPORTS
-            // Mock everything else (Vue functions etc.) to prevent crashes
+            // 5. DUMMY OTHERS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             importRegex.findAll(transcriptContent).forEach { match ->
@@ -101,7 +79,6 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // Remove manual links so we don't overwrite them
             varsToMock.removeAll(setOf("J", "U", "K", "mt", "ct", "T", "$"))
 
             val dummyScript = StringBuilder()
@@ -112,23 +89,22 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 6. PREPARE TRANSCRIPT
+            // 6. CLEAN & TRANSLATE SCRIPT
             var cleanTranscript = transcriptContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 7. TRANSLATE (If English)
             if (language == "en") {
+                logger("Translating Template to English...")
                 cleanTranscript = translateToEnglish(cleanTranscript)
             }
 
-            // 8. EXPOSE GENERATOR
+            // 7. EXPOSE
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) "\nwindow.PDFGenerator = $funcNameMatch;" else ""
 
             val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanTranscript + exposeCode
-            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -140,22 +116,41 @@ class JsResourceFetcher {
 
     private fun translateToEnglish(script: String): String {
         var s = script
+        // Static Template Translations
         val map = mapOf(
-            "Учебный год" to "Academic Year", "Семестр" to "Semester", "Зарегистрировано кредитов -" to "Registered Credits -",
-            "Дисциплины" to "Subjects", "Кредит" to "Credits", "Форма контроля" to "Control", "Баллы" to "Score",
-            "Цифр. экв." to "Digit", "Букв.сист." to "Letter", "Трад. сист." to "Traditional",
+            "Учебный год" to "Academic Year", 
+            "Семестр" to "Semester",
+            "Зарегистрировано кредитов" to "Credits Registered",
+            "Дисциплины" to "Subjects", 
+            "Кредит" to "Credits", 
+            "Форма контроля" to "Control",
+            "Баллы" to "Score",
+            "Цифр. экв." to "GPA",          // Changed from Digit
+            "Букв.сист." to "Grade",        // Changed from Letter
+            "Трад. сист." to "Performance", // Changed from Traditional
             "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
-            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY", "ТРАНСКРИПТ" to "TRANSCRIPT",
-            "ФИО:" to "Full Name:", "ID студента:" to "Student ID:", "Дата рождения:" to "Date of Birth:",
-            "Направление:" to "Direction:", "Специальность:" to "Specialty:", "Форма обучения:" to "Form of Study:",
-            "Общий GPA:" to "Total GPA:", "Всего зарегистрированых кредитов:" to "Total Registered Credits:",
+            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
+            "ТРАНСКРИПТ" to "TRANSCRIPT",
+            "ФИО:" to "Full Name:", 
+            "ID студента:" to "Student ID:", 
+            "Дата рождения:" to "Date of Birth:",
+            "Направление:" to "Direction:", 
+            "Специальность:" to "Specialty:", 
+            "Форма обучения:" to "Form of Study:",
+            "Общий GPA:" to "Total GPA:", 
+            "Всего зарегистрированых кредитов:" to "Total Credits:",
             "ПРИМЕЧАНИЕ: 1 кредит составляет 30 академических часов." to "NOTE: 1 credit equals 30 academic hours.",
-            "Достоверность данного документа можно проверить отсканировав QR-код" to "The authenticity of this document can be verified by scanning the QR code",
-            "Ректор" to "Rector", "Методист / Офис регистратор" to "Registrar"
+            "Достоверность данного документа можно проверить отсканировав QR-код" to "Authenticity can be verified by scanning the QR code",
+            "Ректор" to "Rector", 
+            "Методист / Офис регистратор" to "Registrar"
         )
+        
         map.forEach { (ru, en) -> s = s.replace(ru, en) }
+        
+        // Fix Table Headers safely (The script uses header:"...")
         s = s.replace("header:\"№\"", "header:\"#\"")
         s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
+        
         return s
     }
 
