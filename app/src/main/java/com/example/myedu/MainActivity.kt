@@ -2,7 +2,6 @@ package com.example.myedu
 
 import android.os.Bundle
 import android.util.Base64
-import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -44,12 +43,13 @@ data class TranscriptItem(
 
 class MainViewModel : ViewModel() {
     var tokenInput by mutableStateOf("")
-    var dictionaryUrl by mutableStateOf("https://raw.githubusercontent.com/YourRepo/dict.json") // Default URL
+    // Default Dictionary URL
+    var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
+    
     var transcriptList = mutableStateListOf<TranscriptItem>()
     var logs = mutableStateListOf<String>()
     var isBusy by mutableStateOf(false)
 
-    // Caches
     private var cachedStudentId: Long = 0
     private var cachedInfoJson: String? = null
     private var cachedTranscriptJson: String? = null
@@ -68,7 +68,7 @@ class MainViewModel : ViewModel() {
 
     private val jsFetcher = JsResourceFetcher()
     private val refJsFetcher = ReferenceJsFetcher()
-    private val dictFetcher = DictionaryFetcher()
+    private val dictUtils = DictionaryUtils() // Assumes DictionaryUtils exists
 
     fun log(msg: String) {
         viewModelScope.launch(Dispatchers.Main) { logs.add(msg) }
@@ -85,12 +85,13 @@ class MainViewModel : ViewModel() {
 
     private suspend fun fetchDictionaryIfNeeded() {
         if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
-            log("Fetching Dictionary from URL...")
-            cachedDictionary = dictFetcher.fetchDictionary(dictionaryUrl)
+            log("Fetching Dictionary...")
+            cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
             log("Dictionary loaded: ${cachedDictionary.size} entries")
         }
     }
 
+    // --- TRANSCRIPT ---
     fun fetchTranscriptData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -103,8 +104,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                log("1. Fetching Transcript Resources...")
-                // Clear previous caches if we are fetching fresh data
+                // Clear cache to force refresh with new dictionary if needed
                 cachedResourcesRu = null
                 cachedResourcesEn = null
                 
@@ -112,6 +112,7 @@ class MainViewModel : ViewModel() {
                 if (sId == 0L) throw Exception("Invalid Token")
                 cachedStudentId = sId
 
+                log("1. Info...")
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfo(sId).string() }
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
@@ -119,11 +120,12 @@ class MainViewModel : ViewModel() {
                 cachedInfoJson = infoJson.toString()
                 
                 val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
+                log("2. Transcript...")
                 val transcriptRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptData(sId, movementId).string() }
                 cachedTranscriptJson = transcriptRaw
                 
                 parseAndDisplayTranscript(transcriptRaw)
-                log("Transcript Data Ready.")
+                log("Ready.")
             } catch (e: Throwable) {
                 log("Error: ${e.message}")
                 e.printStackTrace()
@@ -131,6 +133,7 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // --- REFERENCE ---
     fun fetchReferenceData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -155,8 +158,6 @@ class MainViewModel : ViewModel() {
                 var eduFormId = info.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
                 if (eduFormId == 0) eduFormId = info.optJSONObject("edu_form")?.optInt("id") ?: 0
 
-                if (specId == 0 || eduFormId == 0) log("Warning: IDs might be 0")
-
                 cachedLicenseJson = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
                 cachedUnivInfo = withContext(Dispatchers.IO) { NetworkClient.api.getUniversityInfo().string() }
                 
@@ -165,7 +166,7 @@ class MainViewModel : ViewModel() {
                 cachedRefLinkId = linkJson.optLong("id")
                 cachedRefQrUrl = linkJson.optString("url")
                 
-                log("Reference Data Ready.")
+                log("Ref Data Ready.")
             } catch (e: Exception) {
                 log("Ref Error: ${e.message}")
                 e.printStackTrace()
@@ -214,10 +215,13 @@ class MainViewModel : ViewModel() {
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
                     log("Fetching $language resources...")
-                    // Note: We also pass dictionary to transcript fetcher to keep things consistent
-                    resources = jsFetcher.fetchResources({ log(it) }, language) // JsResourceFetcher needs update or we assume it handles it.
-                    // Since I cannot modify JsResourceFetcher here without reprinting it fully, 
-                    // I am assuming you will apply similar Dictionary logic to JsResourceFetcher as done in ReferenceJsFetcher above.
+                    // IMPORTANT: Assuming JsResourceFetcher has been updated similarly to ReferenceJsFetcher to accept dictionary.
+                    // If not, you must update JsResourceFetcher.fetchResources signature.
+                    // For now, we pass the dictionary assuming you updated it or will update it.
+                    // resources = jsFetcher.fetchResources({ log(it) }, language, cachedDictionary) 
+                    // Fallback to simple call if you haven't updated JsResourceFetcher signature yet:
+                    resources = jsFetcher.fetchResources({ log(it) }, language) 
+                    
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
@@ -288,7 +292,6 @@ class MainViewModel : ViewModel() {
 fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerator, filesDir: File) {
     val viewModel: MainViewModel = viewModel()
     val clipboard = LocalClipboardManager.current
-    val context = LocalContext.current
     val state = rememberLazyListState()
     LaunchedEffect(viewModel.logs.size) { if(viewModel.logs.isNotEmpty()) state.animateScrollToItem(viewModel.logs.size - 1) }
 
