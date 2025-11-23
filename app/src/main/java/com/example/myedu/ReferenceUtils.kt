@@ -2,6 +2,8 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Base64 // Added
+import android.webkit.ConsoleMessage // Added
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -17,7 +19,6 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
 
-    // Now accepts the dictionary map for translation
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         try {
             // 1. Fetch Main Script
@@ -26,10 +27,9 @@ class ReferenceJsFetcher {
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 2. Fetch References7.js (Form 8 Generator)
+            // 2. Fetch References7.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Fallback: Check StudentDocuments
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -109,24 +109,21 @@ class ReferenceJsFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. PREPARE SCRIPT & APPLY DICTIONARY (Template Translation)
+            // 5. PREPARE SCRIPT & APPLY DICTIONARY
             var cleanRef = cleanJsContent(refContent)
             
             if (language == "en" && dictionary.isNotEmpty()) {
-                logger("Applying Dictionary to Template...")
+                logger("Translating Reference Template...")
                 dictionary.forEach { (ru, en) -> 
-                    if (ru.length > 2) { // Avoid replacing very short common variables
+                    if (ru.length > 2) { 
                         cleanRef = cleanRef.replace(ru, en) 
                     }
                 }
                 
-                // Hardcoded fallback for the course array structure if not fully covered by simple string replacement
                 val courseArrayRegex = Regex("""const\s+\w+\s*=\s*\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
-                // We assume standard English ordinals for the array
                 cleanRef = cleanRef.replace(courseArrayRegex, """const h=["1st","2nd","3rd","4th","5th","6th","7th","8th"]""")
             }
 
-            // Extract Generator Function
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
@@ -233,7 +230,7 @@ class ReferencePdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
-                const dictionary = $dictionaryJson; // INJECTED DICTIONARY
+                const dictionary = $dictionaryJson;
 
                 // Mock moment.js
                 var ${'$'} = function(d) { 
@@ -250,18 +247,11 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // CLIENT-SIDE DATA TRANSLATION
                 function translateString(str) {
                     if (!str || typeof str !== 'string') return str;
-                    
-                    // 1. Exact Match
                     if (dictionary[str]) return dictionary[str];
-                    
-                    // 2. Substring Replacement
                     let s = str;
-                    // Check dictionary for phrases to replace within the string
                     for (const [key, value] of Object.entries(dictionary)) {
-                        // Avoid replacing very short strings to prevent corruption
                         if (key.length > 2 && s.includes(key)) {
                             s = s.split(key).join(value);
                         }
@@ -276,13 +266,11 @@ class ReferencePdfGenerator(private val context: Context) {
                         if (obj && obj[key]) obj[key] = translateString(obj[key]);
                      };
 
-                     // Translate Student Info
                      tr(studentInfo, "faculty_ru");
                      tr(studentInfo, "speciality_ru");
                      tr(studentInfo, "edu_form_ru");
                      tr(studentInfo, "payment_form_name_ru");
                      
-                     // Nested Info
                      if (studentInfo.lastStudentMovement) {
                          const lsm = studentInfo.lastStudentMovement;
                          if (lsm.speciality && lsm.speciality.direction) {
@@ -292,7 +280,6 @@ class ReferencePdfGenerator(private val context: Context) {
                          if (lsm.payment_form) tr(lsm.payment_form, "name_ru");
                      }
                      
-                     // University Info
                      tr(univInfo, "address_ru");
                 }
 
@@ -306,8 +293,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         
                         translateData();
 
-                        // Note: The internal course array 'h' is likely replaced by the fetcher if matched.
-                        // We recreate the course string logic here.
                         let courses = lang === "en" 
                             ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] 
                             : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
@@ -316,7 +301,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        
                         const suffix = lang === "en" ? "" : "-го"; 
                         const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + suffix;
 
@@ -325,7 +309,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
 
-                        // Address handling
                         let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
                         if(lang === "en") address = translateString(address);
 
