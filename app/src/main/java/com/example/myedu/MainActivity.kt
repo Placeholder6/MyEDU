@@ -103,7 +103,6 @@ class MainViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(sId).string()
                 }
                 
-                // Fix "null" strings in name
                 val infoJson = JSONObject(infoRaw)
                 fun clean(key: String): String {
                     val v = infoJson.optString(key, "")
