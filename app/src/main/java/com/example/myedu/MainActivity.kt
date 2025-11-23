@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -46,7 +47,6 @@ data class TranscriptItem(
 
 class MainViewModel : ViewModel() {
     var tokenInput by mutableStateOf("")
-    // Default Dictionary URL
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
     
     var transcriptList = mutableStateListOf<TranscriptItem>()
@@ -71,7 +71,7 @@ class MainViewModel : ViewModel() {
 
     private val jsFetcher = JsResourceFetcher()
     private val refJsFetcher = ReferenceJsFetcher()
-    private val dictUtils = DictionaryUtils() 
+    private val dictUtils = DictionaryUtils()
 
     fun log(msg: String) {
         viewModelScope.launch(Dispatchers.Main) { logs.add(msg) }
@@ -94,7 +94,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- TRANSCRIPT ---
     fun fetchTranscriptData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -127,7 +126,7 @@ class MainViewModel : ViewModel() {
                 cachedTranscriptJson = transcriptRaw
                 
                 parseAndDisplayTranscript(transcriptRaw)
-                log("Ready.")
+                log("Transcript Ready.")
             } catch (e: Throwable) {
                 log("Error: ${e.message}")
                 e.printStackTrace()
@@ -135,7 +134,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- REFERENCE ---
     fun fetchReferenceData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -168,7 +166,7 @@ class MainViewModel : ViewModel() {
                 cachedRefLinkId = linkJson.optLong("id")
                 cachedRefQrUrl = linkJson.optString("url")
                 
-                log("Ref Data Ready.")
+                log("Ref Ready.")
             } catch (e: Exception) {
                 log("Ref Error: ${e.message}")
                 e.printStackTrace()
@@ -217,11 +215,7 @@ class MainViewModel : ViewModel() {
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
                     log("Fetching $language resources...")
-                    // Fallback to simple fetch if JS fetcher not updated, but here we assume basic functionality works.
-                    // If you updated JsResourceFetcher to take dict, pass cachedDictionary here. 
-                    // Otherwise this call assumes the OLD JsResourceFetcher signature.
                     resources = jsFetcher.fetchResources({ log(it) }, language) 
-                    
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
@@ -322,7 +316,6 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
     }
 }
 
-// --- Dictionary Utils Embedded here to prevent ClassNotFoundException ---
 class DictionaryUtils { 
     private val client = OkHttpClient()
 
@@ -347,5 +340,20 @@ class DictionaryUtils {
             e.printStackTrace()
         }
         return@withContext map
+    }
+}
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val webGenerator = WebPdfGenerator(this)
+        val refGenerator = ReferencePdfGenerator(this)
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    MainScreen(webGenerator, refGenerator, filesDir)
+                }
+            }
+        }
     }
 }
