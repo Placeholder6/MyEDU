@@ -82,14 +82,15 @@ class WebPdfGenerator(private val context: Context) {
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Logic loaded ($language).");
+                    AndroidBridge.log("JS: Scripts linked.");
                 } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
             </script>
 
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Calculating Stats...");
+                        AndroidBridge.log("JS: Driver running...");
+                        
                         let totalCredits = 0, yearlyGpas = [];
 
                         if (Array.isArray(transcriptData)) {
