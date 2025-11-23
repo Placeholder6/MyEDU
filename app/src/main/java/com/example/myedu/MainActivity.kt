@@ -63,7 +63,8 @@ class MainViewModel : ViewModel() {
     private var cachedUnivInfo: String? = null
     private var cachedRefLinkId: Long = 0
     private var cachedRefQrUrl: String = ""
-    private var cachedRefResources: PdfResources? = null
+    private var cachedRefResourcesRu: PdfResources? = null
+    private var cachedRefResourcesEn: PdfResources? = null
 
     private val jsFetcher = JsResourceFetcher()
     private val refJsFetcher = ReferenceJsFetcher()
@@ -186,8 +187,8 @@ class MainViewModel : ViewModel() {
                 cachedRefLinkId = linkJson.optLong("id")
                 cachedRefQrUrl = linkJson.optString("url")
 
-                log("5. Resources...")
-                cachedRefResources = refJsFetcher.fetchResources({ log(it) }, "ru")
+                log("5. Resources (RU)...")
+                cachedRefResourcesRu = refJsFetcher.fetchResources({ log(it) }, "ru")
                 
                 log("Reference Ready. Key: $cachedRefLinkId")
 
@@ -200,15 +201,22 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun generateReferencePdf(refGenerator: ReferencePdfGenerator, filesDir: File, onPdfReady: (File) -> Unit) {
-        if (cachedRefStudentInfo == null || cachedLicenseJson == null || cachedRefResources == null || cachedUnivInfo == null) { 
-            log("Ref Data missing."); return 
+    fun generateReferencePdf(refGenerator: ReferencePdfGenerator, filesDir: File, language: String, onPdfReady: (File) -> Unit) {
+        if (cachedRefStudentInfo == null || cachedLicenseJson == null || cachedUnivInfo == null) { 
+            log("Ref Data missing. Fetch first."); return 
         }
         
         viewModelScope.launch {
             isBusy = true
             try {
-                log("Generating Ref PDF...")
+                var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
+                if (resources == null) {
+                    log("Fetching $language resources...")
+                    resources = refJsFetcher.fetchResources({ log(it) }, language)
+                    if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
+                }
+
+                log("Generating Ref PDF ($language)...")
                 val info = JSONObject(cachedRefStudentInfo!!)
                 val fullName = "${info.optString("last_name")} ${info.optString("name")} ${info.optString("father_name")}".replace("null", "").trim()
                 info.put("fullName", fullName)
@@ -219,11 +227,11 @@ class MainViewModel : ViewModel() {
                     cachedUnivInfo!!,
                     cachedRefLinkId, 
                     cachedRefQrUrl, 
-                    cachedRefResources!!, 
-                    "ru" 
+                    resources!!, 
+                    language 
                 ) { log(it) }
 
-                val fileName = "reference_form8.pdf"
+                val fileName = "reference_form8_$language.pdf"
                 val file = File(filesDir, fileName)
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
                 
@@ -386,7 +394,10 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
         Text("Reference (Form 8)", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("1. Fetch Ref Files") }
-            Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("2. Ref PDF") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("PDF (RU)") }
+            Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("PDF (EN)") }
         }
 
         Divider(Modifier.padding(vertical=8.dp))
