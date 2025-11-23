@@ -34,7 +34,6 @@ class JsResourceFetcher {
 
             // 4. MOCK IMPORTS
             val varsToMock = mutableSetOf<String>()
-            // Capture everything inside import { ... }
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             
             importRegex.findAll(transcriptJsContent).forEach { match ->
@@ -44,7 +43,6 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // Do not mock these, we will provide real implementations for them
             varsToMock.removeAll(setOf("J", "U", "K", "$", "mt", "ct"))
 
             val dummyScript = StringBuilder()
@@ -77,20 +75,16 @@ class JsResourceFetcher {
                 ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
 
             if (signedJsName != null) {
-                logger("Fetching Stamp File: $signedJsName")
+                logger("Fetching Stamp: $signedJsName")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsName")
                 
                 // Matches: const A="data:image/jpeg;base64,..."
+                // We grab the content inside the quotes
                 val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
+                stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
                 
-                if (stampMatch != null) {
-                    stampBase64 = stampMatch.groupValues[1]
-                    logger("Stamp Found! Length: ${stampBase64.length}")
-                } else {
-                    logger("WARNING: No base64 image string found in Signed.js")
-                }
-            } else {
-                logger("WARNING: Signed.js filename not found in imports.")
+                if (stampBase64.isNotEmpty()) logger("Stamp Found! Length: ${stampBase64.length}")
+                else logger("WARNING: No base64 image found in Signed.js")
             }
 
             return@withContext PdfResources(stampBase64, finalScript)
