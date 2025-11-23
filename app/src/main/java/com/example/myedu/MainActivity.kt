@@ -12,7 +12,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -47,6 +46,7 @@ data class TranscriptItem(
 
 class MainViewModel : ViewModel() {
     var tokenInput by mutableStateOf("")
+    // Your Dictionary URL
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
     
     var transcriptList = mutableStateListOf<TranscriptItem>()
@@ -62,6 +62,7 @@ class MainViewModel : ViewModel() {
     private var cachedRefLinkId: Long = 0
     private var cachedRefQrUrl: String = ""
     
+    // Cache separate resources per language
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
     private var cachedRefResourcesRu: PdfResources? = null
@@ -94,6 +95,7 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // --- TRANSCRIPT ---
     fun fetchTranscriptData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -106,6 +108,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
+                // Invalidate cache to ensure fresh dictionary usage
                 cachedResourcesRu = null
                 cachedResourcesEn = null
                 
@@ -126,7 +129,7 @@ class MainViewModel : ViewModel() {
                 cachedTranscriptJson = transcriptRaw
                 
                 parseAndDisplayTranscript(transcriptRaw)
-                log("Transcript Ready.")
+                log("Ready.")
             } catch (e: Throwable) {
                 log("Error: ${e.message}")
                 e.printStackTrace()
@@ -134,6 +137,7 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // --- REFERENCE ---
     fun fetchReferenceData() {
         if (tokenInput.isBlank()) { log("Error: Token is empty"); return }
         viewModelScope.launch {
@@ -145,10 +149,11 @@ class MainViewModel : ViewModel() {
                 NetworkClient.interceptor.authToken = token
                 cachedStudentId = getStudentIdFromToken(token)
 
-                log("1. Reference Data...")
+                // Invalidate cache
                 cachedRefResourcesRu = null
                 cachedRefResourcesEn = null
 
+                log("1. Reference Data...")
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfo(cachedStudentId).string() }
                 cachedRefStudentInfo = infoRaw
                 
@@ -166,7 +171,7 @@ class MainViewModel : ViewModel() {
                 cachedRefLinkId = linkJson.optLong("id")
                 cachedRefQrUrl = linkJson.optString("url")
                 
-                log("Ref Ready.")
+                log("Ref Data Ready.")
             } catch (e: Exception) {
                 log("Ref Error: ${e.message}")
                 e.printStackTrace()
@@ -181,7 +186,7 @@ class MainViewModel : ViewModel() {
             try {
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
-                    log("Fetching $language resources...")
+                    log("Fetching Ref Resources ($language)...")
                     resources = refJsFetcher.fetchResources({ log(it) }, language, cachedDictionary)
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
@@ -214,8 +219,9 @@ class MainViewModel : ViewModel() {
             try {
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
-                    log("Fetching $language resources...")
-                    resources = jsFetcher.fetchResources({ log(it) }, language) 
+                    log("Fetching Transcript Resources ($language)...")
+                    // Now passing dictionary to Transcript fetcher too
+                    resources = jsFetcher.fetchResources({ log(it) }, language, cachedDictionary) 
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
@@ -297,6 +303,7 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
         Text("Transcript", fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("Fetch Data") }
+            Button(onClick = { viewModel.generateTranscriptPdf(webGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("PDF (RU)") }
             Button(onClick = { viewModel.generateTranscriptPdf(webGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("PDF (EN)") }
         }
         
@@ -304,6 +311,7 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
         Text("Reference", fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("Fetch Data") }
+            Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("PDF (RU)") }
             Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("PDF (EN)") }
         }
 
