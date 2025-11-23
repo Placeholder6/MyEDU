@@ -5,7 +5,6 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-// This data class holds the final executable script
 data class PdfResources(
     val combinedScript: String
 )
@@ -32,68 +31,77 @@ class JsResourceFetcher {
             logger("Fetching $transcriptJsName...")
             var transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. LINK DEPENDENCIES
-            // We find the filenames for Style, Footer, Keys, Signed, and fetch them.
+            // 4. LINK DEPENDENCIES (With Scope Isolation)
             val dependencies = StringBuilder()
             
-            // Helper to fetch and link a module
-            // e.g. import { P as J } from "./PdfStyle..." -> turns into -> const J = t;
-            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, varName: String) {
-                // Try to find the import line in Transcript.js, fallback to Main.js
+            // Function to safely wrap and link a module
+            suspend fun linkModule(importRegex: Regex, exportAlias: String, finalVarName: String) {
+                // Find the filename (e.g., PdfStyle.hash.js)
                 val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
                 
                 if (fileNameMatch != null) {
                     val fileName = fileNameMatch.groupValues[1]
-                    logger("Linking $varName from $fileName")
+                    logger("Linking $finalVarName from $fileName")
                     val fileContent = fetchString("$baseUrl/assets/$fileName")
                     
-                    // Find the internal variable name it exports (e.g., export { t as P })
+                    // Find what internal variable maps to the export alias
+                    // Example: export { t as P } -> We want 't' when looking for 'P'
+                    // Regex handles: "export{t as P}" or "export { t as P, ... }"
+                    val exportRegex = Regex("""export\s*\{[^}]*?(\w+)\s+as\s+$exportAlias[^}]*?\}""")
                     val internalVarMatch = exportRegex.find(fileContent)
+                    
                     if (internalVarMatch != null) {
                         val internalVar = internalVarMatch.groupValues[1]
-                        // Strip the export statement so it's valid in WebView
+                        
+                        // Clean content: remove export statement
                         val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
+                        
+                        // Wrap in IIFE (Immediately Invoked Function Expression) to isolate scope
+                        // const J = (() => { [CONTENT]; return t; })();
+                        dependencies.append("const $finalVarName = (() => {\n")
                         dependencies.append(cleanContent).append("\n")
-                        // Glue the internal name to the name expected by Transcript.js
-                        dependencies.append("const $varName = $internalVar;\n")
+                        dependencies.append("return $internalVar;\n")
+                        dependencies.append("})();\n")
+                        
                     } else {
-                        logger("WARNING: Could not find export in $fileName")
+                        logger("WARNING: Could not find export '$exportAlias' in $fileName")
                     }
                 } else {
-                    logger("WARNING: Could not find import for $varName")
+                    logger("WARNING: Import for $finalVarName not found.")
                 }
             }
 
-            // A. PdfStyle -> J (Import: P as J, Export: t as P)
-            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J")
+            // A. PdfStyle -> J (Import: P as J, File exports: t as P) -> J = t
+            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), "P", "J")
             
-            // B. PdfFooter -> U (Import: P as U, Export: o as P)
-            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U")
+            // B. PdfFooter -> U (Import: P as U, File exports: o as P) -> U = o
+            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), "P", "U")
             
-            // C. KeysValue -> K (Import: k as K, Export: t as k)
-            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K")
+            // C. KeysValue -> K (Import: k as K, File exports: t as k) -> K = t
+            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), "k", "K")
             
-            // D. Signed -> mt (Import: S as mt, Export: A as S)
-            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt")
+            // D. Signed -> mt (Import: S as mt, File exports: A as S) -> mt = A
+            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), "S", "mt")
+
+            // E. Helpers -> ct (Import: e as ct, File exports: d as e) -> ct = d
+            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), "e", "ct")
 
             // 5. PREPARE TRANSCRIPT.JS
-            // Strip imports and exports
             val cleanTranscript = transcriptContent
                 .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?"""), "")
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE GENERATOR (Y)
-            // Looks for Y=(C,a,c,d)
+            // 6. EXPOSE GENERATOR
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) {
                 "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
-                logger("CRITICAL: Generator function not found in Transcript.js!")
+                logger("CRITICAL: Generator function not found!")
                 ""
             }
 
-            // 7. COMBINE EVERYTHING
+            // 7. COMBINE
             val finalScript = dependencies.toString() + "\n" + cleanTranscript + exposeCode
             
             return@withContext PdfResources(finalScript)
