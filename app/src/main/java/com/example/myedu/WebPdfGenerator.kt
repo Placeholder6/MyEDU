@@ -96,7 +96,9 @@ class WebPdfGenerator(private val context: Context) {
                     if (dictionary[str]) return dictionary[str];
                     let s = str;
                     for (const [key, value] of Object.entries(dictionary)) {
-                        s = s.split(key).join(value);
+                        if (key.length > 2 && s.includes(key)) {
+                            s = s.split(key).join(value);
+                        }
                     }
                     return s;
                 }
@@ -116,7 +118,7 @@ class WebPdfGenerator(private val context: Context) {
                         transcriptData.forEach(year => {
                             if(year.semesters) year.semesters.forEach(sem => {
                                 if (sem.semester) {
-                                    // Fallback semester logic if not in dictionary
+                                    // Handle semester formatting
                                     sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, "Semester ${'$'}1");
                                     sem.semester = translateString(sem.semester);
                                 }
@@ -149,7 +151,7 @@ class WebPdfGenerator(private val context: Context) {
                                                 }
                                             });
                                         }
-                                        // Filter Exams (Look for translated "Exam" or original "Экзамен" in dictionary)
+                                        // Filter Exams using Dictionary (Fallback to 'Exam')
                                         const keyword = dictionary["Экзамен"] || "Exam";
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
                                             r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
