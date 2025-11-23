@@ -11,7 +11,6 @@ import android.webkit.WebViewClient
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -52,26 +51,26 @@ class ReferenceJsFetcher {
             logger("Fetching $refJsName...")
             val refContent = fetchString("$baseUrl/assets/$refJsName")
 
-            // 5. LINK MODULES (Same strategy as Transcript)
+            // 5. LINK MODULES
             val dependencies = StringBuilder()
             
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
-                    // Check both Reference file and Main Bundle for the import
+                    // Search in Ref content first, then Main JS
                     val fileNameMatch = importRegex.find(refContent) ?: importRegex.find(mainJsContent)
                     if (fileNameMatch != null) {
                         val fileName = getName(fileNameMatch.groupValues[1])
                         logger("Linking $finalVarName from $fileName")
-                        var fileContent = fetchString("$baseUrl/assets/$fileName")
+                        val fileContent = fetchString("$baseUrl/assets/$fileName")
                         
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
-                            // Clean export statements to turn it into a simple script block
-                            val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
                             
-                            // Wrap in IIFE to simulate module scope and return the export
+                            // CRITICAL FIX: Clean the dependency file content of imports too!
+                            val cleanContent = cleanJsContent(fileContent)
+                            
                             dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
@@ -82,20 +81,16 @@ class ReferenceJsFetcher {
             }
 
             // Link Specific Dependencies for Reference (Form 8)
-            // Matching logic: import { P as J } from './PdfStyle...';
             linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
             linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
-            // Typo 'Lincense' matches the actual website filename from logs
-            linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
+             linkModule(Regex("""from\s*["']([^"']*SpecialityLincense\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "Sl", "{}")
             linkModule(Regex("""from\s*["']([^"']*DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
             linkModule(Regex("""from\s*["']([^"']*ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 6. MOCK OTHER IMPORTS (Critical for preventing "import outside module" errors)
+            // 6. MOCK OTHERS
             val varsToMock = mutableSetOf<String>()
-            // Regex to find: import { a, b as c } from "..."
             val genericImportRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
-            
             genericImportRegex.findAll(refContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
                     val parts = item.trim().split(Regex("""\s+as\s+"""))
@@ -103,11 +98,9 @@ class ReferenceJsFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
-            // Remove the variables we genuinely linked above so we don't overwrite them with dummies
             varsToMock.removeAll(setOf("J", "mt", "Ly", "Sl", "Dl", "T"))
 
             val dummyScript = StringBuilder()
-            // Create a UniversalDummy proxy that handles any property access or function call gracefully
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
@@ -115,19 +108,15 @@ class ReferenceJsFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 7. CLEAN & PREPARE SCRIPT
-            var cleanRef = refContent
-                .replace(genericImportRegex, "") // Remove named imports
-                .replace(Regex("""import\s+.*from\s*['"].*['"];?"""), "") // Remove default imports
-                .replace(Regex("""import\s*['"].*['"];?"""), "") // Remove side-effect imports
-                .replace(Regex("""export\s+default"""), "const ReferenceModule =") // Capture default export
-                .replace(Regex("""export\s*\{.*?\}"""), "") // Remove named exports
+            // 7. CLEAN MAIN SCRIPT
+            // Use the same cleaning function for the main file
+            var cleanRef = cleanJsContent(refContent)
+                .replace(Regex("""export\s+default"""), "const ReferenceModule =") // Handle default export specifically for main
+                .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 8. EXPOSE TO WINDOW
             val exposeCode = "\nwindow.PDFGeneratorRef = ReferenceModule;"
-
-            // Combine: Dummies -> Linked Modules -> Clean Script -> Expose
             val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanRef + exposeCode
+            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -135,6 +124,19 @@ class ReferenceJsFetcher {
             e.printStackTrace()
             return@withContext PdfResources("")
         }
+    }
+
+    // Shared cleaner for both Main Script and Linked Modules
+    private fun cleanJsContent(content: String): String {
+        return content
+            // 1. Remove imports with braces: import { A, B } from './C.js' (Multi-line supported)
+            .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?""", RegexOption.DOT_MATCHES_ALL), "")
+            // 2. Remove default/namespace imports: import A from './C.js' or import * as A from...
+            .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
+            // 3. Remove side-effect imports: import './C.js'
+            .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
+            // 4. Remove exports (named)
+            .replace(Regex("""export\s*\{[^}]*\}""", RegexOption.DOT_MATCHES_ALL), "")
     }
 
     private fun getName(path: String): String {
@@ -167,7 +169,7 @@ class ReferencePdfGenerator(private val context: Context) {
         resources: PdfResources,
         language: String = "ru",
         logCallback: (String) -> Unit
-    ): ByteArray = suspendCancellableCoroutine { continuation ->
+    ): ByteArray = kotlinx.coroutines.suspendCancellableCoroutine { continuation ->
         
         android.os.Handler(android.os.Looper.getMainLooper()).post {
             val webView = WebView(context)
@@ -238,8 +240,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         
                         if (typeof window.PDFGeneratorRef !== 'function') throw "PDFGeneratorRef missing";
                         
-                        // The reference generator likely expects (studentInfo, licenseInfo, qrCode)
-                        // We pass them in that order based on typical signature
                         const docDef = window.PDFGeneratorRef(studentInfo, licenseInfo, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
