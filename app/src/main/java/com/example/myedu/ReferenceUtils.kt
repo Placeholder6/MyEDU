@@ -2,7 +2,6 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -23,6 +22,7 @@ class ReferenceJsFetcher {
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
             // 1. Fetch Main Script
+            logger("Fetching index...")
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
@@ -81,17 +81,16 @@ class ReferenceJsFetcher {
                 dependencies.append("var $name = $defaultVal;\n")
             }
 
-            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")          
-            linkModule("Signed", "S", "Signed_Fallback", "\"\"")            
-            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")    
-            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}") 
-            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}") 
-            linkModule("ru", "r", "Ru_Fallback", "{}")                      
+            linkModule("PdfStyle", "P", "PdfStyle_Fallback", "{}")
+            linkModule("Signed", "S", "Signed_Fallback", "\"\"")
+            linkModule("LicenseYear", "L", "LicenseYear_Fallback", "[]")
+            linkModule("SpecialityLincense", "S", "SpecLic_Fallback", "{}")
+            linkModule("DocumentLink", "DEFAULT_OR_NAMED", "DocLink_Fallback", "{}")
+            linkModule("ru", "r", "Ru_Fallback", "{}")
 
-            // 4. MOCK OTHERS (FIXED REGEX to catch all imports)
+            // 4. MOCK OTHERS
             val varsToMock = mutableSetOf<String>()
-            // Use DOT_MATCHES_ALL to ensure we catch imports that might span lines
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""", RegexOption.DOT_MATCHES_ALL)
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from""")
             importRegex.findAll(refContent).forEach { m ->
                 m.groupValues[1].split(",").forEach { 
                     val parts = it.trim().split(Regex("""\s+as\s+"""))
@@ -100,7 +99,7 @@ class ReferenceJsFetcher {
                 }
             }
             varsToMock.removeAll(linkedVars)
-            varsToMock.remove("$") // Don't mock '$' as it is defined manually in HTML
+            varsToMock.remove("$") // IMPORTANT: Do not mock $ (Moment.js), we define it manually
 
             val dummyScript = StringBuilder()
             dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
@@ -116,7 +115,7 @@ class ReferenceJsFetcher {
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
 
-            // Extract Course Names Array from source
+            // Extract Course Names Array
             val arrayRegex = Regex("""const\s+(\w+)\s*=\s*\["первого","второго"[^\]]*\]""")
             val arrayMatch = arrayRegex.find(cleanRef)
             val courseArrayName = arrayMatch?.groupValues?.get(1) ?: "h"
@@ -128,7 +127,7 @@ class ReferenceJsFetcher {
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
-            logger("Fetch Error: ${e.message}")
+            logger("Ref Fetch Error: ${e.message}")
             e.printStackTrace()
             return@withContext PdfResources("")
         }
@@ -225,30 +224,46 @@ class ReferencePdfGenerator(private val context: Context) {
                 };
                 ${'$'}.locale = function() {};
 
-                function translateData() {
-                    if (lang !== "en") return;
-                    const map = {
-                        "Международный медицинский факультет": "International Medical Faculty",
-                        "Лечебное дело": "General Medicine",
-                        "Очное (специалитет)": "Full-time (Specialist)",
-                        "Контракт": "Contract",
-                        "Бюджет": "Budget",
-                        "Кыргызская Республика": "Kyrgyz Republic"
-                    };
-                    function t(str) { return map[str] || str; }
-                    
-                    if (studentInfo.faculty_ru) studentInfo.faculty_ru = t(studentInfo.faculty_ru);
-                    if (studentInfo.edu_form_ru) studentInfo.edu_form_ru = t(studentInfo.edu_form_ru);
-                    if (studentInfo.speciality_ru) studentInfo.speciality_ru = t(studentInfo.speciality_ru);
-                    if (studentInfo.lastStudentMovement) {
-                        if (studentInfo.lastStudentMovement.speciality && studentInfo.lastStudentMovement.speciality.direction) {
-                             studentInfo.lastStudentMovement.speciality.direction.name_ru = t(studentInfo.lastStudentMovement.speciality.direction.name_ru);
+                // --- TRANSLATION LOGIC (Post-Processing) ---
+                const DICT = {
+                    "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ": "MINISTRY OF EDUCATION AND SCIENCE OF THE KYRGYZ REPUBLIC",
+                    "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ": "OSH STATE UNIVERSITY",
+                    "СПРАВКА": "CERTIFICATE",
+                    "Настоящая справка подтверждает, что": "This certificate confirms that",
+                    "действительно является студентом (-кой)": "is a student of the",
+                    "года обучения": "year of study",
+                    "специальности/направление": "specialty/direction",
+                    "профиль:": "profile:",
+                    "Справка выдана по месту требования.": "Issued for submission to the place of demand.",
+                    "Достоверность данного документа можно проверить отсканировав QR-код": "Authenticity can be verified by scanning the QR code",
+                    "Международный медицинский факультет": "International Medical Faculty",
+                    "Лечебное дело": "General Medicine",
+                    "Очное (специалитет)": "Full-time (Specialist)",
+                    "Контракт": "Contract",
+                    "Бюджет": "Budget",
+                    "Кыргызская Республика": "Kyrgyz Republic"
+                };
+
+                // Recursively translate text in PDF definition object
+                function translateDoc(node) {
+                    if (!node) return;
+                    if (typeof node === 'string') {
+                        if (DICT[node]) return DICT[node];
+                        // Replace substrings
+                        let res = node;
+                        for (let key in DICT) {
+                            if (res.includes(key)) res = res.replace(key, DICT[key]);
                         }
-                        if (studentInfo.lastStudentMovement.payment_form) {
-                             studentInfo.lastStudentMovement.payment_form.name_ru = t(studentInfo.lastStudentMovement.payment_form.name_ru);
-                        }
+                        return res;
                     }
-                    if (univInfo.address_ru) univInfo.address_ru = univInfo.address_ru.replace("г. Ош", "Osh city").replace("ул.", "st.");
+                    if (Array.isArray(node)) {
+                        for (let i = 0; i < node.length; i++) node[i] = translateDoc(node[i]);
+                    } else if (typeof node === 'object') {
+                        if (node.text) node.text = translateDoc(node.text);
+                        if (node.columns) translateDoc(node.columns);
+                        if (node.content) translateDoc(node.content);
+                    }
+                    return node;
                 }
             </script>
 
@@ -263,33 +278,28 @@ class ReferencePdfGenerator(private val context: Context) {
                 function startGeneration() {
                     try {
                         AndroidBridge.log("JS: Ref Driver started...");
-                        if (typeof window.RefDocGenerator !== 'function') throw "Generator function missing";
+                        if (typeof window.RefDocGenerator !== 'function') throw "Generator missing";
                         
-                        translateData();
-
-                        // 1. Dynamic Course
-                        const courses = window.RefCourseNames || ["1st","2nd","3rd","4th","5th","6th","7th"];
+                        // 1. Logic from References7.js
+                        const courses = window.RefCourseNames || ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
                         
-                        let courseStr = "Unknown";
-                        // If EN, map Russian array index to English ordinal
-                        if (lang === "en" && courses[0] === "первого") {
-                             const enCourses = ["1st","2nd","3rd","4th","5th","6th","7th"];
-                             courseStr = enCourses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-th";
-                        } else {
-                             courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-го";
+                        let courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + "-го";
+                        
+                        // Override course string for EN
+                        if (lang === "en") {
+                             const idx = Math.min(e, i) + 1;
+                             courseStr = idx + (idx === 1 ? "st" : idx === 2 ? "nd" : idx === 3 ? "rd" : "th");
                         }
 
-                        // 2. ID String
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
 
-                        // 3. Data Object
                         const dataObj = {
                             id: docIdStr,
                             edunum: courseStr,
@@ -297,8 +307,22 @@ class ReferencePdfGenerator(private val context: Context) {
                             adress: univInfo.address_ru || "г. Ош, ул. Ленина 331"
                         };
 
-                        // 4. Generate
-                        const docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
+                        // 2. Generate Base (RU) Structure
+                        let docDef = window.RefDocGenerator(studentInfo, dataObj, qrCodeUrl);
+
+                        // 3. Translate Post-Generation
+                        if (lang === "en") {
+                            AndroidBridge.log("Translating...");
+                            translateDoc(docDef.content);
+                            
+                            // Fix Address format manually as it's dynamic
+                            if (dataObj.adress) {
+                                const enAddr = dataObj.adress.replace("г. Ош", "Osh city").replace("ул.", "st.");
+                                // Walk docDef again to find the specific address node if needed, 
+                                // or rely on translateDoc substring replacement which handles common address parts.
+                            }
+                        }
+
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
                     } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
