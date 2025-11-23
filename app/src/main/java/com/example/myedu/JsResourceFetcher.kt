@@ -5,6 +5,7 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// Data class needed by other files
 data class PdfResources(
     val combinedScript: String
 )
@@ -16,22 +17,18 @@ class JsResourceFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String = "ru"): PdfResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Index
             logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             
-            // 2. Main JS
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""") 
                 ?: throw Exception("Transcript JS missing")
             
-            // 3. Transcript JS
             logger("Fetching $transcriptJsName...")
             var transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. LINK MODULES
             val dependencies = StringBuilder()
             
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
@@ -43,7 +40,6 @@ class JsResourceFetcher {
                         logger("Linking $finalVarName from $fileName")
                         var fileContent = fetchString("$baseUrl/assets/$fileName")
                         
-                        // Footer Translation
                         if (language == "en" && finalVarName == "U") {
                             fileContent = fileContent.replace("Страница", "Page").replace("из", "of")
                         }
@@ -61,7 +57,6 @@ class JsResourceFetcher {
                 if (!success) dependencies.append("const $finalVarName = $fallbackValue;\n")
             }
 
-            // Link Dependencies
             linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U", "()=>({})")
             linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K", "(n)=>n")
@@ -69,7 +64,6 @@ class JsResourceFetcher {
             linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct", "(...a)=>a.join(' ')")
             linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 5. DUMMY OTHERS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             importRegex.findAll(transcriptContent).forEach { match ->
@@ -89,7 +83,6 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 6. CLEAN & TRANSLATE SCRIPT
             var cleanTranscript = transcriptContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
@@ -100,7 +93,6 @@ class JsResourceFetcher {
                 cleanTranscript = translateToEnglish(cleanTranscript)
             }
 
-            // 7. EXPOSE
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) "\nwindow.PDFGenerator = $funcNameMatch;" else ""
 
@@ -116,6 +108,7 @@ class JsResourceFetcher {
 
     private fun translateToEnglish(script: String): String {
         var s = script
+        // Hardcoded map for Transcript
         val map = mapOf(
             "Учебный год" to "Academic Year", 
             "Зарегистрировано кредитов" to "Registered Credits",
@@ -123,17 +116,17 @@ class JsResourceFetcher {
             "Кредит" to "Credits", 
             "Форма контроля" to "Control",
             "Баллы" to "Score",
-            "Цифр. экв." to "GPA",          // Corrected
-            "Букв.сист." to "Grade",        // Corrected
-            "Трад. сист." to "Performance", // Corrected
+            "Цифр. экв." to "GPA",          
+            "Букв.сист." to "Grade",        
+            "Трад. сист." to "Performance", 
             "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
             "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
-            "Международный медицинский факультет" to "International Medical Faculty", // Added
+            "Международный медицинский факультет" to "International Medical Faculty", 
             "ТРАНСКРИПТ" to "TRANSCRIPT",
             "ФИО:" to "Full Name:", 
             "ID студента:" to "Student ID:", 
             "Дата рождения:" to "Date of Birth:",
-            "Направление:" to "Course:",    // Corrected
+            "Направление:" to "Course:",    
             "Специальность:" to "Specialty:", 
             "Форма обучения:" to "Form of Study:",
             "Общий GPA:" to "Total GPA:", 
@@ -143,12 +136,9 @@ class JsResourceFetcher {
             "Ректор" to "Rector", 
             "Методист / Офис регистратор" to "Registrar"
         )
-        
         map.forEach { (ru, en) -> s = s.replace(ru, en) }
-        
         s = s.replace("header:\"№\"", "header:\"#\"")
         s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
-        
         return s
     }
 
