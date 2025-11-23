@@ -28,6 +28,10 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -99,7 +103,7 @@ class MainViewModel : ViewModel() {
                     NetworkClient.api.getStudentInfo(sId).string()
                 }
                 
-                // --- FIX: CLEAN NULL NAMES ---
+                // Clean Name Logic
                 val infoJson = JSONObject(infoRaw)
                 fun clean(key: String): String {
                     val v = infoJson.optString(key, "")
@@ -108,17 +112,19 @@ class MainViewModel : ViewModel() {
                 val fullName = "${clean("last_name")} ${clean("name")} ${clean("father_name")}".trim()
                 infoJson.put("fullName", fullName)
                 
-                val mId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                cachedStudentId = sId; cachedInfoJson = infoJson.toString()
+                val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
+                
+                cachedStudentId = sId
+                cachedInfoJson = infoJson.toString()
                 log("Student: $fullName")
 
                 log("3. Grades...")
-                val transRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(sId, mId).string()
+                val transcriptRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptData(sId, movementId).string()
                 }
-                cachedTranscriptJson = transRaw
+                cachedTranscriptJson = transcriptRaw
                 
-                parseAndDisplayTranscript(transRaw)
+                parseAndDisplayTranscript(transcriptRaw)
                 log("Fetch Complete.")
 
             } catch (e: Throwable) {
@@ -136,18 +142,34 @@ class MainViewModel : ViewModel() {
             isBusy = true
             try {
                 log("A. Key...")
-                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
+                val linkRaw = withContext(Dispatchers.IO) {
+                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
+                }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating...")
-                val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, cachedResources!!) { log(it) }
-                
+                log("B. Generating PDF...")
+                val bytes = webGenerator.generatePdf(
+                    cachedInfoJson!!,
+                    cachedTranscriptJson!!,
+                    linkId,
+                    qrUrl,
+                    cachedResources!!
+                ) { msg -> log(msg) }
+
+                log("C. Saving...")
                 val file = File(filesDir, "transcript.pdf")
-                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
-                log("SAVED: ${file.name}")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(file).use { it.write(bytes) }
+                }
+
+                log("SUCCESS: Saved locally.")
                 onPdfReady(file)
+
+                // --- UPLOAD STEP ---
+                uploadGeneratedPdf(file, linkId)
+
             } catch (e: Throwable) { 
                 log("PDF ERROR: ${e.message}") 
                 e.printStackTrace()
@@ -156,10 +178,35 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    private fun parseAndDisplayTranscript(json: String) {
+    private suspend fun uploadGeneratedPdf(file: File, linkId: Long) {
+        try {
+            log("D. Uploading to Server...")
+            
+            val plainText = "text/plain".toMediaTypeOrNull()
+            val idBody = linkId.toString().toRequestBody(plainText)
+            val studentIdBody = cachedStudentId.toString().toRequestBody(plainText)
+            
+            val pdfType = "application/pdf".toMediaTypeOrNull()
+            val fileBody = file.asRequestBody(pdfType)
+            val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileBody)
+
+            val response = withContext(Dispatchers.IO) {
+                NetworkClient.api.uploadPdf(idBody, studentIdBody, pdfPart).string()
+            }
+            log("UPLOAD COMPLETE!")
+            log("Server Response: $response")
+            
+        } catch(e: Exception) {
+            log("UPLOAD FAILED: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+
+    private fun parseAndDisplayTranscript(jsonString: String) {
         try {
             val items = mutableListOf<TranscriptItem>()
-            val arr = JSONArray(json)
+            val arr = JSONArray(jsonString)
+
             for (i in 0 until arr.length()) {
                 val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
                 for (j in 0 until sems.length()) {
@@ -218,8 +265,8 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
         Button(onClick = { clipboard.getText()?.text?.let { viewModel.tokenInput = it } }, Modifier.fillMaxWidth()) { Text("Paste Token") }
         
         Row(Modifier.padding(vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("Fetch") }
-            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("PDF") }
+            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch") }
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("2. PDF & Upload") }
         }
         
         LazyColumn(Modifier.weight(1f)) {
