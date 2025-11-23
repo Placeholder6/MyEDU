@@ -56,8 +56,15 @@ class MainViewModel : ViewModel() {
     private var cachedTranscriptJson: String? = null
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
+    
+    // Reference Cache
+    private var cachedLicenseJson: String? = null
+    private var cachedRefLinkId: Long = 0
+    private var cachedRefQrUrl: String = ""
+    private var cachedRefResources: PdfResources? = null
 
     private val jsFetcher = JsResourceFetcher()
+    private val refJsFetcher = ReferenceJsFetcher()
 
     fun log(msg: String) {
         viewModelScope.launch(Dispatchers.Main) { logs.add(msg) }
@@ -126,6 +133,79 @@ class MainViewModel : ViewModel() {
             } finally {
                 isBusy = false
             }
+        }
+    }
+
+    fun fetchReferenceData() {
+        if (cachedInfoJson == null) { log("Fetch Transcript Data first (for Student ID)."); return }
+        
+        viewModelScope.launch {
+            isBusy = true
+            log("--- Fetching Reference Data ---")
+            try {
+                // 1. Parse IDs from student info
+                val info = JSONObject(cachedInfoJson!!)
+                val specId = info.optJSONObject("speciality")?.optInt("id") ?: 0
+                val eduFormId = info.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
+                
+                if (specId == 0 || eduFormId == 0) throw Exception("Missing Spec/EduForm ID")
+
+                log("1. License Info...")
+                val licRaw = withContext(Dispatchers.IO) { 
+                    NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() 
+                }
+                cachedLicenseJson = licRaw
+
+                log("2. Reference Link (Form 8)...")
+                val linkRaw = withContext(Dispatchers.IO) { 
+                    NetworkClient.api.getReferenceLink(DocIdRequest(cachedStudentId)).string() 
+                }
+                val linkJson = JSONObject(linkRaw)
+                cachedRefLinkId = linkJson.optLong("id")
+                cachedRefQrUrl = linkJson.optString("url")
+
+                log("3. Reference Scripts...")
+                cachedRefResources = refJsFetcher.fetchResources({ log(it) }, "ru")
+                
+                log("Reference Data Ready. Key: $cachedRefLinkId")
+
+            } catch (e: Exception) {
+                log("Ref Error: ${e.message}")
+                e.printStackTrace()
+            } finally {
+                isBusy = false
+            }
+        }
+    }
+
+    fun generateReferencePdf(refGenerator: ReferencePdfGenerator, filesDir: File, onPdfReady: (File) -> Unit) {
+        if (cachedLicenseJson == null || cachedRefResources == null) { log("Fetch Reference Data first."); return }
+        
+        viewModelScope.launch {
+            isBusy = true
+            try {
+                log("Generating Reference PDF...")
+                
+                val bytes = refGenerator.generatePdf(
+                    cachedInfoJson!!, 
+                    cachedLicenseJson!!, 
+                    cachedRefLinkId, 
+                    cachedRefQrUrl, 
+                    cachedRefResources!!, 
+                    "ru" // Reference usually in RU only or simple translation
+                ) { log(it) }
+
+                val fileName = "reference_form8.pdf"
+                val file = File(filesDir, fileName)
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+                
+                log("SAVED: $fileName")
+                onPdfReady(file)
+                
+            } catch(e: Exception) {
+                log("Ref PDF Error: ${e.message}")
+                e.printStackTrace()
+            } finally { isBusy = false }
         }
     }
 
@@ -217,10 +297,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         try {
             val webGenerator = WebPdfGenerator(this)
+            val refGenerator = ReferencePdfGenerator(this)
             setContent {
                 MaterialTheme {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        MainScreen(webGenerator, filesDir)
+                        MainScreen(webGenerator, refGenerator, filesDir)
                     }
                 }
             }
@@ -229,7 +310,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
+fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerator, filesDir: File) {
     val viewModel: MainViewModel = viewModel()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -241,14 +322,22 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
         Button(onClick = { clipboard.getText()?.text?.let { viewModel.tokenInput = it } }, Modifier.fillMaxWidth().padding(vertical=8.dp)) { Text("Paste Token") }
         
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch") }
+            Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch Transcript") }
         }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("2. PDF (RU)") }
-            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("3. PDF (EN)") }
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("Tr. PDF (RU)") }
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("Tr. PDF (EN)") }
         }
         
+        Divider(Modifier.padding(vertical=8.dp))
+        
+        Text("Reference (Form 8)", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom=4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("Get Ref Data") }
+            Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("Gen Ref PDF") }
+        }
+
         Divider(Modifier.padding(vertical=8.dp))
         LazyColumn(Modifier.weight(1f)) {
             items(viewModel.transcriptList) { t -> 
