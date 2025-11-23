@@ -88,9 +88,14 @@ class WebPdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                function translateData(data) {
-                    // Data Translation Map
-                    const dict = {
+                // Helper to replace Russian phrases within strings (preserving codes)
+                function translateString(str) {
+                    if (!str) return str;
+                    let s = str;
+                    const replacements = {
+                        "Лечебное дело": "General Medicine",
+                        "Очное (специалитет)": "Full-time (Specialist)",
+                        "Международный медицинский факультет": "International Medical Faculty",
                         "Экзамен": "Exam",
                         "Зачет": "Credit",
                         "Курсовая работа": "Coursework",
@@ -102,18 +107,41 @@ class WebPdfGenerator(private val context: Context) {
                         "Зачтено": "Passed",
                         "Не зачтено": "Failed"
                     };
+                    
+                    for (const [key, value] of Object.entries(replacements)) {
+                        // Global replace
+                        s = s.split(key).join(value);
+                    }
+                    return s;
+                }
 
-                    if(Array.isArray(data)) {
-                        data.forEach(year => {
+                function translateData() {
+                    if (lang !== "en") return;
+                    
+                    // 1. Translate Student Info Fields
+                    ["faculty_ru", "direction_ru", "speciality_ru"].forEach(field => {
+                        if (studentInfo[field]) studentInfo[field] = translateString(studentInfo[field]);
+                    });
+                    
+                    if (studentInfo.lastStudentMovement && 
+                        studentInfo.lastStudentMovement.edu_form && 
+                        studentInfo.lastStudentMovement.edu_form.name_ru) {
+                        studentInfo.lastStudentMovement.edu_form.name_ru = translateString(studentInfo.lastStudentMovement.edu_form.name_ru);
+                    }
+
+                    // 2. Translate Transcript Data
+                    if(Array.isArray(transcriptData)) {
+                        transcriptData.forEach(year => {
                             if(year.semesters) year.semesters.forEach(sem => {
+                                // Format: "1-семестр" -> "Semester 1" (Handles spaces too)
+                                if (sem.semester) {
+                                    sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, "Semester ${'$'}1");
+                                }
+                                
                                 if(sem.subjects) sem.subjects.forEach(sub => {
-                                    // Translate Exam Type
-                                    if(sub.exam && dict[sub.exam]) sub.exam = dict[sub.exam];
-                                    
-                                    // Translate Grade Description
+                                    if(sub.exam) sub.exam = translateString(sub.exam);
                                     if(sub.exam_rule && sub.exam_rule.word_ru) {
-                                        const w = sub.exam_rule.word_ru;
-                                        if(dict[w]) sub.exam_rule.word_ru = dict[w];
+                                        sub.exam_rule.word_ru = translateString(sub.exam_rule.word_ru);
                                     }
                                 });
                             });
@@ -125,12 +153,10 @@ class WebPdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Driver started (" + lang + ")...");
                         
-                        // 1. Translate Data if EN
-                        if (lang === "en") {
-                            translateData(transcriptData);
-                        }
+                        // TRANSLATE
+                        translateData();
 
-                        // 2. Calculate Stats
+                        // CALC STATS
                         let totalCredits = 0, yearlyGpas = [];
 
                         if (Array.isArray(transcriptData)) {
@@ -148,7 +174,7 @@ class WebPdfGenerator(private val context: Context) {
                                             });
                                         }
                                         
-                                        // Filter Exams (Use "Exam" if translated, "Экзамен" if not)
+                                        // Filter Exams (Keyword depends on lang)
                                         const keyword = lang === "en" ? "Exam" : "Экзамен";
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
                                             r.exam_rule && r.mark_list && r.exam && r.exam.includes(keyword)
