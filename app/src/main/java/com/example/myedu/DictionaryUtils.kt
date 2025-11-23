@@ -6,7 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 
-class DictionaryFetcher {
+class DictionaryUtils { 
     private val client = OkHttpClient()
 
     suspend fun fetchDictionary(url: String): Map<String, String> = withContext(Dispatchers.IO) {
