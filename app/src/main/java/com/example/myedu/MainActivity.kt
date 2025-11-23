@@ -54,7 +54,10 @@ class MainViewModel : ViewModel() {
     private var cachedStudentId: Long = 0
     private var cachedInfoJson: String? = null
     private var cachedTranscriptJson: String? = null
-    private var cachedResources: PdfResources? = null
+    
+    // Cache separate resources for RU and EN
+    private var cachedResourcesRu: PdfResources? = null
+    private var cachedResourcesEn: PdfResources? = null
 
     private val jsFetcher = JsResourceFetcher()
 
@@ -92,16 +95,13 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
 
-                log("1. Fetching & Linking Scripts...")
-                cachedResources = jsFetcher.fetchResources { log(it) }
+                log("1. Russian Resources...")
+                cachedResourcesRu = jsFetcher.fetchResources({ log(it) }, "ru")
 
                 log("2. Student Info...")
                 val sId = getStudentIdFromToken(token)
                 if (sId == 0L) throw Exception("Invalid Token")
-                
-                val infoRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getStudentInfo(sId).string()
-                }
+                val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfo(sId).string() }
                 
                 val infoJson = JSONObject(infoRaw)
                 fun clean(key: String): String {
@@ -112,15 +112,11 @@ class MainViewModel : ViewModel() {
                 infoJson.put("fullName", fullName)
                 
                 val movementId = infoJson.optJSONObject("lastStudentMovement")?.optLong("id") ?: 0L
-                
-                cachedStudentId = sId
-                cachedInfoJson = infoJson.toString()
+                cachedStudentId = sId; cachedInfoJson = infoJson.toString()
                 log("Student: $fullName")
 
                 log("3. Grades...")
-                val transcriptRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptData(sId, movementId).string()
-                }
+                val transcriptRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptData(sId, movementId).string() }
                 cachedTranscriptJson = transcriptRaw
                 
                 parseAndDisplayTranscript(transcriptRaw)
@@ -135,42 +131,40 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    fun generatePdf(webGenerator: WebPdfGenerator, filesDir: File, onPdfReady: (File) -> Unit) {
+    fun generatePdf(webGenerator: WebPdfGenerator, filesDir: File, language: String, onPdfReady: (File) -> Unit) {
         if (cachedInfoJson == null) { log("Fetch data first."); return }
+        
         viewModelScope.launch {
             isBusy = true
             try {
-                log("A. Requesting Key...")
-                val linkRaw = withContext(Dispatchers.IO) {
-                    NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string()
+                // Ensure resources for target language are loaded
+                var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
+                if (resources == null) {
+                    log("Fetching $language resources...")
+                    resources = jsFetcher.fetchResources({ log(it) }, language)
+                    if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
+
+                log("A. Getting New Key...")
+                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(cachedStudentId)).string() }
                 val json = JSONObject(linkRaw)
                 val linkId = json.optLong("id")
                 val qrUrl = json.optString("url")
 
-                log("B. Generating PDF...")
-                val bytes = webGenerator.generatePdf(
-                    cachedInfoJson!!,
-                    cachedTranscriptJson!!,
-                    linkId,
-                    qrUrl,
-                    cachedResources!!
-                ) { msg -> log(msg) }
+                log("B. Generating $language PDF...")
+                val bytes = webGenerator.generatePdf(cachedInfoJson!!, cachedTranscriptJson!!, linkId, qrUrl, resources!!, language) { log(it) }
 
-                log("C. Saving...")
-                val file = File(filesDir, "transcript.pdf")
-                withContext(Dispatchers.IO) {
-                    FileOutputStream(file).use { it.write(bytes) }
-                }
-
-                log("SUCCESS: Saved locally.")
+                val fileName = "transcript_$language.pdf"
+                val file = File(filesDir, fileName)
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+                
+                log("SAVED: $fileName")
                 onPdfReady(file)
 
-                // Upload
                 uploadGeneratedPdf(file, linkId)
 
             } catch (e: Throwable) { 
-                log("PDF ERROR: ${e.message}") 
+                log("PDF Error: ${e.message}") 
                 e.printStackTrace()
             }
             finally { isBusy = false }
@@ -179,12 +173,12 @@ class MainViewModel : ViewModel() {
 
     private suspend fun uploadGeneratedPdf(file: File, linkId: Long) {
         try {
-            log("D. Uploading...")
+            log("C. Uploading...")
             val plainText = "text/plain".toMediaTypeOrNull()
             val idBody = linkId.toString().toRequestBody(plainText)
             val studentIdBody = cachedStudentId.toString().toRequestBody(plainText)
             val fileBody = file.asRequestBody("application/pdf".toMediaTypeOrNull())
-            val pdfPart = MultipartBody.Part.createFormData("pdf", "transcript.pdf", fileBody)
+            val pdfPart = MultipartBody.Part.createFormData("pdf", file.name, fileBody)
 
             val response = withContext(Dispatchers.IO) {
                 NetworkClient.api.uploadPdf(idBody, studentIdBody, pdfPart).string()
@@ -251,7 +245,11 @@ fun MainScreen(webGenerator: WebPdfGenerator, filesDir: File) {
         
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("1. Fetch") }
-            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir) {} }, Modifier.weight(1f)) { Text("2. PDF & Upload") }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("2. PDF (RU)") }
+            Button(onClick = { viewModel.generatePdf(webGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("3. PDF (EN)") }
         }
         
         Divider(Modifier.padding(vertical=8.dp))
