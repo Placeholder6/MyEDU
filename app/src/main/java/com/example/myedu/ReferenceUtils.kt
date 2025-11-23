@@ -2,7 +2,6 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -69,7 +68,10 @@ class ReferenceJsFetcher {
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
-                            val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
+                            val cleanContent = fileContent
+                                .replace(Regex("""export\s*\{.*?\}"""), "")
+                                .replace(Regex("""export\s+default\s+\w+;?"""), "") // Remove export default
+                            
                             dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
                         }
@@ -80,6 +82,7 @@ class ReferenceJsFetcher {
             }
 
             // Link Specific Dependencies for Reference (Form 8)
+            // We capture the full relative path from the import string
             linkModule(Regex("""from\s*["']([^"']*PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']([^"']*Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
             linkModule(Regex("""from\s*["']([^"']*LicenseYear\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+L\s*\}"""), "Ly", "[]")
@@ -88,14 +91,22 @@ class ReferenceJsFetcher {
             linkModule(Regex("""from\s*["']([^"']*DocumentLink\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+D\s*\}"""), "Dl", "{}")
             linkModule(Regex("""from\s*["']([^"']*ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 6. CLEAN SCRIPT
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            // 6. CLEAN SCRIPT (Aggressive Cleaning)
+            // Remove ALL import statements to prevent "Cannot use import statement outside a module"
             var cleanRef = refContent
-                .replace(importRegex, "") 
+                // Remove imports with braces: import { A, B } from './C.js'
+                .replace(Regex("""import\s*\{[^}]*\}\s*from\s*['"][^'"]+['"];?"""), "")
+                // Remove default/namespace imports: import A from './C.js' or import * as A from...
+                .replace(Regex("""import\s+[\w*]+\s+(?:as\s+\w+\s+)?from\s*['"][^'"]+['"];?"""), "")
+                // Remove side-effect imports: import './C.js'
+                .replace(Regex("""import\s*['"][^'"]+['"];?"""), "")
+                // Handle exports
                 .replace(Regex("""export\s+default"""), "const ReferenceModule =")
-                .replace(Regex("""export\s*\{.*?\}"""), "")
+                .replace(Regex("""export\s*\{[^}]*\}"""), "")
 
             // 7. EXPOSE
+            // If "export default" wasn't found/replaced correctly, we might need a fallback,
+            // but usually the regex matches. We force assignment to window.
             val exposeCode = "\nwindow.PDFGeneratorRef = ReferenceModule;"
 
             val finalScript = dependencies.toString() + "\n" + cleanRef + exposeCode
