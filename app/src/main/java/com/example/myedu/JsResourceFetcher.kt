@@ -6,8 +6,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 data class PdfResources(
-    val stampBase64: String,
-    val logicCode: String
+    val combinedScript: String
 )
 
 class JsResourceFetcher {
@@ -20,99 +19,90 @@ class JsResourceFetcher {
             // 1. Index
             logger("Fetching index.html...")
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
-                ?: throw Exception("Main JS not found")
+            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") ?: throw Exception("Main JS missing")
             
             // 2. Main JS
-            logger("Fetching Main JS ($mainJsName)...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
-            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
-                ?: throw Exception("Transcript JS not found")
+            val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""") ?: throw Exception("Transcript JS missing")
             
             // 3. Transcript JS
-            logger("Fetching Transcript JS ($transcriptJsName)...")
-            var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
+            logger("Fetching $transcriptJsName...")
+            var transcriptContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. STAMP EXTRACTION (Done BEFORE cleaning code)
-            var stampBase64 = ""
-            logger("STAMP DEBUG: Looking for Signed.js reference...")
+            // 4. LINK DEPENDENCIES
+            // We find the filenames for Style, Footer, Keys, Signed, and fetch them.
+            val dependencies = StringBuilder()
             
-            // Find filename: import ... from "./Signed.HASH.js"
-            val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
-                ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
-
-            if (signedJsName != null) {
-                logger("STAMP DEBUG: Found filename: $signedJsName")
-                try {
-                    val signedContent = fetchString("$baseUrl/assets/$signedJsName")
+            // Helper to fetch and link a module
+            // import { P as J } from "./PdfStyle..." -> Link: const J = [RealVar];
+            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, varName: String) {
+                val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
+                if (fileNameMatch != null) {
+                    val fileName = fileNameMatch.groupValues[1]
+                    logger("Linking $varName from $fileName")
+                    val fileContent = fetchString("$baseUrl/assets/$fileName")
                     
-                    // Regex: Find any "data:image/..." string inside quotes
-                    val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
-                    
-                    if (stampMatch != null) {
-                        stampBase64 = stampMatch.groupValues[1]
-                        logger("STAMP DEBUG: SUCCESS! Extracted ${stampBase64.length} bytes")
+                    // Find the internal variable name it exports
+                    val internalVarMatch = exportRegex.find(fileContent)
+                    if (internalVarMatch != null) {
+                        val internalVar = internalVarMatch.groupValues[1]
+                        // Append file content (stripped of export)
+                        val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
+                        dependencies.append(cleanContent).append("\n")
+                        // Glue: const J = t;
+                        dependencies.append("const $varName = $internalVar;\n")
                     } else {
-                        logger("STAMP DEBUG: FAILURE. File downloaded but no 'data:image' found.")
-                        // Log snippet to debug
-                        logger("Snippet: ${signedContent.take(50)}")
+                        logger("WARNING: Could not find export in $fileName")
                     }
-                } catch (e: Exception) {
-                    logger("STAMP DEBUG: Network failed for Signed.js: ${e.message}")
-                }
-            } else {
-                logger("STAMP DEBUG: Signed.js import not found in Transcript.js!")
-            }
-
-            // 5. MOCK IMPORTS
-            val varsToMock = mutableSetOf<String>()
-            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
-            importRegex.findAll(transcriptJsContent).forEach { match ->
-                match.groupValues[1].split(",").forEach { item ->
-                    val parts = item.trim().split(Regex("""\s+as\s+"""))
-                    val varName = if (parts.size == 2) parts[1] else parts[0]
-                    if (varName.isNotBlank()) varsToMock.add(varName.trim())
+                } else {
+                    logger("WARNING: Could not find import for $varName")
                 }
             }
-            varsToMock.removeAll(setOf("J", "U", "K", "$", "mt", "ct"))
 
-            val dummyScript = StringBuilder()
-            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
-            if (varsToMock.isNotEmpty()) {
-                dummyScript.append("var ")
-                dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
-                dummyScript.append(";\n")
-            }
+            // A. PdfStyle -> J (Import: P as J, Export: t as P)
+            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J")
+            
+            // B. PdfFooter -> U (Import: P as U, Export: o as P)
+            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U")
+            
+            // C. KeysValue -> K (Import: k as K, Export: t as k)
+            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K")
+            
+            // D. Signed -> mt (Import: S as mt, Export: A as S)
+            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt")
 
-            // 6. CLEAN CODE
-            transcriptJsContent = transcriptJsContent
-                .replace(importRegex, "") 
+            // 5. PREPARE TRANSCRIPT.JS
+            // Strip imports and exports
+            val cleanTranscript = transcriptContent
+                .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?"""), "")
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 7. EXPOSE GENERATOR
-            val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
-            if (funcNameMatch != null) {
-                transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
+            // 6. EXPOSE GENERATOR (Y)
+            val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
+            val exposeCode = if (funcNameMatch != null) {
+                "\nwindow.PDFGenerator = $funcNameMatch;"
             } else {
                 logger("CRITICAL: Generator function not found!")
+                ""
             }
 
-            val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
-
-            return@withContext PdfResources(stampBase64, finalScript)
+            // 7. COMBINE
+            val finalScript = dependencies.toString() + "\n" + cleanTranscript + exposeCode
+            
+            return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
-            logger("Fetch Failed: ${e.message}")
+            logger("Fetch Error: ${e.message}")
             e.printStackTrace()
-            return@withContext PdfResources("", "")
+            return@withContext PdfResources("")
         }
     }
 
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("HTTP ${response.code} for $url")
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
             return response.body?.string() ?: ""
         }
     }
