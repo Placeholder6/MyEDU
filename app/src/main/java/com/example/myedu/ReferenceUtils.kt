@@ -2,8 +2,6 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
-import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebView
@@ -19,6 +17,7 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
 
+    // Now accepts the dictionary map for translation
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         try {
             // 1. Fetch Main Script
@@ -27,9 +26,10 @@ class ReferenceJsFetcher {
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // 2. Fetch References7.js
+            // 2. Fetch References7.js (Form 8 Generator)
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
+                // Fallback: Check StudentDocuments
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -40,12 +40,11 @@ class ReferenceJsFetcher {
             
             val refJsName = getName(refJsPath)
             logger("Fetching $refJsName...")
-            var refContent = fetchString("$baseUrl/assets/$refJsName")
+            val refContent = fetchString("$baseUrl/assets/$refJsName")
 
             // 3. LINK DEPENDENCIES
             val dependencies = StringBuilder()
-            val linkedVars = mutableSetOf<String>()
-
+            
             suspend fun linkModule(fileKeyword: String, exportChar: String, fallbackName: String, fallbackValue: String) {
                 var varName: String? = null
                 if (exportChar == "DEFAULT_OR_NAMED") {
@@ -57,7 +56,6 @@ class ReferenceJsFetcher {
                 }
 
                 if (varName == null) varName = fallbackName
-                linkedVars.add(varName)
 
                 val fileUrlRegex = Regex("""["']([^"']*$fileKeyword\.[^"']+\.js)["']""")
                 val fileNameMatch = fileUrlRegex.find(refContent) ?: fileUrlRegex.find(mainJsContent)
@@ -101,7 +99,6 @@ class ReferenceJsFetcher {
                     if (name.isNotBlank()) varsToMock.add(name.trim())
                 }
             }
-            varsToMock.removeAll(linkedVars)
             varsToMock.remove("$") 
 
             val dummyScript = StringBuilder()
@@ -112,24 +109,24 @@ class ReferenceJsFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. PROCESS SCRIPT CONTENT
+            // 5. PREPARE SCRIPT & APPLY DICTIONARY (Template Translation)
             var cleanRef = cleanJsContent(refContent)
             
-            // --- TRANSLATION LOGIC (TEMPLATE) ---
             if (language == "en" && dictionary.isNotEmpty()) {
-                logger("Translating Reference Template with Dictionary...")
-                // Iterate dictionary and replace static strings in the JS code
+                logger("Applying Dictionary to Template...")
                 dictionary.forEach { (ru, en) -> 
-                    cleanRef = cleanRef.replace(ru, en) 
+                    if (ru.length > 2) { // Avoid replacing very short common variables
+                        cleanRef = cleanRef.replace(ru, en) 
+                    }
                 }
                 
-                // Special handling for the course array if present in dictionary logic or hardcoded override
-                // We assume the dictionary might not cover array replacement logic, so we keep this safety check
-                // or mapping "первого"->"1st" in your JSON would handle it automatically if the script uses those strings.
+                // Hardcoded fallback for the course array structure if not fully covered by simple string replacement
                 val courseArrayRegex = Regex("""const\s+\w+\s*=\s*\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
+                // We assume standard English ordinals for the array
                 cleanRef = cleanRef.replace(courseArrayRegex, """const h=["1st","2nd","3rd","4th","5th","6th","7th","8th"]""")
             }
 
+            // Extract Generator Function
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
             val generatorMatch = generatorRegex.find(cleanRef)
             val genFuncName = generatorMatch?.groupValues?.get(1) ?: "at" 
@@ -236,8 +233,9 @@ class ReferencePdfGenerator(private val context: Context) {
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
-                const dictionary = $dictionaryJson; // INJECT DICTIONARY
+                const dictionary = $dictionaryJson; // INJECTED DICTIONARY
 
+                // Mock moment.js
                 var ${'$'} = function(d) { 
                     return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; 
                 };
@@ -252,16 +250,19 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
+                // CLIENT-SIDE DATA TRANSLATION
                 function translateString(str) {
                     if (!str || typeof str !== 'string') return str;
                     
-                    // 1. Exact Dictionary Match
+                    // 1. Exact Match
                     if (dictionary[str]) return dictionary[str];
                     
-                    // 2. Substring Replacement (if not exact match)
+                    // 2. Substring Replacement
                     let s = str;
+                    // Check dictionary for phrases to replace within the string
                     for (const [key, value] of Object.entries(dictionary)) {
-                        if (s.includes(key)) {
+                        // Avoid replacing very short strings to prevent corruption
+                        if (key.length > 2 && s.includes(key)) {
                             s = s.split(key).join(value);
                         }
                     }
@@ -275,11 +276,13 @@ class ReferencePdfGenerator(private val context: Context) {
                         if (obj && obj[key]) obj[key] = translateString(obj[key]);
                      };
 
+                     // Translate Student Info
                      tr(studentInfo, "faculty_ru");
                      tr(studentInfo, "speciality_ru");
                      tr(studentInfo, "edu_form_ru");
                      tr(studentInfo, "payment_form_name_ru");
                      
+                     // Nested Info
                      if (studentInfo.lastStudentMovement) {
                          const lsm = studentInfo.lastStudentMovement;
                          if (lsm.speciality && lsm.speciality.direction) {
@@ -288,6 +291,8 @@ class ReferencePdfGenerator(private val context: Context) {
                          if (lsm.edu_form) tr(lsm.edu_form, "name_ru");
                          if (lsm.payment_form) tr(lsm.payment_form, "name_ru");
                      }
+                     
+                     // University Info
                      tr(univInfo, "address_ru");
                 }
 
@@ -295,8 +300,14 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Ref Driver started (" + lang + ")...");
                         
+                        if (typeof window.RefDocGenerator !== 'function') {
+                             throw "Generator function not found.";
+                        }
+                        
                         translateData();
 
+                        // Note: The internal course array 'h' is likely replaced by the fetcher if matched.
+                        // We recreate the course string logic here.
                         let courses = lang === "en" 
                             ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] 
                             : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
@@ -305,15 +316,18 @@ class ReferencePdfGenerator(private val context: Context) {
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
                         const i = Math.floor((totalSem - 1) / 2);
-                        const suffix = lang === "en" ? "" : "-го";
+                        
+                        const suffix = lang === "en" ? "" : "-го"; 
                         const courseStr = courses[Math.min(e, i)] || (Math.min(e, i) + 1) + suffix;
 
                         const second = studentInfo.second || "24";
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
-                        
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
-                        const address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
+
+                        // Address handling
+                        let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
+                        if(lang === "en") address = translateString(address);
 
                         const d = {
                             id: docIdStr,
