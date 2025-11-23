@@ -34,54 +34,101 @@ class JsResourceFetcher {
             // 4. LINK DEPENDENCIES
             val dependencies = StringBuilder()
             
-            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, varName: String) {
-                val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
-                if (fileNameMatch != null) {
-                    val fileName = fileNameMatch.groupValues[1]
-                    logger("Linking $varName from $fileName")
-                    var fileContent = fetchString("$baseUrl/assets/$fileName")
+            // Helper: Tries to fetch and link. If ANY step fails, it writes the fallback.
+            suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
+                var success = false
+                try {
+                    // Find filename
+                    val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
                     
-                    // --- TRANSLATION FOR FOOTER ---
-                    if (language == "en" && varName == "U") {
-                        fileContent = fileContent
-                            .replace("Страница", "Page")
-                            .replace("из", "of")
-                    }
+                    if (fileNameMatch != null) {
+                        val fileName = fileNameMatch.groupValues[1]
+                        logger("Linking $finalVarName from $fileName")
+                        var fileContent = fetchString("$baseUrl/assets/$fileName")
+                        
+                        // Translate if needed (only for Footer U)
+                        if (language == "en" && finalVarName == "U") {
+                            fileContent = fileContent.replace("Страница", "Page").replace("из", "of")
+                        }
 
-                    val internalVarMatch = exportRegex.find(fileContent)
-                    if (internalVarMatch != null) {
-                        val internalVar = internalVarMatch.groupValues[1]
-                        val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
-                        dependencies.append("const $varName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
+                        // Find export
+                        val internalVarMatch = exportRegex.find(fileContent)
+                        if (internalVarMatch != null) {
+                            val internalVar = internalVarMatch.groupValues[1]
+                            val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
+                            
+                            // Wrap in IIFE to isolate scope
+                            dependencies.append("const $finalVarName = (() => {\n")
+                            dependencies.append(cleanContent).append("\n")
+                            dependencies.append("return $internalVar;\n")
+                            dependencies.append("})();\n")
+                            success = true
+                        }
                     }
+                } catch (e: Exception) {
+                    logger("Link Error ($finalVarName): ${e.message}")
+                }
+
+                // SAFETY NET: If linking failed, use fallback.
+                if (!success) {
+                    logger("WARNING: Using fallback for $finalVarName")
+                    dependencies.append("const $finalVarName = $fallbackValue;\n")
                 }
             }
 
-            // Link all modules
-            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J")
-            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U")
-            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K")
-            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt")
-            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct")
+            // Link Modules (With explicit fallbacks)
+            // Styles (J)
+            linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
+            // Footer (U)
+            linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U", "() => ({})")
+            // Keys (K)
+            linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K", "(n) => n")
+            // Stamp (mt)
+            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
+            // Helpers (ct)
+            linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct", "(...a) => a.join(' ')")
+            // Locale (T) - Fixes "T is not defined"
+            linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
-            // 5. PREPARE TRANSCRIPT.JS
+            // 5. DUMMY OTHER IMPORTS
+            // Mock everything else (Vue functions etc.) to prevent crashes
+            val varsToMock = mutableSetOf<String>()
+            val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
+            importRegex.findAll(transcriptContent).forEach { match ->
+                match.groupValues[1].split(",").forEach { item ->
+                    val parts = item.trim().split(Regex("""\s+as\s+"""))
+                    val varName = if (parts.size == 2) parts[1] else parts[0]
+                    if (varName.isNotBlank()) varsToMock.add(varName.trim())
+                }
+            }
+            // Remove manual links so we don't overwrite them
+            varsToMock.removeAll(setOf("J", "U", "K", "mt", "ct", "T", "$"))
+
+            val dummyScript = StringBuilder()
+            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
+            if (varsToMock.isNotEmpty()) {
+                dummyScript.append("var ")
+                dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
+                dummyScript.append(";\n")
+            }
+
+            // 6. PREPARE TRANSCRIPT
             var cleanTranscript = transcriptContent
-                .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?"""), "")
+                .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // --- TRANSLATION ENGINE ---
+            // 7. TRANSLATE (If English)
             if (language == "en") {
-                logger("Applying English Translations...")
                 cleanTranscript = translateToEnglish(cleanTranscript)
             }
 
-            // 6. EXPOSE GENERATOR
+            // 8. EXPOSE GENERATOR
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) "\nwindow.PDFGenerator = $funcNameMatch;" else ""
 
-            // 7. COMBINE
-            val finalScript = dependencies.toString() + "\n" + cleanTranscript + exposeCode
+            val finalScript = dummyScript.toString() + dependencies.toString() + "\n" + cleanTranscript + exposeCode
+            
             return@withContext PdfResources(finalScript)
 
         } catch (e: Exception) {
@@ -93,43 +140,22 @@ class JsResourceFetcher {
 
     private fun translateToEnglish(script: String): String {
         var s = script
-        // Map of Russian -> English phrases found in the original script
         val map = mapOf(
-            "Учебный год" to "Academic Year",
-            "Семестр" to "Semester",
-            "Зарегистрировано кредитов -" to "Registered Credits -",
-            "Дисциплины" to "Subjects",
-            "Кредит" to "Credits",
-            "Форма контроля" to "Control",
-            "Баллы" to "Score",
-            "Цифр. экв." to "Digit",
-            "Букв.сист." to "Letter",
-            "Трад. сист." to "Traditional",
+            "Учебный год" to "Academic Year", "Семестр" to "Semester", "Зарегистрировано кредитов -" to "Registered Credits -",
+            "Дисциплины" to "Subjects", "Кредит" to "Credits", "Форма контроля" to "Control", "Баллы" to "Score",
+            "Цифр. экв." to "Digit", "Букв.сист." to "Letter", "Трад. сист." to "Traditional",
             "МИНИСТЕРСТВО НАУКИ, ВЫСШЕГО ОБРАЗОВАНИЯ И ИННОВАЦИЙ КЫРГЫЗСКОЙ РЕСПУБЛИКИ" to "MINISTRY OF SCIENCE, HIGHER EDUCATION AND INNOVATION OF THE KYRGYZ REPUBLIC",
-            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY",
-            "ТРАНСКРИПТ" to "TRANSCRIPT",
-            "ФИО:" to "Full Name:",
-            "ID студента:" to "Student ID:",
-            "Дата рождения:" to "Date of Birth:",
-            "Направление:" to "Direction:",
-            "Специальность:" to "Specialty:",
-            "Форма обучения:" to "Form of Study:",
-            "Общий GPA:" to "Total GPA:",
-            "Всего зарегистрированых кредитов:" to "Total Registered Credits:",
+            "ОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ" to "OSH STATE UNIVERSITY", "ТРАНСКРИПТ" to "TRANSCRIPT",
+            "ФИО:" to "Full Name:", "ID студента:" to "Student ID:", "Дата рождения:" to "Date of Birth:",
+            "Направление:" to "Direction:", "Специальность:" to "Specialty:", "Форма обучения:" to "Form of Study:",
+            "Общий GPA:" to "Total GPA:", "Всего зарегистрированых кредитов:" to "Total Registered Credits:",
             "ПРИМЕЧАНИЕ: 1 кредит составляет 30 академических часов." to "NOTE: 1 credit equals 30 academic hours.",
             "Достоверность данного документа можно проверить отсканировав QR-код" to "The authenticity of this document can be verified by scanning the QR code",
-            "Ректор" to "Rector",
-            "Методист / Офис регистратор" to "Registrar"
+            "Ректор" to "Rector", "Методист / Офис регистратор" to "Registrar"
         )
-        
-        map.forEach { (ru, en) -> 
-            s = s.replace(ru, en) 
-        }
-        
-        // Replace table headers "№" and "Б.Ч." safely
+        map.forEach { (ru, en) -> s = s.replace(ru, en) }
         s = s.replace("header:\"№\"", "header:\"#\"")
         s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
-        
         return s
     }
 
