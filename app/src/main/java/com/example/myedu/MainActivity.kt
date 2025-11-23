@@ -152,7 +152,7 @@ class MainViewModel : ViewModel() {
                 cachedRefStudentInfo = infoRaw
                 val info = JSONObject(infoRaw)
 
-                // 2. Parse IDs with fallbacks
+                // 2. Parse IDs with robust fallbacks
                 val lastMove = info.optJSONObject("lastStudentMovement")
                 
                 // Find Speciality ID
@@ -168,7 +168,9 @@ class MainViewModel : ViewModel() {
                 if (eduFormId == 0) eduFormId = lastMove?.optInt("id_edu_form") ?: 0
 
                 if (specId == 0 || eduFormId == 0) {
-                    log("JSON Keys: ${info.keys().asSequence().joinToString()}")
+                    // Log available keys for debugging
+                    log("Info Keys: ${info.keys().asSequence().joinToString()}")
+                    if (lastMove != null) log("LastMove Keys: ${lastMove.keys().asSequence().joinToString()}")
                     throw Exception("IDs not found. Spec: $specId, Edu: $eduFormId")
                 }
                 log("IDs found: Spec=$specId, Edu=$eduFormId")
