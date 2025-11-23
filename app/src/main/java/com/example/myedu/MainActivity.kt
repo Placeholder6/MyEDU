@@ -63,6 +63,8 @@ class MainViewModel : ViewModel() {
     private var cachedUnivInfo: String? = null
     private var cachedRefLinkId: Long = 0
     private var cachedRefQrUrl: String = ""
+    
+    // Separate Caches for Reference (RU/EN)
     private var cachedRefResourcesRu: PdfResources? = null
     private var cachedRefResourcesEn: PdfResources? = null
 
@@ -209,10 +211,12 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             isBusy = true
             try {
+                // Decide which cached resource to use/fetch
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
                     log("Fetching $language resources...")
                     resources = refJsFetcher.fetchResources({ log(it) }, language)
+                    // Cache it
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
 
@@ -395,6 +399,7 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("1. Fetch Ref Files") }
         }
+        // Updated Reference buttons
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "ru") {} }, Modifier.weight(1f)) { Text("PDF (RU)") }
             Button(onClick = { viewModel.generateReferencePdf(refGenerator, filesDir, "en") {} }, Modifier.weight(1f)) { Text("PDF (EN)") }
