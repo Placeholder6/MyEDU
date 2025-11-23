@@ -56,12 +56,6 @@ class WebPdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            val fallbackPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg=="
-            
-            // Use the extracted stamp if it exists, otherwise fallback
-            val isRealStamp = resources.stampBase64.startsWith("data:image")
-            val safeStamp = if (isRealStamp) resources.stampBase64 else fallbackPng
-
             val html = """
             <!DOCTYPE html>
             <html>
@@ -71,118 +65,89 @@ class WebPdfGenerator(private val context: Context) {
             </head>
             <body>
             <script>
-                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ " + line); };
-                
+                window.onerror = function(msg, url, line) { AndroidBridge.returnError(msg + " @ Line " + line); };
                 const studentInfo = $studentInfoJson;
                 let transcriptData = $transcriptJson; 
                 const linkId = $linkId;
                 const qrCodeUrl = "$qrUrl";
-                const mt = "$safeStamp"; 
-                
-                if ($isRealStamp) {
-                    AndroidBridge.log("STAMP STATUS: Using Extracted Stamp (${resources.stampBase64.length} bytes)");
-                } else {
-                    AndroidBridge.log("STAMP STATUS: Using Fallback (Extraction Failed)");
-                }
 
-                // --- REAL HELPERS ---
-                const ct = (...e) => {
-                    let t = "";
-                    e.forEach(a => { if (a && a !== "null") t += a + " "; });
-                    return t.trim();
-                };
-
-                const J = {
-                    header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
-                    subheader: { fontSize: 16, bold: true, margin: [0, 10, 0, 5] },
-                    tableExample: { margin: [0, 5, 0, 20] },
-                    tableHeader: { bold: true, fontSize: 13, color: "black" },
-                    textLeft: { alignment: "left" },
-                    textRight: { alignment: "right" },
-                    quote: { italics: true },
-                    fb: { bold: true },
-                    f0: { fontSize: 0 }, f2: { fontSize: 2 }, f4: { fontSize: 4 }, f6: { fontSize: 6 }, f65: { fontSize: 6.5 },
-                    f7: { fontSize: 7 }, f8: { fontSize: 8 }, f9: { fontSize: 9 }, f10: { fontSize: 10 }, f11: { fontSize: 11 },
-                    f12: { fontSize: 12 }, f13: { fontSize: 13 }, f14: { fontSize: 14 }, f15: { fontSize: 15 }, f16: { fontSize: 16 },
-                    f18: { fontSize: 18 }, f20: { fontSize: 20 }, f22: { fontSize: 22 }, f24: { fontSize: 23 },
-                    c1: { color: "#000" }, c2: { color: "#222" }, c3: { color: "#444" }, c4: { color: "#666" },
-                    c5: { color: "#888" }, c6: { color: "#aaa" }, c7: { color: "#ccc" }, c8: { color: "#eee" },
-                    small: { fontSize: 8 },
-                    footLTitle: { color: "#333", fontSize: 8, margin: [40, 0, 0, 0] },
-                    footRTitle: { color: "#333", fontSize: 8, margin: [0, 0, 40, 0], alignment: "right" },
-                    textCenter: { alignment: "center" },
-                    textJustify: { alignment: "justify" },
-                    italic: { italics: true },
-                    l2: { margin: [0, 5, 0, 0] },
-                    px1: { margin: [5, 0, 5, 0] },
-                    px2: { margin: [10, 0, 10, 0] },
-                    colorFFF: { color: "#fff" }
-                };
-
-                const U = (t, e) => ({
-                    columns: [
-                        { text: `MYEDU ${'$'}{new Date().toLocaleDateString()}`, style: ["footLTitle"] },
-                        { text: `Страница ${'$'}{t.toString()} из ${'$'}{e}`, style: ["footRTitle"] }
-                    ],
-                    margin: [0, 0, -15, 0]
-                });
-
-                const K = (n, e) => e.length == 0 ? n : n[e[0]] != null ? K(n[e[0]], e.slice(1)) : "";
-
+                // Mock moment.js (only missing dep)
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("ru-RU") }; };
                 ${'$'}.locale = function() {};
-
             </script>
+
             <script>
                 try {
                     ${resources.logicCode}
-                } catch(e) { AndroidBridge.returnError("Injection: " + e.message); }
+                    AndroidBridge.log("JS: Logic injected.");
+                } catch(e) { AndroidBridge.returnError("Injection Error: " + e.message); }
             </script>
+
             <script>
                 function startGeneration() {
                     try {
-                        AndroidBridge.log("JS: Driver started.");
+                        AndroidBridge.log("JS: Driver starting...");
+                        
+                        let totalCredits = 0;
+                        let yearlyGpas = [];
 
-                        let totalCredits = 0, gpaSum = 0, gpaCount = 0;
                         if (Array.isArray(transcriptData)) {
-                            transcriptData.forEach(y => {
-                                if(y.semesters) y.semesters.forEach(s => {
-                                    let sCred = 0, sPoints = 0;
-                                    if(s.subjects) s.subjects.forEach(sub => {
-                                        const cr = parseInt(sub.credit || 0);
-                                        sCred += cr; totalCredits += cr;
-                                        
-                                        // FIX EXCESS ZEROS
-                                        if(sub.exam_rule && sub.exam_rule.digital) {
-                                            let dig = parseFloat(sub.exam_rule.digital);
-                                            sub.exam_rule.digital = dig.toFixed(2); 
-                                            sPoints += (dig * cr);
+                            transcriptData.forEach(year => {
+                                let semGpas = [];
+                                if (year.semesters) {
+                                    year.semesters.forEach(sem => {
+                                        // 1. Sum Total Credits (All subjects)
+                                        if (sem.subjects) {
+                                            sem.subjects.forEach(sub => {
+                                                totalCredits += (Number(sub.credit) || 0);
+                                                // Fix digital score: Ceiling round to 2 decimals
+                                                if (sub.exam_rule && sub.exam_rule.digital) {
+                                                    sub.exam_rule.digital = Math.ceil(Number(sub.exam_rule.digital) * 100) / 100;
+                                                }
+                                            });
                                         }
-                                        if(sub.mark_list && sub.mark_list.total) {
-                                            let tot = parseFloat(sub.mark_list.total);
-                                            sub.mark_list.total = Math.round(tot).toString(); 
+
+                                        // 2. Filter for EXAMS only
+                                        const exams = sem.subjects ? sem.subjects.filter(r => 
+                                            r.exam_rule && r.mark_list && r.exam && r.exam.includes("Экзамен")
+                                        ) : [];
+
+                                        // 3. Calculate Semester GPA
+                                        const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
+                                        if (exams.length > 0 && examCredits > 0) {
+                                            const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
+                                            const rawGpa = weightedSum / examCredits;
+                                            sem.gpa = Math.ceil(rawGpa * 100) / 100; // Ceiling Round
+                                            semGpas.push(sem.gpa);
+                                        } else {
+                                            sem.gpa = 0;
                                         }
                                     });
-                                    
-                                    if(sCred > 0) s.gpa = (Math.ceil((sPoints / sCred) * 100) / 100).toFixed(2);
-                                    else s.gpa = 0;
-                                    
-                                    if(parseFloat(s.gpa) > 0) { gpaSum += parseFloat(s.gpa); gpaCount++; }
-                                });
+                                }
+                                // 4. Year GPA
+                                const validSems = semGpas.filter(g => g > 0);
+                                if (validSems.length > 0) {
+                                    yearlyGpas.push(validSems.reduce((a, b) => a + b, 0) / validSems.length);
+                                }
                             });
                         }
-                        const avgGpa = gpaCount > 0 ? (Math.ceil((gpaSum / gpaCount) * 100) / 100).toFixed(2) : 0;
-                        const stats = [totalCredits, avgGpa, new Date().toLocaleDateString("ru-RU")];
+
+                        // 5. Final GPA
+                        let cumulativeGpa = 0;
+                        if (yearlyGpas.length > 0) {
+                            const rawAvg = yearlyGpas.reduce((a, b) => a + b, 0) / yearlyGpas.length;
+                            cumulativeGpa = Math.ceil(rawAvg * 100) / 100;
+                        }
+                        
+                        AndroidBridge.log("JS: Final GPA = " + cumulativeGpa);
+                        const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("ru-RU")];
 
                         if (typeof window.PDFGenerator !== 'function') throw "PDFGenerator missing";
 
-                        AndroidBridge.log("JS: Generating...");
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
-                        
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
-                    } catch(e) {
-                        AndroidBridge.returnError("Driver: " + e.toString());
-                    }
+                        
+                    } catch(e) { AndroidBridge.returnError("Driver: " + e.toString()); }
                 }
             </script>
             </body>
