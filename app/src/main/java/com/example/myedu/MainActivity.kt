@@ -50,18 +50,21 @@ class MainViewModel : ViewModel() {
     var transcriptList = mutableStateListOf<TranscriptItem>()
     var logs = mutableStateListOf<String>()
 
+    // Transcript Cache
     private var cachedStudentId: Long = 0
     private var cachedInfoJson: String? = null
     private var cachedTranscriptJson: String? = null
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
     
+    // Reference Cache
     private var cachedRefStudentInfo: String? = null
     private var cachedLicenseJson: String? = null
     private var cachedUnivInfo: String? = null
     private var cachedRefLinkId: Long = 0
     private var cachedRefQrUrl: String = ""
-    private var cachedRefResources: PdfResources? = null
+    private var cachedRefResourcesRu: PdfResources? = null
+    private var cachedRefResourcesEn: PdfResources? = null
 
     private val jsFetcher = JsResourceFetcher()
     private val refJsFetcher = ReferenceJsFetcher()
@@ -80,7 +83,6 @@ class MainViewModel : ViewModel() {
         } catch (e: Exception) { return 0L }
     }
 
-    // --- TRANSCRIPT ---
     fun fetchTranscriptData() {
         if (tokenInput.isBlank()) return
         viewModelScope.launch {
@@ -92,7 +94,7 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.setDebugCookies(token)
                 NetworkClient.interceptor.authToken = token
                 
-                log("1. Resources...")
+                log("1. Resources (RU)...")
                 cachedResourcesRu = jsFetcher.fetchResources({ log(it) }, "ru")
 
                 log("2. Student Info...")
@@ -137,7 +139,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- REFERENCE ---
     fun fetchReferenceData() {
         if (tokenInput.isBlank()) return
         viewModelScope.launch {
@@ -150,23 +151,20 @@ class MainViewModel : ViewModel() {
                 val sId = getStudentIdFromToken(token)
                 cachedStudentId = sId
 
-                log("1. Student Info...")
+                log("1. Info...")
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfo(sId).string() }
                 cachedRefStudentInfo = infoRaw
                 val info = JSONObject(infoRaw)
-                val lastMove = info.optJSONObject("lastStudentMovement")
                 
                 var specId = info.optInt("id_speciality")
-                if(specId == 0) specId = lastMove?.optJSONObject("speciality")?.optInt("id") ?: 0
-                
+                if(specId == 0) specId = info.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
                 var eduFormId = info.optInt("id_edu_form")
-                if(eduFormId == 0) eduFormId = lastMove?.optJSONObject("edu_form")?.optInt("id") ?: 0
+                if(eduFormId == 0) eduFormId = info.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
                 
-                log("IDs: Spec=$specId, Edu=$eduFormId")
+                if(specId == 0 || eduFormId == 0) throw Exception("Missing IDs $specId / $eduFormId")
 
-                log("2. License & Univ...")
-                val licRaw = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
-                cachedLicenseJson = licRaw
+                log("2. License/Univ...")
+                cachedLicenseJson = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
                 cachedUnivInfo = withContext(Dispatchers.IO) { NetworkClient.api.getUniversityInfo().string() }
 
                 log("3. Link...")
@@ -175,8 +173,8 @@ class MainViewModel : ViewModel() {
                 cachedRefLinkId = linkJson.optLong("id")
                 cachedRefQrUrl = linkJson.optString("url")
 
-                log("4. Resources...")
-                cachedRefResources = refJsFetcher.fetchResources({ log(it) }, "ru")
+                log("4. Scripts (RU)...")
+                cachedRefResourcesRu = refJsFetcher.fetchResources({ log(it) }, "ru")
                 log("Ready.")
             } catch (e: Exception) { log("Ref Error: ${e.message}") }
             finally { isBusy = false }
@@ -184,65 +182,32 @@ class MainViewModel : ViewModel() {
     }
 
     fun generateReferencePdf(refGenerator: ReferencePdfGenerator, filesDir: File, language: String) {
-        if (cachedRefStudentInfo == null || cachedLicenseJson == null || cachedUnivInfo == null) {
-            log("Fetch Ref Data first.")
-            return
-        }
+        if (cachedRefStudentInfo == null || cachedLicenseJson == null) { log("Fetch Ref Data first."); return }
         viewModelScope.launch {
             isBusy = true
             try {
+                var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
+                if (resources == null) {
+                    log("Fetching $language scripts...")
+                    resources = refJsFetcher.fetchResources({ log(it) }, language)
+                    if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
+                }
+                
                 val info = JSONObject(cachedRefStudentInfo!!)
                 val fullName = "${info.optString("last_name")} ${info.optString("name")} ${info.optString("father_name")}".replace("null", "").trim()
                 info.put("fullName", fullName)
                 
-                log("Gen Ref PDF ($language)...")
-                val bytes = refGenerator.generatePdf(info.toString(), cachedLicenseJson!!, cachedUnivInfo!!, cachedRefLinkId, cachedRefQrUrl, cachedRefResources!!, language) { log(it) }
+                log("Generating Ref PDF ($language)...")
+                val bytes = refGenerator.generatePdf(info.toString(), cachedLicenseJson!!, cachedUnivInfo!!, cachedRefLinkId, cachedRefQrUrl, resources!!, language) { log(it) }
                 val file = File(filesDir, "reference_form8_$language.pdf")
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
                 log("Saved: ${file.name}")
                 
-                // Upload
                 val body = MultipartBody.Part.createFormData("pdf", "transcript.pdf", file.asRequestBody("application/pdf".toMediaTypeOrNull()))
-                val res = withContext(Dispatchers.IO) { 
-                    NetworkClient.api.uploadReferencePdf(cachedRefLinkId.toString().toRequestBody(null), cachedStudentId.toString().toRequestBody(null), body).string() 
-                }
-                log("Uploaded: $res")
+                withContext(Dispatchers.IO) { NetworkClient.api.uploadReferencePdf(cachedRefLinkId.toString().toRequestBody(null), cachedStudentId.toString().toRequestBody(null), body).string() }
+                log("Uploaded.")
             } catch (e: Exception) { log("Gen Error: ${e.message}") }
             finally { isBusy = false }
-        }
-    }
-
-    private fun parseAndDisplayTranscript(jsonString: String) {
-        try {
-            val items = mutableListOf<TranscriptItem>()
-            val arr = JSONArray(jsonString)
-            for (i in 0 until arr.length()) {
-                val sems = arr.optJSONObject(i)?.optJSONArray("semesters") ?: continue
-                for (j in 0 until sems.length()) {
-                    val subs = sems.optJSONObject(j)?.optJSONArray("subjects") ?: continue
-                    for (k in 0 until subs.length()) {
-                        val sub = subs.optJSONObject(k)
-                        val name = sub.optString("subject", "?")
-                        val cr = sub.optString("credit", "0")
-                        val mark = sub.optJSONObject("mark_list")
-                        val total = mark?.optString("finally")?.takeIf { it != "0" && it != "null" } ?: mark?.optString("total") ?: "-"
-                        val grade = sub.optJSONObject("exam_rule")?.optString("alphabetic") ?: "-"
-                        items.add(TranscriptItem(name, cr, total, grade))
-                    }
-                }
-            }
-            transcriptList.addAll(items)
-        } catch(e:Exception){}
-    }
-}
-
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val webGen = WebPdfGenerator(this)
-        val refGen = ReferencePdfGenerator(this)
-        setContent {
-            MaterialTheme { Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) { MainScreen(webGen, refGen, filesDir) } }
         }
     }
 }
@@ -261,16 +226,19 @@ fun MainScreen(webGenerator: WebPdfGenerator, refGenerator: ReferencePdfGenerato
         Text("Transcript", fontWeight = FontWeight.Bold)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button({ viewModel.fetchTranscriptData() }, Modifier.weight(1f)) { Text("Fetch") }
-            Button({ viewModel.generatePdf(webGenerator, filesDir, "en") }, Modifier.weight(1f)) { Text("PDF") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button({ viewModel.generatePdf(webGenerator, filesDir, "ru") }, Modifier.weight(1f)) { Text("PDF (RU)") }
+            Button({ viewModel.generatePdf(webGenerator, filesDir, "en") }, Modifier.weight(1f)) { Text("PDF (EN)") }
         }
         
-        Text("Reference", fontWeight = FontWeight.Bold, modifier = Modifier.padding(top=8.dp))
+        Text("Reference (Form 8)", fontWeight = FontWeight.Bold, modifier=Modifier.padding(top=8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button({ viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("Fetch Files") }
+            Button({ viewModel.fetchReferenceData() }, Modifier.weight(1f)) { Text("Fetch") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button({ viewModel.generateReferencePdf(refGenerator, filesDir, "ru") }, Modifier.weight(1f)) { Text("Ref (RU)") }
-            Button({ viewModel.generateReferencePdf(refGenerator, filesDir, "en") }, Modifier.weight(1f)) { Text("Ref (EN)") }
+            Button({ viewModel.generateReferencePdf(refGenerator, filesDir, "ru") }, Modifier.weight(1f)) { Text("PDF (RU)") }
+            Button({ viewModel.generateReferencePdf(refGenerator, filesDir, "en") }, Modifier.weight(1f)) { Text("PDF (EN)") }
         }
         
         Divider(Modifier.padding(vertical=8.dp))
