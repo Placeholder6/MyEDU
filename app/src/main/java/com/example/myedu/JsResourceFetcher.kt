@@ -24,18 +24,49 @@ class JsResourceFetcher {
                 ?: throw Exception("Main JS not found")
             
             // 2. Main JS
+            logger("Fetching Main JS ($mainJsName)...")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             val transcriptJsName = findMatch(mainJsContent, """["']\./(Transcript\.[^"']+\.js)["']""")
                 ?: throw Exception("Transcript JS not found")
             
             // 3. Transcript JS
-            logger("Fetching $transcriptJsName...")
+            logger("Fetching Transcript JS ($transcriptJsName)...")
             var transcriptJsContent = fetchString("$baseUrl/assets/$transcriptJsName")
 
-            // 4. MOCK IMPORTS
+            // 4. STAMP EXTRACTION (Done BEFORE cleaning code)
+            var stampBase64 = ""
+            logger("STAMP DEBUG: Looking for Signed.js reference...")
+            
+            // Find filename: import ... from "./Signed.HASH.js"
+            val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
+                ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
+
+            if (signedJsName != null) {
+                logger("STAMP DEBUG: Found filename: $signedJsName")
+                try {
+                    val signedContent = fetchString("$baseUrl/assets/$signedJsName")
+                    
+                    // Regex: Find any "data:image/..." string inside quotes
+                    val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
+                    
+                    if (stampMatch != null) {
+                        stampBase64 = stampMatch.groupValues[1]
+                        logger("STAMP DEBUG: SUCCESS! Extracted ${stampBase64.length} bytes")
+                    } else {
+                        logger("STAMP DEBUG: FAILURE. File downloaded but no 'data:image' found.")
+                        // Log snippet to debug
+                        logger("Snippet: ${signedContent.take(50)}")
+                    }
+                } catch (e: Exception) {
+                    logger("STAMP DEBUG: Network failed for Signed.js: ${e.message}")
+                }
+            } else {
+                logger("STAMP DEBUG: Signed.js import not found in Transcript.js!")
+            }
+
+            // 5. MOCK IMPORTS
             val varsToMock = mutableSetOf<String>()
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
-            
             importRegex.findAll(transcriptJsContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
                     val parts = item.trim().split(Regex("""\s+as\s+"""))
@@ -53,13 +84,13 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
-            // 5. CLEAN CODE
+            // 6. CLEAN CODE
             transcriptJsContent = transcriptJsContent
                 .replace(importRegex, "") 
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
-            // 6. EXPOSE GENERATOR
+            // 7. EXPOSE GENERATOR
             val funcNameMatch = findMatch(transcriptJsContent, """(\w+)\s*=\s*\(C,a,c,d\)""")
             if (funcNameMatch != null) {
                 transcriptJsContent += "\nwindow.PDFGenerator = $funcNameMatch;"
@@ -68,24 +99,6 @@ class JsResourceFetcher {
             }
 
             val finalScript = dummyScript.toString() + "\n" + transcriptJsContent
-
-            // 7. STAMP EXTRACTION
-            var stampBase64 = ""
-            val signedJsName = findMatch(transcriptJsContent, """from\s*["']\./(Signed\.[^"']+\.js)["']""") 
-                ?: findMatch(mainJsContent, """["']\./(Signed\.[^"']+\.js)["']""")
-
-            if (signedJsName != null) {
-                logger("Fetching Stamp: $signedJsName")
-                val signedContent = fetchString("$baseUrl/assets/$signedJsName")
-                
-                // Matches: const A="data:image/jpeg;base64,..."
-                // We grab the content inside the quotes
-                val stampMatch = Regex("""['"](data:image/[^;]+;base64,[^'"]+)['"]""").find(signedContent)
-                stampBase64 = stampMatch?.groupValues?.get(1) ?: ""
-                
-                if (stampBase64.isNotEmpty()) logger("Stamp Found! Length: ${stampBase64.length}")
-                else logger("WARNING: No base64 image found in Signed.js")
-            }
 
             return@withContext PdfResources(stampBase64, finalScript)
 
@@ -99,7 +112,7 @@ class JsResourceFetcher {
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code} for $url")
             return response.body?.string() ?: ""
         }
     }
