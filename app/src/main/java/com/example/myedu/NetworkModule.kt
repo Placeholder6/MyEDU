@@ -1,5 +1,6 @@
 package com.example.myedu
 
+// ... imports same as before ...
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -32,20 +33,17 @@ interface OshSuApi {
     suspend fun getStudentInfo(@Query("id_student") studentId: Long): ResponseBody
 
     @GET("public/api/studenttranscript")
-    suspend fun getTranscriptData(
-        @Query("id_student") studentId: Long,
-        @Query("id_movement") movementId: Long
-    ): ResponseBody
+    suspend fun getTranscriptData(@Query("id_student") sId: Long, @Query("id_movement") mId: Long): ResponseBody
 
     @POST("public/api/student/doc/form13link")
     suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
 
-    // --- Reference (Form 8) ---
+    // --- Reference ---
     @GET("public/api/control/structure/specialitylicense")
-    suspend fun getSpecialityLicense(
-        @Query("id_speciality") specialityId: Int,
-        @Query("id_edu_form") eduFormId: Int
-    ): ResponseBody
+    suspend fun getSpecialityLicense(@Query("id_speciality") sId: Int, @Query("id_edu_form") eId: Int): ResponseBody
+
+    @GET("public/api/control/structure/university")
+    suspend fun getUniversityInfo(): ResponseBody
 
     @POST("public/api/student/doc/form8link")
     suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
@@ -53,24 +51,21 @@ interface OshSuApi {
     @Multipart
     @POST("public/api/student/doc/form8")
     suspend fun uploadReferencePdf(
-        @Part("id") id: RequestBody,
-        @Part("id_student") idStudent: RequestBody,
+        @Part("id") id: RequestBody, 
+        @Part("id_student") sId: RequestBody, 
         @Part pdf: MultipartBody.Part
     ): ResponseBody
-    // ---------------------------
+    // ----------------
 
     @Multipart
     @POST("public/api/student/doc/form13")
-    suspend fun uploadPdf(
-        @Part("id") id: RequestBody,
-        @Part("id_student") idStudent: RequestBody,
-        @Part pdf: MultipartBody.Part
-    ): ResponseBody
+    suspend fun uploadPdf(@Part("id") id: RequestBody, @Part("id_student") sId: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
 
     @POST("public/api/open/doc/showlink")
     suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 }
 
+// ... DebugCookieJar and NetworkClient same as before ...
 class DebugCookieJar : CookieJar {
     private val cookieStore = ArrayList<Cookie>()
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
@@ -96,13 +91,12 @@ class DebugCookieJar : CookieJar {
 
 class DebugInterceptor : Interceptor {
     var authToken: String? = null
-    var currentReferer: String = "https://myedu.oshsu.kg/" 
     override fun intercept(chain: Interceptor.Chain): Response {
         val builder = chain.request().newBuilder()
         builder.header("Accept", "application/json, text/plain, */*")
         builder.header("User-Agent", "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36")
         builder.header("Origin", "https://myedu.oshsu.kg")
-        builder.header("Referer", currentReferer)
+        builder.header("Referer", "https://myedu.oshsu.kg/")
         if (authToken != null) builder.header("Authorization", "Bearer ${authToken!!.removePrefix("Bearer ").trim()}")
         return chain.proceed(builder.build())
     }
