@@ -22,7 +22,6 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
 /**
- * RENAMED: To avoid collision with JsResourceFetcher's PdfResources
  * Holds the raw JS content of References7.js and the Stamp image
  */
 data class ReferenceResources(
@@ -36,7 +35,7 @@ class ReferenceJsFetcher {
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): ReferenceResources = withContext(Dispatchers.IO) {
         try {
-            // 1. Fetch Index -> Main -> References7 (Existing Logic)
+            // 1. Fetch Index -> Main -> References7
             val indexHtml = fetchString("$baseUrl/")
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""")
                 ?: throw Exception("Main JS missing")
@@ -57,36 +56,34 @@ class ReferenceJsFetcher {
             
             val scriptName = getName(refJsPath)
             logger("Target Script: $scriptName")
-            val scriptContent = fetchString("$baseUrl/assets/$scriptName")
+            var scriptContent = fetchString("$baseUrl/assets/$scriptName")
             
-            // 2. Fetch Stamp from Signed.*.js (NEW FIX)
+            // 2. Fetch Stamp from Signed.*.js
             var stampBase64: String? = null
-            // Look for: import { S as x } from "./Signed.hash.js"
             val signedJsPath = findMatch(scriptContent, """["']\./(Signed\.[^"']+\.js)["']""")
             
             if (signedJsPath != null) {
                 logger("Fetching Stamp from $signedJsPath...")
                 val signedContent = fetchString("$baseUrl/assets/$signedJsPath")
                 
-                // Find the variable name exported as 'S'
-                // Pattern: export { variableName as S }
                 val exportMatch = Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}""").find(signedContent)
                 val varName = exportMatch?.groupValues?.get(1)
                 
                 if (varName != null) {
-                    // Find the definition: const variableName = "data:image..."
                     val valueMatch = Regex("""const\s+$varName\s*=\s*["'](.*?)["']""").find(signedContent)
                     if (valueMatch != null) {
                         stampBase64 = valueMatch.groupValues[1]
                         logger("Stamp extracted successfully.")
-                    } else {
-                        logger("Stamp variable definition not found.")
                     }
-                } else {
-                    logger("Stamp export not found.")
                 }
-            } else {
-                logger("Signed.js import not found.")
+            }
+            
+            // 3. APPLY DICTIONARY (Fix for "Mixed up logic")
+            // This replaces hardcoded Russian strings in the template (e.g., "СПРАВКА", "Факультет")
+            // with English equivalents from the dictionary.
+            if (language == "en") {
+                logger("Applying Dictionary to Reference Template...")
+                scriptContent = applyDictionary(scriptContent, dictionary)
             }
             
             return@withContext ReferenceResources(scriptContent, stampBase64)
@@ -94,6 +91,17 @@ class ReferenceJsFetcher {
             logger("Fetch Error: ${e.message}")
             throw e
         }
+    }
+
+    private fun applyDictionary(script: String, dictionary: Map<String, String>): String {
+        var s = script
+        dictionary.forEach { (ru, en) -> 
+            // Avoid replacing short variables or common letters
+            if (ru.length > 2) { 
+                s = s.replace(ru, en) 
+            }
+        }
+        return s
     }
 
     private fun fetchString(url: String): String {
@@ -134,7 +142,6 @@ class ReferencePdfGenerator(private val context: Context) {
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 
-                // Cookie Mocking
                 val cookieManager = CookieManager.getInstance()
                 cookieManager.setAcceptCookie(true)
                 cookieManager.setCookie("https://myedu.oshsu.kg", "myedu-jwt-token=$bearerToken; Domain=myedu.oshsu.kg; Path=/")
@@ -171,7 +178,7 @@ class ReferencePdfGenerator(private val context: Context) {
 
                 val jsContent = resources.scriptContent
                 
-                // Logic Extraction
+                // Extract PDF Logic
                 val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\(\w+,\w+,\w+\)\s*=>\s*\{[\s\S]*?return\s*\{[\s\S]*?pageSize\s*:\s*["']A4["'][\s\S]*?\}\s*\}""")
                 val match = generatorRegex.find(jsContent)
                 
@@ -194,7 +201,7 @@ class ReferencePdfGenerator(private val context: Context) {
                     }
                 }
 
-                // FIXED: Use actual stamp if found, else fallback to 1x1 pixel
+                // Inject Stamp
                 val stamp = resources.stampBase64 ?: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFhAJ/wlseKgAAAABJRU5ErkJggg=="
                 
                 val html = """
@@ -229,7 +236,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         textRight: { alignment: 'right' }
                     };
                     
-                    // FIXED: Injected Stamp
                     const et = "$stamp";
 
                     $extractedFunction
