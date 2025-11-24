@@ -40,8 +40,8 @@ class JsResourceFetcher {
                         logger("Linking $finalVarName from $fileName")
                         var fileContent = fetchString("$baseUrl/assets/$fileName")
                         
-                        if (language == "en" && finalVarName == "U") {
-                            fileContent = fileContent.replace("Страница", "Page").replace("из", "of")
+                        if (language == "en") {
+                             fileContent = applyDictionary(fileContent, dictionary)
                         }
 
                         val internalVarMatch = exportRegex.find(fileContent)
@@ -110,15 +110,10 @@ class JsResourceFetcher {
         var s = script
         // Iterate dictionary and replace matches
         dictionary.forEach { (ru, en) -> 
-            if (ru.length > 2) {
+            if (ru.length > 1) { 
                 s = s.replace(ru, en) 
             }
         }
-        
-        // Static header replacements (keep these if not in dictionary or as backup)
-        s = s.replace("header:\"№\"", "header:\"#\"")
-        s = s.replace("header:\"Б.Ч.\"", "header:\"Code\"")
-        
         return s
     }
 
