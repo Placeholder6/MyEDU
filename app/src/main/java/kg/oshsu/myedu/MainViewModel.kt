@@ -24,7 +24,7 @@ import java.util.Calendar
 import java.util.Locale
 
 class MainViewModel : ViewModel() {
-    // --- STATE: APP STATUS ---
+    // --- STATE: APP STATUS --- 
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
