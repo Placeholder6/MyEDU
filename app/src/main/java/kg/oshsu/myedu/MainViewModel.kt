@@ -13,9 +13,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
 
@@ -53,20 +57,37 @@ class MainViewModel : ViewModel() {
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
 
+    // --- STATE: SETTINGS ---
+    var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
+    private var cachedDictionary: Map<String, String> = emptyMap()
+
     private var prefs: PrefsManager? = null
+    
+    // --- RESOURCE CACHE ---
+    private val jsFetcher = JsResourceFetcher()
+    private val refFetcher = ReferenceJsFetcher()
+    private val dictUtils = DictionaryUtils()
+
+    private var cachedResourcesRu: PdfResources? = null
+    private var cachedResourcesEn: PdfResources? = null
+    private var cachedRefResourcesRu: PdfResources? = null
+    private var cachedRefResourcesEn: PdfResources? = null
 
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
         if (prefs == null) {
             prefs = PrefsManager(context)
-            val token = prefs?.getToken()
-            if (token != null) {
-                NetworkClient.interceptor.authToken = token
-                NetworkClient.cookieJar.injectSessionCookies(token)
-                loadOfflineData()
-                appState = "APP"
-                refreshAllData()
-            } else appState = "LOGIN"
+        }
+        val token = prefs?.getToken()
+        if (token != null) {
+            NetworkClient.interceptor.authToken = token
+            NetworkClient.cookieJar.injectSessionCookies(token)
+            loadOfflineData()
+            appState = "APP"
+            // Force refresh from internet every time app starts
+            refreshAllData()
+        } else {
+            appState = "LOGIN"
         }
     }
 
@@ -111,6 +132,7 @@ class MainViewModel : ViewModel() {
     // --- DATA: REFRESH ALL ---
     private fun refreshAllData() {
         viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) { isLoading = true }
             try {
                 val user = NetworkClient.api.getUser().user
                 val profile = NetworkClient.api.getProfile()
@@ -124,7 +146,11 @@ class MainViewModel : ViewModel() {
                     loadScheduleNetwork(profile)
                     fetchSession(profile)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
+            } finally {
+                withContext(Dispatchers.Main) { isLoading = false }
+            }
         }
     }
 
@@ -145,7 +171,6 @@ class MainViewModel : ViewModel() {
         } catch (_: Exception) {}
     }
 
-    // --- SCHEDULE: PROCESS LOCAL ---
     private fun processScheduleLocally() {
         if (fullSchedule.isEmpty()) return
         determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
@@ -156,7 +181,6 @@ class MainViewModel : ViewModel() {
         todayClasses = fullSchedule.filter { it.day == apiDay }
     }
 
-    // --- GRADES: FETCH SESSION ---
     private fun fetchSession(profile: StudentInfoResponse) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -174,7 +198,6 @@ class MainViewModel : ViewModel() {
                 withContext(Dispatchers.Main) { 
                     isTranscriptLoading = true
                     showTranscriptScreen = true
-                    // Explicit type call here for safety
                     transcriptData = prefs?.loadList<TranscriptYear>("transcript_list") ?: emptyList() 
                 }
                 val uid = userData?.id ?: return@launch
@@ -187,52 +210,179 @@ class MainViewModel : ViewModel() {
     
     fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "Pair $lessonId"
 
-    // --- DOCUMENTS: GENERATE TRANSCRIPT PDF ---
-    fun generateAndOpenTranscript(context: Context) {
-        if (isPdfGenerating || transcriptData.isEmpty()) return
-        val studentId = userData?.id ?: return
-        val fullName = "${userData?.last_name ?: ""} ${userData?.name ?: ""}"
-        viewModelScope.launch {
-            isPdfGenerating = true; pdfStatusMessage = "Preparing Transcript..."
-            try {
-                val keyRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string() }
-                val keyObj = JSONObject(keyRaw); val key = keyObj.optString("key"); val linkId = keyObj.optLong("id")
-                val transcriptJson = Gson().toJson(transcriptData)
-                val pds = profileData?.pdsstudentinfo; val mov = profileData?.studentMovement
-                val infoMap = mapOf("birthday" to (pds?.birthday?:""), "speciality" to (mov?.speciality?.name_ru?:""), "direction" to (mov?.speciality?.name_ru?:""), "edu_form" to (mov?.edu_form?.name_ru?:""))
-                val file = withContext(Dispatchers.Default) { PdfGenerator(context).generateTranscriptPdf(transcriptJson, fullName, studentId.toString(), Gson().toJson(infoMap)) }
-                if (file != null) { pdfStatusMessage = "Uploading..."; uploadAndOpen(context, linkId, studentId, file, "transcript.pdf", key, true) } else pdfStatusMessage = "Generation Failed"
-            } catch (e: Exception) { pdfStatusMessage = "Error: ${e.message}" } finally { isPdfGenerating = false; delay(3000); pdfStatusMessage = null }
+    // --- NEW PDF LOGIC: DICTIONARY ---
+    private suspend fun fetchDictionaryIfNeeded() {
+        if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
+            cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
         }
     }
 
-    // --- DOCUMENTS: GENERATE REFERENCE PDF ---
-    fun generateAndOpenReference(context: Context) {
+    // --- NEW PDF LOGIC: TRANSCRIPT GENERATION ---
+    fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
         val studentId = userData?.id ?: return
-        val fullName = "${userData?.last_name ?: ""} ${userData?.name ?: ""}"
+        
         viewModelScope.launch {
-            isPdfGenerating = true; pdfStatusMessage = "Preparing Reference..."
+            isPdfGenerating = true
+            pdfStatusMessage = "Preparing Transcript ($language)..."
             try {
-                val keyRaw = withContext(Dispatchers.IO) { NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string() }
-                val keyObj = JSONObject(keyRaw); val key = keyObj.optString("key"); val linkId = keyObj.optLong("id")
-                val mov = profileData?.studentMovement
-                val infoMap = mapOf("speciality_ru" to (mov?.speciality?.name_ru?:""), "spec_code" to (mov?.speciality?.code?:""), "edu_form_ru" to (mov?.edu_form?.name_ru?:""), "payment_form_ru" to (if (mov?.id_payment_form == 2) "Контракт" else "Бюджет"), "active_semester" to (profileData?.active_semester ?: 1), "second_id" to "1713914806")
-                val file = withContext(Dispatchers.Default) { PdfGenerator(context).generateReferencePdf(fullName, studentId.toString(), Gson().toJson(infoMap)) }
-                if (file != null) { pdfStatusMessage = "Uploading..."; uploadAndOpen(context, linkId, studentId, file, "reference.pdf", key, false) } else pdfStatusMessage = "Generation Failed"
-            } catch (e: Exception) { pdfStatusMessage = "Error: ${e.message}" } finally { isPdfGenerating = false; delay(3000); pdfStatusMessage = null }
+                fetchDictionaryIfNeeded()
+                
+                var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
+                if (resources == null) {
+                    pdfStatusMessage = "Fetching Scripts..."
+                    resources = jsFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
+                }
+
+                // Get Raw JSON data as required by the generator
+                val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
+                // Manipulate JSON for Full Name
+                val infoJson = JSONObject(infoRaw)
+                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                infoJson.put("fullName", fullName)
+
+                val movId = profileData?.studentMovement?.id ?: 0L
+                val transcriptRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptDataRaw(studentId, movId).string() }
+
+                val keyRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string() }
+                val keyObj = JSONObject(keyRaw)
+                val linkId = keyObj.optLong("id")
+                val qrUrl = keyObj.optString("url")
+                
+                pdfStatusMessage = "Generating PDF..."
+                val generator = WebPdfGenerator(context)
+                val bytes = generator.generatePdf(
+                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
+                ) { println(it) }
+
+                val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+
+                pdfStatusMessage = "Uploading..."
+                uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
+
+            } catch (e: Exception) {
+                pdfStatusMessage = "Error: ${e.message}"
+                e.printStackTrace()
+                delay(3000)
+                pdfStatusMessage = null
+            } finally {
+                isPdfGenerating = false
+            }
         }
     }
 
-    // --- DOCUMENTS: UPLOAD & OPEN ---
+    // --- NEW PDF LOGIC: REFERENCE GENERATION ---
+    fun generateReferencePdf(context: Context, language: String) {
+        if (isPdfGenerating) return
+        val studentId = userData?.id ?: return
+
+        viewModelScope.launch {
+            isPdfGenerating = true
+            pdfStatusMessage = "Preparing Reference ($language)..."
+            try {
+                fetchDictionaryIfNeeded()
+
+                var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
+                if (resources == null) {
+                    pdfStatusMessage = "Fetching Scripts..."
+                    resources = refFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
+                }
+                
+                // Fetch Raw Data
+                val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
+                val infoJson = JSONObject(infoRaw)
+                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                infoJson.put("fullName", fullName)
+
+                var specId = infoJson.optJSONObject("speciality")?.optInt("id") ?: 0
+                if (specId == 0) specId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
+                var eduFormId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
+                if (eduFormId == 0) eduFormId = infoJson.optJSONObject("edu_form")?.optInt("id") ?: 0
+
+                val licenseRaw = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
+                val univRaw = withContext(Dispatchers.IO) { NetworkClient.api.getUniversityInfo().string() }
+                
+                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string() }
+                val linkObj = JSONObject(linkRaw)
+                val linkId = linkObj.optLong("id")
+                val qrUrl = linkObj.optString("url")
+                val key = linkObj.optString("key")
+
+                val token = prefs?.getToken() ?: ""
+
+                pdfStatusMessage = "Generating PDF..."
+                val generator = ReferencePdfGenerator(context)
+                val bytes = generator.generatePdf(
+                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
+                ) { println(it) }
+
+                val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
+                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
+
+                pdfStatusMessage = "Uploading..."
+                uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
+
+            } catch (e: Exception) {
+                pdfStatusMessage = "Error: ${e.message}"
+                e.printStackTrace()
+                delay(3000)
+                pdfStatusMessage = null
+            } finally {
+                isPdfGenerating = false
+            }
+        }
+    }
+
     private suspend fun uploadAndOpen(context: Context, linkId: Long, studentId: Long, file: java.io.File, filename: String, key: String, isTranscript: Boolean) {
-        val plain = "text/plain".toMediaTypeOrNull(); val pdfType = "application/pdf".toMediaTypeOrNull()
-        val bodyId = linkId.toString().toRequestBody(plain); val bodyStudent = studentId.toString().toRequestBody(plain)
-        val filePart = MultipartBody.Part.createFormData("pdf", filename, file.asRequestBody(pdfType))
-        withContext(Dispatchers.IO) { if (isTranscript) NetworkClient.api.uploadPdf(bodyId, bodyStudent, filePart).string() else NetworkClient.api.uploadReferencePdf(bodyId, bodyStudent, filePart).string() }
-        delay(1000)
-        val resRaw = withContext(Dispatchers.IO) { NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string() }
-        val url = JSONObject(resRaw).optString("url")
-        if (url.isNotEmpty()) { val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }; context.startActivity(i); pdfStatusMessage = null } else pdfStatusMessage = "URL not found"
+        try {
+            val plain = "text/plain".toMediaTypeOrNull()
+            val pdfType = "application/pdf".toMediaTypeOrNull()
+            val bodyId = linkId.toString().toRequestBody(plain)
+            val bodyStudent = studentId.toString().toRequestBody(plain)
+            val filePart = MultipartBody.Part.createFormData("pdf", filename, file.asRequestBody(pdfType))
+            
+            withContext(Dispatchers.IO) { 
+                if (isTranscript) NetworkClient.api.uploadPdf(bodyId, bodyStudent, filePart).string() 
+                else NetworkClient.api.uploadReferencePdf(bodyId, bodyStudent, filePart).string() 
+            }
+            delay(1000)
+            val resRaw = withContext(Dispatchers.IO) { NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string() }
+            val url = JSONObject(resRaw).optString("url")
+            if (url.isNotEmpty()) { 
+                val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                context.startActivity(i) 
+                pdfStatusMessage = null 
+            } else {
+                pdfStatusMessage = "URL not found"
+            }
+        } catch (e: Exception) {
+            pdfStatusMessage = "Upload failed: ${e.message}"
+        }
+    }
+}
+
+class DictionaryUtils { 
+    private val client = OkHttpClient()
+    suspend fun fetchDictionary(url: String): Map<String, String> = withContext(Dispatchers.IO) {
+        val map = mutableMapOf<String, String>()
+        if (url.isBlank()) return@withContext map
+        try {
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val jsonStr = response.body?.string() ?: "{}"
+                    val json = JSONObject(jsonStr)
+                    val keys = json.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        map[key] = json.optString(key)
+                    }
+                }
+            }
+        } catch (e: Exception) { e.printStackTrace() }
+        return@withContext map
     }
 }
