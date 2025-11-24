@@ -118,7 +118,8 @@ class WebPdfGenerator(private val context: Context) {
                         transcriptData.forEach(year => {
                             if(year.semesters) year.semesters.forEach(sem => {
                                 if (sem.semester) {
-                                    sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, "Semester ${'$'}1");
+                                    const semWord = dictionary["семестр"] || "Semester";
+                                    sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, semWord + " ${'$'}1");
                                     sem.semester = translateString(sem.semester);
                                 }
                                 if(sem.subjects) sem.subjects.forEach(sub => {
