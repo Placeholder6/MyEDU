@@ -1,3 +1,4 @@
+//
 package com.example.myedu
 
 import android.annotation.SuppressLint
@@ -19,10 +20,10 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
     
-    // Cache to prevent re-fetching and infinite loops in recursion
+    // Cache to store processed content: FileName -> content
     private val fetchedModules = mutableMapOf<String, String>()
-    // Map to store the variable name assigned to each module
-    private val moduleVarNames = mutableMapOf<String, String>() 
+    // Map: FileName -> UniqueVariableName
+    private val moduleVarNames = mutableMapOf<String, String>()
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         fetchedModules.clear()
@@ -50,7 +51,7 @@ class ReferenceJsFetcher {
             val entryModuleName = "RefModule"
             val scriptBuilder = StringBuilder()
 
-            // 2. Polyfill/Mock Vue global imports (index.hash.js imports)
+            // 2. Polyfill/Mock Vue global imports
             scriptBuilder.append("const Vue = window.Vue;\n")
             scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance } = Vue;\n")
 
@@ -61,7 +62,6 @@ class ReferenceJsFetcher {
             var generatorVarName: String? = null
             
             for ((fileName, content) in fetchedModules) {
-                // Heuristic: Check for pdfmake structure markers
                 if (content.contains("pageSize") && (content.contains("A4") || content.contains("portrait"))) {
                     val varName = moduleVarNames[fileName]
                     if (varName != null) {
@@ -75,7 +75,6 @@ class ReferenceJsFetcher {
             if (generatorVarName != null) {
                 scriptBuilder.append("\nwindow.RefDocGenerator = $generatorVarName.default || $generatorVarName;\n")
             } else {
-                logger("Warning: Generator function not definitively found. Trying default export of entry module.")
                 scriptBuilder.append("\nwindow.RefDocGenerator = $entryModuleName.default || $entryModuleName;\n")
             }
 
@@ -112,104 +111,99 @@ class ReferenceJsFetcher {
                  if (ru.length > 3) content = content.replace(ru, en) 
              }
         }
+        
         fetchedModules[fileName] = content
         val depVarName = fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().takeLast(4)
         moduleVarNames[fileName] = depVarName
 
-        // --- Step 2: Identify Imports and Recurse ---
+        // List of ranges to remove from content (imports/exports)
+        // Using index ranges avoids the "Unexpected token" error caused by replacing identical strings
+        val removalRanges = mutableListOf<IntRange>()
+        val headerImports = StringBuilder()
+
+        // --- Handle Imports ---
+        // Regex to capture: import ... from '...'
+        // Use getOrNull via manual group indexing in loop to fix "No group 1"
         val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
-        
-        val importDetails = mutableListOf<Triple<String, String, String>>()
 
         for (match in imports) {
-            val depPath = safeGetGroup(match, 3) ?: continue 
-            val fullMatch = match.value
+            removalRanges.add(match.range) 
+
+            // Group 3 is the path. Check strictly.
+            val depPath = if (match.groups.size > 3) match.groupValues[3] else continue
             val depFileName = getName(depPath)
-            
             val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
+            
+            // Recurse first
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
 
-            val defaultImport = safeGetGroup(match, 1) ?: ""
-            val namedImports = safeGetGroup(match, 2) ?: ""
+            // Generate header mapping
+            val defaultImport = if (match.groups.size > 1) match.groupValues[1] else ""
+            val namedImports = if (match.groups.size > 2) match.groupValues[2] else ""
+            
+            val targetVar = moduleVarNames[depFileName] ?: nextVarName
 
-            importDetails.add(Triple(fullMatch, defaultImport, namedImports))
-        }
-
-        // --- Step 3: Parse Exports and Construct Return Statement ---
-        val exportMap = mutableMapOf<String, String>() 
-        var cleanContent = content
-
-        // 1. Capture and remove named exports
-        val namedExportsRegex = Regex("""(export\s*\{([\s\S]*?)\}\s*;?\s*)""")
-        val namedExportsMatches = namedExportsRegex.findAll(cleanContent).toList()
-        
-        for (match in namedExportsMatches) {
-             cleanContent = cleanContent.replace(match.value, "")
-        }
-
-        for (match in namedExportsMatches) {
-            val exportBlock = safeGetGroup(match, 2) ?: ""
-            exportBlock.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
-                val parts = exportItem.split(Regex("""\s+as\s+"""))
-                val localName = parts[0].trim()
-                val exportedName = if (parts.size == 2) parts[1].trim() else localName
-                exportMap[exportedName] = localName
+            if (defaultImport.isNotEmpty()) {
+                headerImports.append("const $defaultImport = $targetVar.default || $targetVar;\n")
+            }
+            if (namedImports.isNotEmpty()) {
+                // Handle "as" aliasing: "a as b" -> "a: b"
+                val fixedDestructuring = namedImports.split(",").joinToString(",") { 
+                    it.replace(Regex("""\s+as\s+"""), ": ") 
+                }
+                headerImports.append("const { $fixedDestructuring } = $targetVar;\n")
             }
         }
+
+        // --- Handle Exports ---
+        val exportMap = mutableMapOf<String, String>()
         
-        // 2. Capture and remove default export
-        val defaultExportRegex = Regex("""(export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*)""")
-        val defaultExportMatch = defaultExportRegex.find(cleanContent)
-        if (defaultExportMatch != null) {
-            val fullMatch = defaultExportMatch.value
-            val identifier = safeGetGroup(defaultExportMatch, 2) ?: ""
-            if (identifier.isNotEmpty()) {
-                exportMap["default"] = identifier
+        // Named exports: export { a, b as c }
+        val namedExportRegex = Regex("""export\s*\{([\s\S]*?)\}\s*;?""")
+        namedExportRegex.findAll(content).forEach { match ->
+            removalRanges.add(match.range)
+            val block = if (match.groups.size > 1) match.groupValues[1] else ""
+            block.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { 
+                val parts = it.split(Regex("""\s+as\s+"""))
+                val local = parts[0].trim()
+                val exported = if (parts.size > 1) parts[1].trim() else local
+                exportMap[exported] = local
             }
-            cleanContent = cleanContent.replace(fullMatch, "")
         }
-        
-        val exportsList = exportMap.entries.joinToString(", ") { 
+
+        // Default export: export default X
+        val defaultExportRegex = Regex("""export\s+default\s+([a-zA-Z0-9_$.]+)\s*;?""")
+        val defaultMatch = defaultExportRegex.find(content)
+        if (defaultMatch != null) {
+            removalRanges.add(defaultMatch.range)
+            if (defaultMatch.groups.size > 1) {
+                exportMap["default"] = defaultMatch.groupValues[1].trim()
+            }
+        }
+
+        // --- Reconstruction ---
+        // Remove marked ranges in descending order to keep indices valid
+        val sbContent = StringBuilder(content)
+        removalRanges.sortByDescending { it.first }
+        for (range in removalRanges) {
+            if (range.first >= 0 && range.last < sbContent.length) {
+                // Replace with space to assume we removed a statement but kept token boundaries
+                sbContent.replace(range.first, range.last + 1, " ") 
+            }
+        }
+
+        val returnObj = exportMap.entries.joinToString(", ") { 
             if (it.key == it.value) it.key else "${it.key}: ${it.value}"
         }
-        val returnStatement = "return { $exportsList };"
         
-        // --- Step 4: Clean Imports & Assemble IIFE ---
-
-        // 1. Remove imports
-        importDetails.forEach { (fullMatch, _, _) ->
-            cleanContent = cleanContent.replace(fullMatch, "")
-        }
-        
-        // 2. Remove Comments (Safely)
-        // Removing HTML comments and multi-line comments only to avoid breaking code
-        cleanContent = cleanContent
-            .replace(Regex(""""""), "")
-            .replace(Regex("""/\*![\s\S]*?\*/"""), "")
-
-        // 3. Create header with local imports
-        val header = StringBuilder()
-        importDetails.forEach { (fullMatch, defaultImport, namedImports) ->
-            val depPathMatch = Regex("""['"]([^"']+\.js)['"]""").find(fullMatch)
-            val depFileName = depPathMatch?.let { safeGetGroup(it, 1) }?.let { getName(it) } ?: ""
-            val depVarNameInMap = moduleVarNames[depFileName]
-
-            if (depVarNameInMap != null) {
-                 if (defaultImport.isNotEmpty()) {
-                     header.append("const $defaultImport = $depVarNameInMap.default || $depVarNameInMap;\n")
-                 }
-                 if (namedImports.isNotEmpty()) {
-                     val safeNamedImports = namedImports.split(",").joinToString(",") { item ->
-                         item.replace(Regex("""\s+as\s+"""), ": ")
-                     }
-                     header.append("const { $safeNamedImports } = $depVarNameInMap;\n")
-                 }
-            }
-        }
-
-        // 4. Assemble the module IIFE
-        sb.append("const $depVarName = (() => {\n$header\n$cleanContent\n$returnStatement\n})();\n")
+        // Wrap in IIFE
+        sb.append("const $varName = (() => {\n")
+        sb.append(headerImports)
+        sb.append("\n")
+        sb.append(sbContent)
+        sb.append("\nreturn { $returnObj };\n")
+        sb.append("})();\n")
     }
 
     private fun fetchString(url: String): String {
@@ -224,13 +218,8 @@ class ReferenceJsFetcher {
     
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
-        return safeGetGroup(match, 1)
-    }
-
-    // Helper to avoid "No group 1" IndexOutOfBoundsExceptions
-    private fun safeGetGroup(match: MatchResult?, index: Int): String? {
-        if (match == null) return null
-        return if (index < match.groupValues.size) match.groupValues[index] else null
+        // Correct null check on groups to avoid "No group 1" error
+        return if (match != null && match.groups.size > 1) match.groupValues[1] else null
     }
 }
 
@@ -277,8 +266,6 @@ class ReferencePdfGenerator(private val context: Context) {
                 fun log(msg: String) = logCallback(msg)
             }, "AndroidBridge")
 
-            val dateLocale = if (language == "en") "en-US" else "ru-RU"
-
             val html = """
             <!DOCTYPE html>
             <html>
@@ -309,23 +296,28 @@ class ReferencePdfGenerator(private val context: Context) {
                 function runGeneration() {
                     try {
                         AndroidBridge.log("JS: Starting generation...");
-                        const Comp = window.RefComponent;
                         
+                        if (typeof window.RefDocGenerator !== 'function') {
+                             throw "RefDocGenerator not found. Check loaded modules.";
+                        }
+
+                        const Comp = window.RefComponent;
                         if (!Comp || !Comp.setup) {
-                            throw "Component setup not found. Check if RefModule loaded correctly.";
+                            throw "Component setup not found.";
                         }
                         
                         const { reactive, unref } = Vue;
                         const props = reactive(propsData);
                         const context = { attrs: {}, slots: {}, emit: () => {} };
                         
+                        // Execute component logic to calculate derived fields (course number, etc.)
                         const state = Comp.setup(props, context);
                         
                         setTimeout(() => {
                              try {
-                                 
                                  let dataObj = null;
                                  
+                                 // Scan state to find the data object (contains course, date, docId)
                                  for (const key in state) {
                                      const val = unref(state[key]);
                                      if (val && typeof val === 'object' && val.edunum && val.id) {
@@ -335,35 +327,26 @@ class ReferencePdfGenerator(private val context: Context) {
                                  }
                                  
                                  if (!dataObj) {
-                                     dataObj = {
-                                         id: unref(state.docId || state.id || state.doc_id),
-                                         edunum: unref(state.course || state.edunum || state.courseStr),
-                                         date: unref(state.date || state.currentDate),
-                                         adress: unref(state.address || state.adress || state.univAddress)
-                                     };
+                                     if (unref(state.id) && unref(state.edunum)) {
+                                         dataObj = {};
+                                         for(const key in state) dataObj[key] = unref(state[key]);
+                                     }
                                  }
+
+                                 if (!dataObj) throw "Could not locate document data in component state.";
                                  
-                                 if (!dataObj || !dataObj.id) {
-                                     if (unref(state.id) && unref(state.edunum)) dataObj = state;
-                                     else throw "Could not calculate document data. State keys: " + Object.keys(unref(state)).join(",");
-                                 }
+                                 const finalData = JSON.parse(JSON.stringify(dataObj));
                                  
-                                 const finalData = {};
-                                 for(const key in dataObj) { finalData[key] = unref(dataObj[key]); }
-                                 
-                                 AndroidBridge.log("JS: Calculated: " + JSON.stringify(finalData));
-                                 
-                                 if (typeof window.RefDocGenerator !== 'function') throw "RefDocGenerator function not found in window object.";
-                                 
+                                 AndroidBridge.log("JS: Generating PDF...");
                                  const docDef = window.RefDocGenerator(propsData.student, finalData, propsData.qr);
                                  pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                                  
                              } catch(err) {
-                                 AndroidBridge.returnError(err.toString());
+                                 AndroidBridge.returnError("Logic Error: " + err.toString());
                              }
-                        }, 200);
+                        }, 500); 
                         
-                    } catch(e) { AndroidBridge.returnError(e.toString()); }
+                    } catch(e) { AndroidBridge.returnError("Setup Error: " + e.toString()); }
                 }
                 
                 runGeneration();
@@ -374,7 +357,7 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Generation starts automatically via runGeneration() call in HTML
+                    // Generation starts via script
                 }
             }
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
