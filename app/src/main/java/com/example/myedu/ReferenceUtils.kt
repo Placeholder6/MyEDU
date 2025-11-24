@@ -2,7 +2,7 @@ package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64 // Import added to resolve Unresolved reference
+import android.util.Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -116,8 +116,8 @@ class ReferenceJsFetcher {
         moduleVarNames[fileName] = depVarName
 
         // --- Step 2: Identify Imports and Recurse ---
-        // Matches: import Name from './file.js' OR import { A, B } from './file.js'
-        val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']\./([^"']+\.js)["']""")
+        // Match imports ending in .js, regardless of path prefix. (FIX for Fetch Error / "as" error)
+        val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
 
         for (match in imports) {
@@ -127,54 +127,50 @@ class ReferenceJsFetcher {
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
         }
 
-        // --- Step 3: Parse Exports and Construct Return Statement (The fix for syntax errors) ---
+        // --- Step 3: Parse Exports and Construct Return Statement (Fix for Syntax Errors) ---
         val exportMap = mutableMapOf<String, String>() 
+        val contentBuilder = StringBuilder(content)
         
-        // 3a. Capture Named Exports for the return object, and simultaneously remove the entire export block
+        // 1. Capture and remove named exports: export { A, B as C };
         val namedExportsRegex = Regex("""export\s*\{[\s\S]*?\}\s*;?\s*""")
-        val cleanedContent = StringBuilder(content)
-        
-        namedExportsRegex.findAll(content).toList().forEach { match ->
-            // Parse content inside { } to determine what was exported
+        namedExportsRegex.findAll(contentBuilder.toString()).toList().forEach { match ->
             match.groupValues[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
                 val parts = exportItem.split(Regex("""\s+as\s+"""))
                 val localName = parts[0].trim()
                 val exportedName = if (parts.size == 2) parts[1].trim() else localName
                 exportMap[exportedName] = localName
             }
-            // Remove the matched export statement from the content
-            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(match.value, ""))
+            // Remove the statement from the content
+            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(match.value, ""))
         }
         
-        // 3b. Capture Default Export, removing it from content
+        // 2. Capture and remove default export: export default X;
         val defaultExportRegex = Regex("""export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*""")
-        val defaultExportMatch = defaultExportRegex.find(cleanedContent.toString())
+        val defaultExportMatch = defaultExportRegex.find(contentBuilder.toString())
         if (defaultExportMatch != null) {
             exportMap["default"] = defaultExportMatch.groupValues[1].trim()
-            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(defaultExportMatch.value, ""))
+            // Remove the statement from the content
+            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(defaultExportMatch.value, ""))
         }
         
-        // Create the Return Statement from collected exports
+        // 3. Create the Return Statement
         val exportsList = exportMap.entries.joinToString(", ") { 
             if (it.key == it.value) it.key else "${it.key}: ${it.value}"
         }
         val returnStatement = "return { $exportsList };"
         
-        // --- Step 4: Final Clean-up and Assembly ---
+        // --- Step 4: Clean Imports & Assemble IIFE ---
 
-        // 1. Remove all import statements that we already processed
+        // 1. Remove remaining import declarations from the content body
         imports.forEach { match ->
-            // Match the import statement plus optional trailing semicolon/whitespace
-            val pattern = Regex(Regex.escape(match.value) + """\s*;\s*""")
-            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(pattern.toString(), ""))
-            // Fallback for tricky imports
-            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(match.value, ""))
+            // Use original match value to remove it
+            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(match.value, ""))
         }
         
-        // 2. Remove HTML and license comments (source of '--' and other issues)
-        var finalContent = cleanedContent.toString()
-            .replace(Regex(""""""), "") // HTML/Vue comments (Source of '--' error)
-            .replace(Regex("""/\*![\s\S]*?\*/"""), "") // Multi-line/license comments
+        // 2. Remove HTML and license comments (Source of '--' error)
+        var finalContent = contentBuilder.toString()
+            .replace(Regex(""""""), "")
+            .replace(Regex("""/\*![\s\S]*?\*/"""), "")
 
         // 3. Create header with local imports
         val header = StringBuilder()
