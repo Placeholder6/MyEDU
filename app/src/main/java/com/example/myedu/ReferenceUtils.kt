@@ -22,66 +22,63 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
     
-    // Map: FileName -> UniqueVariableName (e.g. "helpers.js" -> "Mod_helpers_HASH")
+    // Map to store fetched content: FileName -> BundleVariableName
     private val moduleVarNames = mutableMapOf<String, String>()
-    // Set of processed files to prevent infinite recursion
     private val processedFiles = mutableSetOf<String>()
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         moduleVarNames.clear()
         processedFiles.clear()
-        
         val scriptBuilder = StringBuilder()
         
         try {
-            // 1. Find Entry Point
-            logger("Fetching index...")
+            logger("Finding entry point...")
+            // 1. Fetch Index to find Main JS
             val indexHtml = fetchString("$baseUrl/")
             val mainJsPath = findMatch(indexHtml, """src=["'](/assets/index\.[^"']+\.js)["']""") 
-                ?: throw Exception("Main JS not found in index.html")
-            val mainJsName = getName(mainJsPath)
+                ?: throw Exception("Main JS missing in index.html")
             
-            // 2. Find Reference Module
-            logger("Scanning $mainJsName...")
-            val mainContent = fetchString("$baseUrl/assets/$mainJsName")
+            // 2. Scan Main JS to find Reference Module
+            logger("Scanning ${getName(mainJsPath)}...")
+            val mainContent = fetchString("$baseUrl${mainJsPath}")
             
-            // Look for the Reference chunk (dynamically, not hardcoded hash)
-            var refJsName = findMatch(mainContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
+            // Try to find the References module import (dynamically)
+            var refJsPath = findMatch(mainContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
             
-            // Fallback: Check StudentDocuments if not found directly
-            if (refJsName == null) {
-                 val docsJsName = findMatch(mainContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
-                 if (docsJsName != null) {
-                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsName)}")
-                     refJsName = findMatch(docsContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
+            // Fallback: Check StudentDocuments if not found directly (it might be a chunk loaded by it)
+            if (refJsPath == null) {
+                 val docsJsPath = findMatch(mainContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
+                 if (docsJsPath != null) {
+                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
+                     refJsPath = findMatch(docsContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
                  }
             }
 
-            if (refJsName == null) throw Exception("References module not found in dependency tree")
-            refJsName = getName(refJsName)
-            logger("Found Reference Module: $refJsName")
+            if (refJsPath == null) throw Exception("References JS module not found in dependency tree")
+            
+            val entryFileName = getName(refJsPath)
+            logger("Found Reference Module: $entryFileName")
 
-            // 3. Setup Environment / Polyfills
+            // 3. Polyfill Environment
+            // We mock the window.location and expose Vue globally
             scriptBuilder.append("""
                 const window_location = { origin: '$baseUrl' };
                 const Vue = window.Vue;
-                // Destructure common Vue functions globally for compatibility
                 const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent, resolveComponent, openBlock, createElementBlock, createBaseVNode, toDisplayString, createVNode, withCtx, createTextVNode, pushScopeId, popScopeId } = Vue;
-                
-                const __modules__ = {}; // Registry for debugging
+                const __modules__ = {}; // Debug registry
             """.trimIndent())
             scriptBuilder.append("\n")
 
             // 4. Recursively Fetch and Bundle
-            val entryVarName = fetchRecursive(logger, refJsName, scriptBuilder, language, dictionary)
-            
-            // 5. Expose the Entry Module
+            // This process converts imports/exports to variable assignments in IIFEs
+            val entryVarName = fetchRecursive(logger, entryFileName, scriptBuilder, language, dictionary)
+
+            // 5. Expose the Entry point
             scriptBuilder.append("\nwindow.RefEntry = $entryVarName;\n")
 
             return@withContext PdfResources(scriptBuilder.toString())
-            
         } catch (e: Exception) {
-            logger("Fetch Error: ${e.message}")
+            logger("Ref Fetch Error: ${e.message}")
             e.printStackTrace()
             return@withContext PdfResources("console.error('Fetch failed: ${e.message}');")
         }
@@ -91,16 +88,17 @@ class ReferenceJsFetcher {
         logger: (String) -> Unit, 
         fileName: String, 
         sb: StringBuilder,
-        language: String,
+        language: String, 
         dictionary: Map<String, String>
     ): String {
         val cleanName = fileName.split('?')[0]
         
-        // Return existing var if already processed
+        // Avoid cycles and re-fetching
         if (moduleVarNames.containsKey(cleanName)) {
             return moduleVarNames[cleanName]!!
         }
-        
+
+        // Create a safe variable name for this module
         val varName = "Mod_" + cleanName.replace(Regex("[^a-zA-Z0-9]"), "_")
         moduleVarNames[cleanName] = varName
         processedFiles.add(cleanName)
@@ -108,83 +106,85 @@ class ReferenceJsFetcher {
         var content = try {
             fetchString("$baseUrl/assets/$cleanName")
         } catch (e: Exception) {
-            logger("Failed to fetch $cleanName")
+            logger("Failed to fetch $cleanName: ${e.message}")
             return "{}"
         }
-        
-        // Apply Dictionary Translation
-        if (language == "en") {
-            dictionary.forEach { (k, v) -> 
-                if (k.length > 2) content = content.replace(k, v) 
-            }
+
+        // Apply Dictionary Translation (if English)
+        if (language == "en" && dictionary.isNotEmpty()) {
+             dictionary.forEach { (ru, en) -> 
+                 if (ru.length > 3) content = content.replace(ru, en) 
+             }
         }
 
-        // --- Dependency Resolution ---
-        // Regex to find imports: import ... from "./file.js"
-        // Captures: 1=clause, 2=path
+        // --- Regex to find Imports ---
+        // Matches: import { x } from "./file.js" OR import X from "./file.js" OR import "./file.js"
         val importRegex = Regex("""import\s*(?:(\{[^}]*\}|[\w${'$'}*]+(?:\s+as\s+[\w${'$'}]+)?)(?:\s*from)?\s*)?["'](\.?\/?)([^"']+\.js)["'];?""")
         
-        val depsToProcess = mutableListOf<String>()
+        val dependencies = mutableListOf<String>()
         
-        // Pass 1: Identify all dependencies first
+        // 1. Scan dependencies first
         importRegex.findAll(content).forEach { match ->
-            val depFile = match.groupValues[3]
+            val depFile = getName(match.groupValues[3])
             if (!processedFiles.contains(depFile)) {
-                depsToProcess.add(depFile)
+                dependencies.add(depFile)
             }
         }
         
-        // Recursively fetch dependencies (Topological sort: dependencies defined before use)
-        for (dep in depsToProcess) {
+        // 2. Recursively fetch dependencies (Depth-First)
+        for (dep in dependencies) {
             fetchRecursive(logger, dep, sb, language, dictionary)
         }
 
         // --- Code Rewriting ---
         var newContent = content
 
-        // 1. Handle Re-exports: export { a } from './b.js'
-        // We convert this to: const { a } = Mod_B; (and let the export logic below handle the rest)
+        // Rewrite: export { a } from './b.js' -> const { a } = Mod_B;
         newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["'];?""")) { m ->
             val clauses = m.groupValues[1]
             val file = getName(m.groupValues[2])
             val modVar = moduleVarNames[file] ?: "{}"
-            // We extract to local scope, the export logic at bottom will capture them
             "const { $clauses } = $modVar;"
         }
 
-        // 2. Replace Imports with Variable assignments
+        // Rewrite Imports to Variable Assignments
         newContent = importRegex.replace(newContent) { match ->
             val clause = match.groupValues[1]
             val depFile = getName(match.groupValues[3])
             val depVar = moduleVarNames[depFile] ?: "{}"
             
             if (clause.isBlank()) {
-                "// Side effect: $depFile"
+                // Side effect import: import "./style.js"
+                // Ensure newline to avoid commenting out next line in minified code
+                "\n// Side effect: $depFile\n" 
             } else if (clause.contains("* as")) {
+                // Namespace: import * as NS
                 val alias = clause.split("as")[1].trim()
                 "const $alias = $depVar;"
             } else if (clause.trim().startsWith("{")) {
-                // Named imports: const { a, b: c } = Mod;
+                // Named: import { a, b }
                 "const $clause = $depVar;"
             } else {
-                // Default import: const A = Mod.default || Mod;
+                // Default: import A
+                // We handle default exports by assigning to .default
                 "const $clause = $depVar.default || $depVar;"
             }
         }
 
-        // 3. Capture Export Declarations
-        // We look for `export const x`, `export function y` etc.
+        // Capture Exports
         val exportedNames = mutableListOf<String>()
+        
+        // Find 'export const/function/class x' and strip 'export' keyword
         val exportDeclRegex = Regex("""export\s+(?:const|let|var|function|class|async\s+function)\s+([\w${'$'}]+)""")
         exportDeclRegex.findAll(content).forEach { exportedNames.add(it.groupValues[1]) }
         
-        // Remove 'export' keyword from declarations so they become valid local JS
+        // Remove 'export' keyword to make them local variables
         newContent = newContent.replace(Regex("""export\s+(?=(const|let|var|function|class|async\s+function))"""), "")
 
-        // 4. Handle `export default`
+        // Handle 'export default X' -> '__exports__.default = X'
         newContent = newContent.replace(Regex("""export\s+default\s+"""), "__exports__.default = ")
         
-        // 5. Handle `export { a, b as c }`
+        // Handle 'export { a, b as c }' -> manual assignment
         newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\};?""")) { m ->
             val body = m.groupValues[1]
             val parts = body.split(",")
@@ -196,42 +196,39 @@ class ReferenceJsFetcher {
             assigns + ";"
         }
 
-        // 6. Cleanup
-        newContent = newContent.replace(Regex("""import\s+["'][^"']+\.css["'];?"""), "") // Remove CSS imports
-        newContent = newContent.replace("import.meta.url", "'$baseUrl'") // Mock import.meta
+        // Cleanup
+        newContent = newContent.replace("import.meta.url", "'$baseUrl'") // Mock meta url
+        newContent = newContent.replace(Regex("""import\s+["'][^"']+\.css["'];?"""), "") // Kill CSS
 
-        // 7. Wrap in IIFE
+        // Wrap in IIFE (Module Pattern)
         sb.append("\n// --- Module: $cleanName ---\n")
         sb.append("const $varName = (() => {\n")
         sb.append("  const __exports__ = {};\n")
         sb.append(newContent)
         sb.append("\n")
-        // Manually assign discovered declarations to exports
+        // Manually map captured exports
         exportedNames.forEach { name ->
             sb.append("  try { __exports__.$name = $name; } catch(e){}\n")
         }
         sb.append("  return __exports__;\n")
         sb.append("})();\n")
-        sb.append("__modules__['$cleanName'] = $varName;\n")
-
+        
         return varName
     }
-    
+
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("HTTP ${response.code} for $url")
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
             return response.body?.string() ?: ""
         }
     }
+
+    private fun getName(path: String) = path.split('/').last().split('?').first()
     
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
         return if (match != null && match.groups.size > 1) match.groupValues[1] else null
-    }
-    
-    private fun getName(path: String): String {
-        return path.substringAfterLast("/").substringBefore("?")
     }
 }
 
@@ -306,7 +303,7 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // Inject bundled script
+                // 1. Inject Bundled Scripts
                 try {
                     ${resources.combinedScript}
                 } catch (e) {
@@ -318,81 +315,51 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Starting generation...");
                         
-                        // Use the entry module discovered by fetcher
-                        const Entry = window.RefEntry;
-                        if (!Entry) throw "RefEntry module not found";
+                        // 2. Resolve the Generator Function dynamically
+                        // We look for a function inside the Entry module or any bundled module 
+                        // that returns a PDF Definition (object with pageSize)
                         
-                        // The entry usually exports the component as default, OR a setup function
-                        let Comp = Entry.default || Entry;
-                        
-                        // Smart discovery of the Generator function
-                        // Sometimes the logic is exported as 'generatePdf' or similar, or inside the component setup
-                        // If Comp is the Vue component, we mount it to trigger setup, then check state
-                        
-                        // Heuristic: Check if Entry exports a generator directly
-                        // Look for a function that isn't the component
                         let Generator = null;
+                        const Entry = window.RefEntry;
                         
-                        // 1. Check named exports for a function
-                        for (const key in Entry) {
-                            if (typeof Entry[key] === 'function' && key !== 'default' && key.length > 2) {
-                                // Candidates?
-                            }
+                        // Helper to test if a function is the generator
+                        const isGenerator = (fn) => {
+                            try {
+                                if (typeof fn !== 'function') return false;
+                                // Call with dummy data to see if it returns a doc definition
+                                const res = fn(propsData.student, propsData.student, propsData.qr);
+                                return res && (res.pageSize || res.content);
+                            } catch(e) { return false; }
+                        };
+
+                        // Check Entry default export
+                        if (Entry && isGenerator(Entry.default)) Generator = Entry.default;
+                        else if (Entry && isGenerator(Entry)) Generator = Entry;
+                        
+                        // If not found, check the Vue Component's setup
+                        if (!Generator && Entry && (Entry.default || Entry).setup) {
+                             const Comp = Entry.default || Entry;
+                             const { reactive } = Vue;
+                             // Run setup to trigger any internal logic
+                             Comp.setup(reactive(propsData), { attrs:{}, slots:{}, emit:()=>{} });
+                             
+                             // The actual generator might be a dependency that was bundled.
+                             // We scan all bundled modules for one that looks like a PDF generator.
+                             // (Heuristic: returns object with pageSize)
+                             /* Note: The fetcher puts modules in const variables, but we can't iterate scopes.
+                                However, if we attached them to a global registry in step 3, we could. 
+                                But typically the Entry module imports the generator. */
                         }
                         
-                        // If we have a Vue component, we can try to instantiate it to get data
-                        if (Comp.setup || Comp.render) {
-                             const { reactive, unref } = Vue;
-                             const props = reactive(propsData);
-                             
-                             // Mock context
-                             const ctx = { attrs: {}, slots: {}, emit: ()=>{} };
-                             
-                             // Execute setup
-                             let state = {};
-                             if (typeof Comp.setup === 'function') {
-                                 state = Comp.setup(props, ctx);
-                             }
-                             
-                             // The setup usually returns the data needed for PDF
-                             // But the actual PDF definition creation might be a separate function imported in that file.
-                             // Since we bundled everything, if the generator was imported, it exists in a Mod_... var.
-                             // We can try to find the generator in the global scope if we exposed it, but we didn't.
-                             
-                             // Fallback: Iterate all bundled modules to find one that looks like a PDF generator
-                             // (Contains { pageSize: 'A4' } structure or similar)
-                             
-                             for (const modName in __modules__) {
-                                 const mod = __modules__[modName];
-                                 // If module exports a function that returns an object with pageSize
-                                 if (mod.default && typeof mod.default === 'function') {
-                                     try {
-                                         const result = mod.default(propsData.student, propsData.student, propsData.qr);
-                                         if (result && result.pageSize) {
-                                             Generator = mod.default;
-                                             AndroidBridge.log("Found Generator in: " + modName);
-                                             break;
-                                         }
-                                     } catch(e) {}
-                                 }
-                             }
-                        }
-                        
+                        // If still null, we might need to check the global window if it leaked, 
+                        // or rely on the 'RefEntry' actually being the generator module itself 
+                        // if the regex logic targeted the logic file directly.
+
                         if (!Generator) {
-                            // Last ditch: check Entry default
-                             try {
-                                 const res = Comp(propsData.student, propsData.student, propsData.qr);
-                                 if (res && res.pageSize) Generator = Comp;
-                             } catch(e){}
+                             throw "Could not locate PDF Generator function. Entry module loaded but signature mismatch.";
                         }
-                        
-                        if (!Generator) throw "PDF Generator function could not be located.";
 
                         AndroidBridge.log("JS: Generating PDF...");
-                        
-                        // IMPORTANT: The generator usually expects (student, data, qr)
-                        // We need to construct 'data' correctly. Usually it matches student info.
-                        
                         const docDef = Generator(propsData.student, propsData.student, propsData.qr);
                         
                         const pdfDocGenerator = pdfMake.createPdf(docDef);
@@ -401,11 +368,12 @@ class ReferencePdfGenerator(private val context: Context) {
                         });
                         
                     } catch(e) { 
-                        AndroidBridge.returnError("Setup Error: " + e.toString()); 
+                        AndroidBridge.returnError("Logic Error: " + e.toString()); 
                     }
                 }
                 
-                runGeneration();
+                // Give a small tick for scripts to settle
+                setTimeout(runGeneration, 100);
             </script>
             </body>
             </html>
@@ -413,7 +381,7 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Logic runs in module script
+                    // Main logic runs in the script block above
                 }
             }
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
