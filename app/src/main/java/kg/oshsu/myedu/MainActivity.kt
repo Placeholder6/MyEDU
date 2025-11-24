@@ -202,21 +202,46 @@ fun MainAppStructure(vm: MainViewModel) {
     }
 }
 
-// --- SCREEN: REFERENCE VIEW (Native + Buttons) ---
+// --- SCREEN: REFERENCE VIEW ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current; val user = vm.userData; val profile = vm.profileData; val mov = profile?.studentMovement
     val activeSemester = profile?.active_semester ?: 1; val course = (activeSemester + 1) / 2
     
-    Scaffold(topBar = { 
-        TopAppBar(
-            title = { Text("Reference (Form 8)") }, 
-            navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
-        ) 
-    }) { padding ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Scaffold(
+        topBar = { 
+            TopAppBar(
+                title = { Text("Reference (Form 8)") }, 
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+            ) 
+        },
+        // FIXED: Buttons always present in Bottom Bar
+        bottomBar = {
+            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                Column(Modifier.padding(16.dp)) {
+                    if (vm.isPdfGenerating) {
+                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                             Spacer(Modifier.width(16.dp))
+                             Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
+                         }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
+                            }
+                            Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 // Native Info Card
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                     Column(Modifier.padding(24.dp)) {
@@ -230,26 +255,8 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                     }
                 }
                 
-                Spacer(Modifier.height(32.dp))
-                
-                // Extra Buttons at Bottom
-                if (vm.isPdfGenerating) {
-                     CircularProgressIndicator(Modifier.align(Alignment.CenterHorizontally))
-                     Spacer(Modifier.height(8.dp))
-                     Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                            Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
-                        }
-                        Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                            Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
-                        }
-                    }
-                }
-
                 if (vm.pdfStatusMessage != null) { Spacer(Modifier.height(16.dp)); Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.inverseSurface)) { Text(vm.pdfStatusMessage!!, color = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(16.dp)) } }
-                Spacer(Modifier.height(80.dp))
+                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -258,23 +265,49 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
 @Composable
 fun RefDetailRow(label: String, value: String) { Column(Modifier.padding(bottom = 16.dp)) { Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); Text(value, style = MaterialTheme.typography.bodyLarge) } }
 
-// --- SCREEN: TRANSCRIPT VIEW (Native + Buttons) ---
+// --- SCREEN: TRANSCRIPT VIEW ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
-    Scaffold(topBar = { 
-        TopAppBar(
-            title = { Text("Full Transcript") }, 
-            navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
-        ) 
-    }) { padding ->
+    Scaffold(
+        topBar = { 
+            TopAppBar(
+                title = { Text("Full Transcript") }, 
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+            ) 
+        },
+        // FIXED: Buttons always present in Bottom Bar
+        bottomBar = {
+            if (vm.transcriptData.isNotEmpty()) {
+                Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                    Column(Modifier.padding(16.dp)) {
+                         if (vm.isPdfGenerating) {
+                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                                 Spacer(Modifier.width(16.dp))
+                                 Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
+                             }
+                         } else {
+                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
+                                }
+                                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
+                                }
+                            }
+                         }
+                    }
+                }
+            }
+        }
+    ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             if (vm.isTranscriptLoading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else if (vm.transcriptData.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No transcript data.") }
             else {
                 LazyColumn(Modifier.widthIn(max = 840.dp).padding(horizontal = 16.dp)) {
-                    // Native List Data
                     vm.transcriptData.forEach { yearData ->
                         item { Spacer(Modifier.height(16.dp)); Text(yearData.eduYear ?: "Unknown Year", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
                         yearData.semesters?.forEach { sem ->
@@ -289,28 +322,7 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
                             }
                         }
                     }
-                    
-                    // Extra Buttons at Bottom
-                    item {
-                         Spacer(Modifier.height(32.dp))
-                         if (vm.isPdfGenerating) {
-                             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                                 CircularProgressIndicator()
-                                 Spacer(Modifier.height(8.dp))
-                                 Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
-                             }
-                         } else {
-                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
-                                }
-                                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
-                                }
-                            }
-                         }
-                         Spacer(Modifier.height(80.dp))
-                    }
+                    item { Spacer(Modifier.height(20.dp)) }
                 }
             }
             if (vm.pdfStatusMessage != null) Card(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.inverseSurface)) { Text(vm.pdfStatusMessage!!, color = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(16.dp)) }
@@ -350,7 +362,7 @@ fun ProfileScreen(vm: MainViewModel) {
                 Spacer(Modifier.height(24.dp))
             }
             
-            // Document Buttons (Reverted to Old UI: Open View)
+            // Document Buttons
             InfoSection("Documents")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { vm.showReferenceScreen = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Reference") }
