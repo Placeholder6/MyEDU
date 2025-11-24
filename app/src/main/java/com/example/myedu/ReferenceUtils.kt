@@ -1,8 +1,9 @@
+//
 package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
+import android.util.Base64 // Fix for Unresolved reference
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -19,9 +20,10 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
     
+    // Cache to prevent re-fetching and infinite loops in recursion
     private val fetchedModules = mutableMapOf<String, String>()
     // Key: FileName, Value: Assigned JS variable name
-    private val moduleVarNames = mutableMapOf<String, String>()
+    private val moduleVarNames = mutableMapOf<String, String>() 
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         fetchedModules.clear()
@@ -30,6 +32,7 @@ class ReferenceJsFetcher {
         try {
             logger("Finding entry point...")
             val indexHtml = fetchString("$baseUrl/")
+            // Regex safety: use findMatch helper which handles missing groups
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
@@ -116,25 +119,25 @@ class ReferenceJsFetcher {
         moduleVarNames[fileName] = depVarName
 
         // --- Step 2: Identify Imports and Recurse ---
-        // Match: import Name from 'path' OR import { A } from 'path'. The path is GROUP 3.
+        // Match: import Name from 'path' OR import { A } from 'path'. Path is in the last capturing group.
+        // We allow flexible path matching to catch ./, ../, or just filename
         val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
         
-        // Store all original match values and details for removal and header generation
+        // Store all original match details for removal and header generation
         val importDetails = mutableListOf<Triple<String, String, String>>()
 
         for (match in imports) {
-            // Check for valid path, which should always be in group 3 for our regex
-            val depPath = match.groupValues.getOrNull(3) ?: continue // Skip if path is missing (error prevention)
+            // Use getOrNull to prevent "No group 1" / IndexOutOfBounds errors
+            val depPath = match.groups[3]?.value ?: continue 
             val fullMatch = match.value
             val depFileName = getName(depPath)
             
             val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
 
-            // Extract the parts needed for header construction (default/named imports)
-            val defaultImport = match.groupValues.getOrNull(1) ?: ""
-            val namedImports = match.groupValues.getOrNull(2) ?: ""
+            val defaultImport = match.groups[1]?.value ?: ""
+            val namedImports = match.groups[2]?.value ?: ""
 
             importDetails.add(Triple(fullMatch, defaultImport, namedImports))
         }
@@ -149,14 +152,12 @@ class ReferenceJsFetcher {
             val fullMatch = match.groupValues[1]
             val exportBlock = match.groupValues[2]
             
-            // Parse content inside { }
             exportBlock.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
                 val parts = exportItem.split(Regex("""\s+as\s+"""))
                 val localName = parts[0].trim()
                 val exportedName = if (parts.size == 2) parts[1].trim() else localName
                 exportMap[exportedName] = localName
             }
-            // Remove the statement from the content
             cleanContent = cleanContent.replace(fullMatch, "")
         }
         
@@ -165,11 +166,10 @@ class ReferenceJsFetcher {
         val defaultExportMatch = defaultExportRegex.find(cleanContent)
         if (defaultExportMatch != null) {
             val fullMatch = defaultExportMatch.groupValues[1]
-            exportMap["default"] = defaultExportMatch.groupValues[2].trim() // Index 2 contains the identifier
+            exportMap["default"] = defaultExportMatch.groupValues[2].trim() 
             cleanContent = cleanContent.replace(fullMatch, "")
         }
         
-        // 3. Create the Return Statement
         val exportsList = exportMap.entries.joinToString(", ") { 
             if (it.key == it.value) it.key else "${it.key}: ${it.value}"
         }
@@ -190,7 +190,6 @@ class ReferenceJsFetcher {
         // 3. Create header with local imports
         val header = StringBuilder()
         importDetails.forEach { (fullMatch, defaultImport, namedImports) ->
-            // Extract the dependency file name from the full match for variable lookup
             val depPathMatch = Regex("""['"]([^"']+\.js)['"]""").find(fullMatch)
             val depFileName = depPathMatch?.groupValues?.get(1)?.let { getName(it) } ?: ""
             val depVarNameInMap = moduleVarNames[depFileName]
@@ -200,7 +199,11 @@ class ReferenceJsFetcher {
                      header.append("const $defaultImport = $depVarNameInMap.default || $depVarNameInMap;\n")
                  }
                  if (namedImports.isNotEmpty()) {
-                     header.append("const { $namedImports } = $depVarNameInMap;\n")
+                     // Fix "Unexpected identifier 'as'": Replace "a as b" with "a: b" for JS destructuring
+                     val safeNamedImports = namedImports.split(",").joinToString(",") { item ->
+                         item.replace(Regex("""\s+as\s+"""), ": ")
+                     }
+                     header.append("const { $safeNamedImports } = $depVarNameInMap;\n")
                  }
             }
         }
@@ -218,7 +221,16 @@ class ReferenceJsFetcher {
     }
 
     private fun getName(path: String) = path.split('/').last()
-    private fun findMatch(content: String, regex: String): String? = Regex(regex).find(content)?.groupValues?.get(1)
+    
+    // Helper to safely get a capture group without throwing "No group 1" exceptions
+    private fun findMatch(content: String, regex: String): String? {
+        val match = Regex(regex).find(content)
+        return if (match != null && match.groups.size > 1) {
+            match.groupValues[1]
+        } else {
+            null
+        }
+    }
 }
 
 class ReferencePdfGenerator(private val context: Context) {
@@ -313,6 +325,7 @@ class ReferencePdfGenerator(private val context: Context) {
                                  
                                  let dataObj = null;
                                  
+                                 // Scan state to find the data object (contains course, date, docId)
                                  for (const key in state) {
                                      const val = unref(state[key]);
                                      if (val && typeof val === 'object' && val.edunum && val.id) {
@@ -321,6 +334,7 @@ class ReferencePdfGenerator(private val context: Context) {
                                      }
                                  }
                                  
+                                 // Fallback construction
                                  if (!dataObj) {
                                      dataObj = {
                                          id: unref(state.docId || state.id || state.doc_id),
@@ -332,7 +346,7 @@ class ReferencePdfGenerator(private val context: Context) {
                                  
                                  if (!dataObj || !dataObj.id) {
                                      if (unref(state.id) && unref(state.edunum)) dataObj = state;
-                                     else throw "Could not calculate document data. State keys: " + Object.keys(unref(state)).join(",");
+                                     else throw "Could not calculate document data. State keys: " + Object.keys(state).join(",");
                                  }
                                  
                                  const finalData = {};
