@@ -1,4 +1,3 @@
-//
 package com.example.myedu
 
 import android.annotation.SuppressLint
@@ -14,6 +13,7 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.util.regex.Pattern
 
 class ReferenceJsFetcher {
 
@@ -37,6 +37,7 @@ class ReferenceJsFetcher {
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
             // 1. Identify the logic file for Reference (Form 8)
+            // It might be imported by main or by StudentDocuments
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
@@ -45,20 +46,24 @@ class ReferenceJsFetcher {
                     refJsPath = findMatch(docsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
                 }
             }
-            if (refJsPath == null) throw Exception("References7 JS missing")
+            
+            if (refJsPath == null) throw Exception("References7 JS missing in chain")
             
             val entryFileName = getName(refJsPath)
-            val entryModuleName = "RefModule"
+            
+            // We will build a single JS string containing all dependencies
             val scriptBuilder = StringBuilder()
 
-            // 2. Polyfill/Mock Vue global imports
+            // 2. Polyfill/Mock Vue global imports so the scripts can run
             scriptBuilder.append("const Vue = window.Vue;\n")
-            scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance } = Vue;\n")
-
-            logger("Fetching $entryFileName and dependencies...")
-            fetchModuleRecursive(logger, entryFileName, entryModuleName, scriptBuilder, dictionary, language)
+            scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent } = Vue;\n")
+            
+            // 3. Recursively fetch and bundle
+            logger("Fetching module tree starting from $entryFileName...")
+            val entryVarName = fetchModuleRecursive(logger, entryFileName, scriptBuilder, dictionary, language)
 
             // 4. Find and Expose the PDF Generator Function
+            // We look for a module that mentions 'pageSize' and 'A4'/ 'portrait', typical for pdfMake definitions
             var generatorVarName: String? = null
             
             for ((fileName, content) in fetchedModules) {
@@ -72,14 +77,12 @@ class ReferenceJsFetcher {
                 }
             }
             
-            if (generatorVarName != null) {
-                scriptBuilder.append("\nwindow.RefDocGenerator = $generatorVarName.default || $generatorVarName;\n")
-            } else {
-                scriptBuilder.append("\nwindow.RefDocGenerator = $entryModuleName.default || $entryModuleName;\n")
-            }
-
-            // 5. Expose the Vue Component Logic
-            scriptBuilder.append("\nwindow.RefComponent = $entryModuleName.default || $entryModuleName;\n")
+            // Fallback: use the entry module if no specific generator found (unlikely if structure holds)
+            val targetGenerator = generatorVarName ?: entryVarName
+            
+            scriptBuilder.append("\n// Expose for AndroidBridge\n")
+            scriptBuilder.append("window.RefDocGenerator = $targetGenerator.default || $targetGenerator;\n")
+            scriptBuilder.append("window.RefComponent = $entryVarName.default || $entryVarName;\n")
 
             return@withContext PdfResources(scriptBuilder.toString())
         } catch (e: Exception) {
@@ -89,23 +92,30 @@ class ReferenceJsFetcher {
         }
     }
 
+    // Returns the variable name of the fetched module
     private suspend fun fetchModuleRecursive(
         logger: (String) -> Unit, 
         fileName: String, 
-        varName: String, 
         sb: StringBuilder,
         dictionary: Map<String, String>,
         language: String
-    ) {
-        if (fetchedModules.containsKey(fileName)) return
-        
+    ): String {
+        // If already fetched, return its existing variable name
+        if (moduleVarNames.containsKey(fileName)) {
+            return moduleVarNames[fileName]!!
+        }
+
+        val uniqueVarName = "Mod_" + fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().replace("-", "N")
+        moduleVarNames[fileName] = uniqueVarName // Reserve name to prevent cycles
+
         var content = try {
             fetchString("$baseUrl/assets/$fileName")
         } catch (e: Exception) {
             logger("Failed to fetch $fileName: ${e.message}")
-            return
+            "export default {};" // Return empty module on fail to keep going
         }
 
+        // Apply dictionary replacements for translations if needed
         if (language == "en" && dictionary.isNotEmpty()) {
              dictionary.forEach { (ru, en) -> 
                  if (ru.length > 3) content = content.replace(ru, en) 
@@ -113,97 +123,107 @@ class ReferenceJsFetcher {
         }
         
         fetchedModules[fileName] = content
-        val depVarName = fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().takeLast(4)
-        moduleVarNames[fileName] = depVarName
 
-        // List of ranges to remove from content (imports/exports)
-        // Using index ranges avoids the "Unexpected token" error caused by replacing identical strings
-        val removalRanges = mutableListOf<IntRange>()
-        val headerImports = StringBuilder()
-
-        // --- Handle Imports ---
-        // Regex to capture: import ... from '...'
-        // Use getOrNull via manual group indexing in loop to fix "No group 1"
-        val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
-        val imports = importRegex.findAll(content).toList()
-
-        for (match in imports) {
-            removalRanges.add(match.range) 
-
-            // Group 3 is the path. Check strictly.
-            val depPath = if (match.groups.size > 3) match.groupValues[3] else continue
-            val depFileName = getName(depPath)
-            val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
+        // --- dependency resolution ---
+        // We need to parse imports BEFORE writing this module's content to the StringBuilder
+        // because dependencies must be defined before they are used.
+        
+        // Regex matches: import { a, b as c } from "./foo.js"; OR import Foo from "./foo.js";
+        val importRegex = Regex("""import\s*(?:(\w+)|\{\s*([^}]+)\s*\})?\s*from\s*["']([^"']+\.js)["'];?""")
+        val matches = importRegex.findAll(content).toList()
+        
+        // We will build a map of replacements for the content string
+        val replacements = mutableListOf<Pair<String, String>>()
+        
+        for (match in matches) {
+            val fullMatch = match.value
+            val defaultImport = match.groups[1]?.value
+            val namedImportsStr = match.groups[2]?.value
+            val path = match.groups[3]?.value ?: continue
             
-            // Recurse first
-            fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
-
-            // Generate header mapping
-            val defaultImport = if (match.groups.size > 1) match.groupValues[1] else ""
-            val namedImports = if (match.groups.size > 2) match.groupValues[2] else ""
+            val depFileName = getName(path)
             
-            val targetVar = moduleVarNames[depFileName] ?: nextVarName
-
-            if (defaultImport.isNotEmpty()) {
-                headerImports.append("const $defaultImport = $targetVar.default || $targetVar;\n")
-            }
-            if (namedImports.isNotEmpty()) {
-                // Handle "as" aliasing: "a as b" -> "a: b"
-                val fixedDestructuring = namedImports.split(",").joinToString(",") { 
-                    it.replace(Regex("""\s+as\s+"""), ": ") 
+            // Recursively fetch dependency
+            val depVarName = fetchModuleRecursive(logger, depFileName, sb, dictionary, language)
+            
+            // Create the code to replace the import statement
+            // "const { a, b: c } = Mod_foo_123;" or "const Foo = Mod_foo_123.default;"
+            val replacementLine = StringBuilder()
+            
+            if (defaultImport != null) {
+                replacementLine.append("const $defaultImport = $depVarName.default || $depVarName;")
+            } else if (namedImportsStr != null) {
+                // Fix "as" syntax: "x as y" -> "x: y" for destructuring
+                val fixedDestructure = namedImportsStr.split(",").joinToString(",") { part ->
+                    part.trim().replace(Regex("""\s+as\s+"""), ": ")
                 }
-                headerImports.append("const { $fixedDestructuring } = $targetVar;\n")
+                replacementLine.append("const { $fixedDestructure } = $depVarName;")
+            } else {
+                // Side effect import only
+                replacementLine.append("// Imported $depFileName")
             }
+            
+            replacements.add(fullMatch to replacementLine.toString())
         }
 
-        // --- Handle Exports ---
-        val exportMap = mutableMapOf<String, String>()
+        // --- content transformation ---
+        var modifiedContent = content
+
+        // 1. Apply import replacements
+        for ((target, replacement) in replacements) {
+            modifiedContent = modifiedContent.replace(target, replacement)
+        }
+
+        // 2. Handle Exports
+        // We strip "export" keywords and capture what they exported to return it at the end of IIFE
         
-        // Named exports: export { a, b as c }
-        val namedExportRegex = Regex("""export\s*\{([\s\S]*?)\}\s*;?""")
-        namedExportRegex.findAll(content).forEach { match ->
-            removalRanges.add(match.range)
-            val block = if (match.groups.size > 1) match.groupValues[1] else ""
-            block.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { 
-                val parts = it.split(Regex("""\s+as\s+"""))
-                val local = parts[0].trim()
-                val exported = if (parts.size > 1) parts[1].trim() else local
-                exportMap[exported] = local
-            }
+        val namedExports = mutableListOf<String>()
+        var hasDefaultExport = false
+
+        // Handle: export default ...
+        if (modifiedContent.contains("export default")) {
+            hasDefaultExport = true
+            // Replace "export default" with "const __default_export__ ="
+            // Note: standardizing to a const allows it to handle objects, functions, classes etc.
+            modifiedContent = modifiedContent.replaceFirst("export default", "const __default_export__ =")
         }
 
-        // Default export: export default X
-        val defaultExportRegex = Regex("""export\s+default\s+([a-zA-Z0-9_$.]+)\s*;?""")
-        val defaultMatch = defaultExportRegex.find(content)
-        if (defaultMatch != null) {
-            removalRanges.add(defaultMatch.range)
-            if (defaultMatch.groups.size > 1) {
-                exportMap["default"] = defaultMatch.groupValues[1].trim()
+        // Handle: export { a, b as c }
+        val exportRegex = Regex("""export\s*\{\s*([^}]+)\s*\};?""")
+        modifiedContent = exportRegex.replace(modifiedContent) { matchRes ->
+            val inner = matchRes.groupValues[1]
+            inner.split(",").forEach { 
+                // "a as b" -> export b (value is a)
+                // For the return object we need "b: a"
+                val parts = it.trim().split(Regex("""\s+as\s+"""))
+                if (parts.size == 2) {
+                    namedExports.add("${parts[1]}: ${parts[0]}")
+                } else {
+                    namedExports.add(parts[0])
+                }
             }
+            "// exports handled" // Remove the line
         }
 
-        // --- Reconstruction ---
-        // Remove marked ranges in descending order to keep indices valid
-        val sbContent = StringBuilder(content)
-        removalRanges.sortByDescending { it.first }
-        for (range in removalRanges) {
-            if (range.first >= 0 && range.last < sbContent.length) {
-                // Replace with space to assume we removed a statement but kept token boundaries
-                sbContent.replace(range.first, range.last + 1, " ") 
-            }
-        }
+        // Handle: export const x = ... (Inline exports) - stripping 'export' keyword
+        // This regex removes 'export ' but keeps 'const x = ...'
+        modifiedContent = modifiedContent.replace(Regex("""export\s+(const|var|let|function|class)\s+"""), "$1 ")
 
-        val returnObj = exportMap.entries.joinToString(", ") { 
-            if (it.key == it.value) it.key else "${it.key}: ${it.value}"
+        // --- Final Assembly ---
+        sb.append("\n// --- Module: $fileName ---\n")
+        sb.append("const $uniqueVarName = (() => {\n")
+        sb.append(modifiedContent)
+        sb.append("\n\nreturn { ")
+        if (hasDefaultExport) {
+            sb.append("default: __default_export__, ")
         }
-        
-        // Wrap in IIFE
-        sb.append("const $varName = (() => {\n")
-        sb.append(headerImports)
-        sb.append("\n")
-        sb.append(sbContent)
-        sb.append("\nreturn { $returnObj };\n")
+        if (namedExports.isNotEmpty()) {
+            sb.append(namedExports.joinToString(", "))
+        }
+        sb.append(" };\n")
         sb.append("})();\n")
+
+        return uniqueVarName
     }
 
     private fun fetchString(url: String): String {
@@ -214,11 +234,10 @@ class ReferenceJsFetcher {
         }
     }
 
-    private fun getName(path: String) = path.split('/').last()
+    private fun getName(path: String) = path.split('/').last().split('?').first()
     
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
-        // Correct null check on groups to avoid "No group 1" error
         return if (match != null && match.groups.size > 1) match.groupValues[1] else null
     }
 }
