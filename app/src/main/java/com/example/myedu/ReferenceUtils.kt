@@ -22,254 +22,216 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
     
-    // Cache to store processed content: FileName -> content
-    private val fetchedModules = mutableMapOf<String, String>()
-    // Map: FileName -> UniqueVariableName
+    // Map: FileName -> UniqueVariableName (e.g. "helpers.js" -> "Mod_helpers_HASH")
     private val moduleVarNames = mutableMapOf<String, String>()
+    // Set of processed files to prevent infinite recursion
+    private val processedFiles = mutableSetOf<String>()
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
-        fetchedModules.clear()
         moduleVarNames.clear()
+        processedFiles.clear()
+        
+        val scriptBuilder = StringBuilder()
         
         try {
-            logger("Finding entry point...")
+            // 1. Find Entry Point
+            logger("Fetching index...")
             val indexHtml = fetchString("$baseUrl/")
-            val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
-                ?: throw Exception("Main JS missing in index.html")
-            val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
+            val mainJsPath = findMatch(indexHtml, """src=["'](/assets/index\.[^"']+\.js)["']""") 
+                ?: throw Exception("Main JS not found in index.html")
+            val mainJsName = getName(mainJsPath)
             
-            // 1. Identify the logic file for Reference
-            var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
-            if (refJsPath == null) {
-                val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
-                if (docsJsPath != null) {
-                    val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
-                    refJsPath = findMatch(docsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
-                }
+            // 2. Find Reference Module
+            logger("Scanning $mainJsName...")
+            val mainContent = fetchString("$baseUrl/assets/$mainJsName")
+            
+            // Look for the Reference chunk (dynamically, not hardcoded hash)
+            var refJsName = findMatch(mainContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
+            
+            // Fallback: Check StudentDocuments if not found directly
+            if (refJsName == null) {
+                 val docsJsName = findMatch(mainContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
+                 if (docsJsName != null) {
+                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsName)}")
+                     refJsName = findMatch(docsContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
+                 }
             }
-            
-            if (refJsPath == null) throw Exception("References7 JS missing in dependency chain")
-            
-            val entryFileName = getName(refJsPath)
-            
-            // Build the monolithic script
-            val scriptBuilder = StringBuilder()
 
-            // 2. Polyfill Environment
-            scriptBuilder.append("const Vue = window.Vue;\n")
-            scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent, resolveComponent, openBlock, createElementBlock, createBaseVNode, toDisplayString, createVNode, withCtx, createTextVNode } = Vue;\n")
-            scriptBuilder.append("const window_location = { origin: '$baseUrl' };\n")
-            
-            // 3. Recursively fetch modules
-            logger("Fetching module tree starting from $entryFileName...")
-            val entryVarName = fetchModuleRecursive(logger, entryFileName, scriptBuilder, dictionary, language)
+            if (refJsName == null) throw Exception("References module not found in dependency tree")
+            refJsName = getName(refJsName)
+            logger("Found Reference Module: $refJsName")
 
-            // 4. Dynamic PDF Generator Discovery
-            var generatorVarName: String? = null
+            // 3. Setup Environment / Polyfills
+            scriptBuilder.append("""
+                const window_location = { origin: '$baseUrl' };
+                const Vue = window.Vue;
+                // Destructure common Vue functions globally for compatibility
+                const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent, resolveComponent, openBlock, createElementBlock, createBaseVNode, toDisplayString, createVNode, withCtx, createTextVNode, pushScopeId, popScopeId } = Vue;
+                
+                const __modules__ = {}; // Registry for debugging
+            """.trimIndent())
+            scriptBuilder.append("\n")
+
+            // 4. Recursively Fetch and Bundle
+            val entryVarName = fetchRecursive(logger, refJsName, scriptBuilder, language, dictionary)
             
-            for ((fileName, varName) in moduleVarNames) {
-                val content = fetchedModules[fileName] ?: ""
-                // Heuristic: pdfMake definitions use pageSize and A4/portrait
-                if (content.contains("pageSize") && (content.contains("A4") || content.contains("portrait")) && content.contains("content")) {
-                    generatorVarName = varName
-                    logger("Identified PDF Generator in: $fileName")
-                    break
-                }
-            }
-            
-            val targetGenerator = generatorVarName ?: entryVarName
-            
-            scriptBuilder.append("\n// Expose to Android\n")
-            scriptBuilder.append("window.RefDocGenerator = $targetGenerator.default || $targetGenerator;\n")
-            scriptBuilder.append("window.RefComponent = $entryVarName.default || $entryVarName;\n")
+            // 5. Expose the Entry Module
+            scriptBuilder.append("\nwindow.RefEntry = $entryVarName;\n")
 
             return@withContext PdfResources(scriptBuilder.toString())
+            
         } catch (e: Exception) {
-            logger("Ref Fetch Error: ${e.message}")
+            logger("Fetch Error: ${e.message}")
             e.printStackTrace()
-            return@withContext PdfResources("")
+            return@withContext PdfResources("console.error('Fetch failed: ${e.message}');")
         }
     }
 
-    private suspend fun fetchModuleRecursive(
+    private suspend fun fetchRecursive(
         logger: (String) -> Unit, 
         fileName: String, 
         sb: StringBuilder,
-        dictionary: Map<String, String>,
-        language: String
+        language: String,
+        dictionary: Map<String, String>
     ): String {
-        if (moduleVarNames.containsKey(fileName)) {
-            return moduleVarNames[fileName]!!
+        val cleanName = fileName.split('?')[0]
+        
+        // Return existing var if already processed
+        if (moduleVarNames.containsKey(cleanName)) {
+            return moduleVarNames[cleanName]!!
         }
-
-        // Generate a safe unique variable name for this module
-        val uniqueVarName = "Mod_" + fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().replace("-", "N")
-        moduleVarNames[fileName] = uniqueVarName 
-
-        // Skip non-JS files
-        if (!fileName.endsWith(".js")) {
-            sb.append("const $uniqueVarName = { default: {} }; // Mocked non-JS file\n")
-            return uniqueVarName
-        }
+        
+        val varName = "Mod_" + cleanName.replace(Regex("[^a-zA-Z0-9]"), "_")
+        moduleVarNames[cleanName] = varName
+        processedFiles.add(cleanName)
 
         var content = try {
-            fetchString("$baseUrl/assets/$fileName")
+            fetchString("$baseUrl/assets/$cleanName")
         } catch (e: Exception) {
-            logger("Failed to fetch $fileName: ${e.message}")
-            "export default {};"
-        }
-
-        // Detect HTML 404 pages masquerading as JS
-        if (content.trim().startsWith("<")) {
-             logger("Warning: $fileName returned HTML. Mocking empty.")
-             sb.append("const $uniqueVarName = { default: {} }; // Mocked HTML response\n")
-             return uniqueVarName
-        }
-
-        if (language == "en" && dictionary.isNotEmpty()) {
-             dictionary.forEach { (ru, en) -> 
-                 if (ru.length > 3) content = content.replace(ru, en) 
-             }
+            logger("Failed to fetch $cleanName")
+            return "{}"
         }
         
-        fetchedModules[fileName] = content
-
-        // --- Pre-process Aggregation Exports ---
-        // Convert `export { a } from 'b'` -> `import { a } from 'b'; export { a };`
-        content = content.replace(Regex("""export\s*\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["'];?""")) {
-            val imports = it.groupValues[1]
-            val path = it.groupValues[2]
-            "import { $imports } from \"$path\"; export { $imports };"
+        // Apply Dictionary Translation
+        if (language == "en") {
+            dictionary.forEach { (k, v) -> 
+                if (k.length > 2) content = content.replace(k, v) 
+            }
         }
 
-        // Handle `export * from 'b'`
-        val starDependencies = mutableListOf<String>()
-        content = content.replace(Regex("""export\s*\*\s*from\s*["']([^"']+)["'];?""")) {
-            val path = it.groupValues[1]
-            val starDepName = "StarDep_" + path.hashCode().toString().replace("-", "_")
-            "import * as $starDepName from \"$path\"; /*STAR_EXPORT*/"
+        // --- Dependency Resolution ---
+        // Regex to find imports: import ... from "./file.js"
+        // Captures: 1=clause, 2=path
+        val importRegex = Regex("""import\s*(?:(\{[^}]*\}|[\w${'$'}*]+(?:\s+as\s+[\w${'$'}]+)?)(?:\s*from)?\s*)?["'](\.?\/?)([^"']+\.js)["'];?""")
+        
+        val depsToProcess = mutableListOf<String>()
+        
+        // Pass 1: Identify all dependencies first
+        importRegex.findAll(content).forEach { match ->
+            val depFile = match.groupValues[3]
+            if (!processedFiles.contains(depFile)) {
+                depsToProcess.add(depFile)
+            }
+        }
+        
+        // Recursively fetch dependencies (Topological sort: dependencies defined before use)
+        for (dep in depsToProcess) {
+            fetchRecursive(logger, dep, sb, language, dictionary)
         }
 
-        // --- Main Import Resolution ---
-        // Regex: import [Clause] from 'path';
-        // Clause can be "{ a, b }", "Def", "* as N", or empty (side-effect)
-        // [FIX]: \s*from allows for minified code like `import{x}from"y"`
-        val importRegex = Regex("""import\s*(?:([\w\s{},*${'$'}]+)\s*from\s*)?["']([^"']+)["'];?""")
-        val matches = importRegex.findAll(content).toList()
-        
-        val replacements = mutableListOf<Pair<String, String>>()
-        
-        for (match in matches) {
-            val fullMatch = match.value
-            val importClause = match.groups[1]?.value
-            val path = match.groups[2]?.value ?: continue
+        // --- Code Rewriting ---
+        var newContent = content
+
+        // 1. Handle Re-exports: export { a } from './b.js'
+        // We convert this to: const { a } = Mod_B; (and let the export logic below handle the rest)
+        newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["'];?""")) { m ->
+            val clauses = m.groupValues[1]
+            val file = getName(m.groupValues[2])
+            val modVar = moduleVarNames[file] ?: "{}"
+            // We extract to local scope, the export logic at bottom will capture them
+            "const { $clauses } = $modVar;"
+        }
+
+        // 2. Replace Imports with Variable assignments
+        newContent = importRegex.replace(newContent) { match ->
+            val clause = match.groupValues[1]
+            val depFile = getName(match.groupValues[3])
+            val depVar = moduleVarNames[depFile] ?: "{}"
             
-            val depFileName = getName(path)
-            // RECURSION: Fetch dependency first so it's defined above
-            val depVarName = fetchModuleRecursive(logger, depFileName, sb, dictionary, language)
-            
-            val replacementLine = StringBuilder()
-            
-            if (importClause == null) {
-                // Side effect: import "./foo.js"
-                replacementLine.append("// Imported side-effect: $depFileName")
-            } else if (importClause.contains("* as")) {
-                // Namespace: import * as NS
-                val varName = importClause.split("as")[1].trim()
-                replacementLine.append("const $varName = $depVarName;")
-                if (fullMatch.contains("/*STAR_EXPORT*/")) {
-                    starDependencies.add(varName)
-                }
-            } else if (importClause.contains("{")) {
-                // Named: import { a, b as c }
-                val cleanClause = importClause.replace("{", "").replace("}", "").trim()
-                val parts = cleanClause.split(",")
-                val destructuring = parts.joinToString(",") { 
-                    it.trim().replace(Regex("""\s+as\s+"""), ": ") 
-                }
-                replacementLine.append("const { $destructuring } = $depVarName;")
+            if (clause.isBlank()) {
+                "// Side effect: $depFile"
+            } else if (clause.contains("* as")) {
+                val alias = clause.split("as")[1].trim()
+                "const $alias = $depVar;"
+            } else if (clause.trim().startsWith("{")) {
+                // Named imports: const { a, b: c } = Mod;
+                "const $clause = $depVar;"
             } else {
-                // Default: import A
-                replacementLine.append("const ${importClause.trim()} = $depVarName.default || $depVarName;")
+                // Default import: const A = Mod.default || Mod;
+                "const $clause = $depVar.default || $depVar;"
             }
-            replacementLine.append("\n")
-            
-            replacements.add(fullMatch to replacementLine.toString())
         }
 
-        var modifiedContent = content
-        for ((target, replacement) in replacements) {
-            modifiedContent = modifiedContent.replace(target, replacement)
-        }
+        // 3. Capture Export Declarations
+        // We look for `export const x`, `export function y` etc.
+        val exportedNames = mutableListOf<String>()
+        val exportDeclRegex = Regex("""export\s+(?:const|let|var|function|class|async\s+function)\s+([\w${'$'}]+)""")
+        exportDeclRegex.findAll(content).forEach { exportedNames.add(it.groupValues[1]) }
         
-        // Cleanup CSS imports that regex might have missed if they were complex
-        modifiedContent = modifiedContent.replace(Regex("""import\s+["'][^"']+\.(css|svg|png|jpg|jpeg)["'];?"""), "// asset removed\n")
+        // Remove 'export' keyword from declarations so they become valid local JS
+        newContent = newContent.replace(Regex("""export\s+(?=(const|let|var|function|class|async\s+function))"""), "")
 
-        // --- Export Handling ---
-        val namedExports = mutableListOf<String>()
-        var hasDefaultExport = false
-
-        if (modifiedContent.contains("export default")) {
-            hasDefaultExport = true
-            modifiedContent = modifiedContent.replaceFirst("export default", "const __default_export__ =")
-        }
-
-        // Handle: export { a, b as c }
-        val exportRegex = Regex("""export\s*\{\s*([^}]+)\s*\};?""")
-        modifiedContent = exportRegex.replace(modifiedContent) { matchRes ->
-            val inner = matchRes.groupValues[1]
-            inner.split(",").forEach { 
-                val parts = it.trim().split(Regex("""\s+as\s+"""))
-                if (parts.size == 2) {
-                    namedExports.add("${parts[1]}: ${parts[0]}")
-                } else {
-                    namedExports.add(parts[0])
-                }
+        // 4. Handle `export default`
+        newContent = newContent.replace(Regex("""export\s+default\s+"""), "__exports__.default = ")
+        
+        // 5. Handle `export { a, b as c }`
+        newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\};?""")) { m ->
+            val body = m.groupValues[1]
+            val parts = body.split(",")
+            val assigns = parts.joinToString(";") { part ->
+                val kv = part.trim().split(Regex("""\s+as\s+"""))
+                if (kv.size == 1) "__exports__.${kv[0]} = ${kv[0]}"
+                else "__exports__.${kv[1]} = ${kv[0]}"
             }
-            "// exports extracted\n"
+            assigns + ";"
         }
 
-        // Handle inline exports: export const x = ...
-        modifiedContent = modifiedContent.replace(Regex("""export\s+(const|var|let|function|class)\s+"""), "$1 ")
-        
-        // Handle import.meta
-        modifiedContent = modifiedContent.replace("import.meta", "({url: ''})")
+        // 6. Cleanup
+        newContent = newContent.replace(Regex("""import\s+["'][^"']+\.css["'];?"""), "") // Remove CSS imports
+        newContent = newContent.replace("import.meta.url", "'$baseUrl'") // Mock import.meta
 
-        // --- Wrap in IIFE ---
-        sb.append("\n// --- Module: $fileName ---\n")
-        sb.append("const $uniqueVarName = (() => {\n")
-        sb.append(modifiedContent)
-        sb.append("\n\nreturn { ")
-        
-        starDependencies.forEach { starVar ->
-            sb.append("...$starVar, ")
+        // 7. Wrap in IIFE
+        sb.append("\n// --- Module: $cleanName ---\n")
+        sb.append("const $varName = (() => {\n")
+        sb.append("  const __exports__ = {};\n")
+        sb.append(newContent)
+        sb.append("\n")
+        // Manually assign discovered declarations to exports
+        exportedNames.forEach { name ->
+            sb.append("  try { __exports__.$name = $name; } catch(e){}\n")
         }
-        
-        if (hasDefaultExport) {
-            sb.append("default: __default_export__, ")
-        }
-        if (namedExports.isNotEmpty()) {
-            sb.append(namedExports.joinToString(", "))
-        }
-        sb.append(" };\n")
+        sb.append("  return __exports__;\n")
         sb.append("})();\n")
+        sb.append("__modules__['$cleanName'] = $varName;\n")
 
-        return uniqueVarName
+        return varName
     }
-
+    
     private fun fetchString(url: String): String {
         val request = Request.Builder().url(url).build()
         client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+            if (!response.isSuccessful) throw Exception("HTTP ${response.code} for $url")
             return response.body?.string() ?: ""
         }
     }
-
-    private fun getName(path: String) = path.split('/').last().split('?').first()
     
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
         return if (match != null && match.groups.size > 1) match.groupValues[1] else null
+    }
+    
+    private fun getName(path: String): String {
+        return path.substringAfterLast("/").substringBefore("?")
     }
 }
 
@@ -343,7 +305,8 @@ class ReferencePdfGenerator(private val context: Context) {
                 };
             </script>
 
-            <script type="module">
+            <script>
+                // Inject bundled script
                 try {
                     ${resources.combinedScript}
                 } catch (e) {
@@ -355,65 +318,87 @@ class ReferencePdfGenerator(private val context: Context) {
                     try {
                         AndroidBridge.log("JS: Starting generation...");
                         
-                        // Small delay to ensure IIFEs ran
-                        await new Promise(r => setTimeout(r, 100));
+                        // Use the entry module discovered by fetcher
+                        const Entry = window.RefEntry;
+                        if (!Entry) throw "RefEntry module not found";
                         
-                        if (typeof window.RefDocGenerator !== 'function') {
-                            throw "RefDocGenerator not found. Check if module with 'pageSize' was loaded.";
+                        // The entry usually exports the component as default, OR a setup function
+                        let Comp = Entry.default || Entry;
+                        
+                        // Smart discovery of the Generator function
+                        // Sometimes the logic is exported as 'generatePdf' or similar, or inside the component setup
+                        // If Comp is the Vue component, we mount it to trigger setup, then check state
+                        
+                        // Heuristic: Check if Entry exports a generator directly
+                        // Look for a function that isn't the component
+                        let Generator = null;
+                        
+                        // 1. Check named exports for a function
+                        for (const key in Entry) {
+                            if (typeof Entry[key] === 'function' && key !== 'default' && key.length > 2) {
+                                // Candidates?
+                            }
                         }
-
-                        const Comp = window.RefComponent;
-                        if (!Comp || !Comp.setup) {
-                            throw "Vue Component not found.";
-                        }
                         
-                        const { reactive, unref } = Vue;
-                        const props = reactive(propsData);
-                        const context = { attrs: {}, slots: {}, emit: () => {} };
-                        
-                        // Run setup() to get derived data
-                        const state = Comp.setup(props, context);
-                        
-                        // Wait for any async watchers
-                        setTimeout(() => {
-                             try {
-                                 let dataObj = null;
-                                 
-                                 // Smart scan
-                                 if (state && typeof state === 'object') {
-                                     if (unref(state.edunum)) {
-                                         dataObj = {};
-                                         for(const key in state) dataObj[key] = unref(state[key]);
-                                     } else {
-                                         for (const key in state) {
-                                             const val = unref(state[key]);
-                                             if (val && typeof val === 'object' && (val.edunum || val.id)) {
-                                                 dataObj = val;
-                                                 break;
-                                             }
-                                         }
-                                     }
-                                 }
-
-                                 if (!dataObj) {
-                                     AndroidBridge.log("JS: Warning - State scan failed, using raw props.");
-                                     dataObj = propsData.student;
-                                 }
-                                 
-                                 const finalData = JSON.parse(JSON.stringify(dataObj));
-                                 
-                                 AndroidBridge.log("JS: Generating PDF...");
-                                 const docDef = window.RefDocGenerator(propsData.student, finalData, propsData.qr);
-                                 
-                                 const pdfDocGenerator = pdfMake.createPdf(docDef);
-                                 pdfDocGenerator.getBase64(function(b64) {
-                                     AndroidBridge.returnPdf(b64);
-                                 });
-                                 
-                             } catch(err) {
-                                 AndroidBridge.returnError("Logic Error: " + err.toString());
+                        // If we have a Vue component, we can try to instantiate it to get data
+                        if (Comp.setup || Comp.render) {
+                             const { reactive, unref } = Vue;
+                             const props = reactive(propsData);
+                             
+                             // Mock context
+                             const ctx = { attrs: {}, slots: {}, emit: ()=>{} };
+                             
+                             // Execute setup
+                             let state = {};
+                             if (typeof Comp.setup === 'function') {
+                                 state = Comp.setup(props, ctx);
                              }
-                        }, 500);
+                             
+                             // The setup usually returns the data needed for PDF
+                             // But the actual PDF definition creation might be a separate function imported in that file.
+                             // Since we bundled everything, if the generator was imported, it exists in a Mod_... var.
+                             // We can try to find the generator in the global scope if we exposed it, but we didn't.
+                             
+                             // Fallback: Iterate all bundled modules to find one that looks like a PDF generator
+                             // (Contains { pageSize: 'A4' } structure or similar)
+                             
+                             for (const modName in __modules__) {
+                                 const mod = __modules__[modName];
+                                 // If module exports a function that returns an object with pageSize
+                                 if (mod.default && typeof mod.default === 'function') {
+                                     try {
+                                         const result = mod.default(propsData.student, propsData.student, propsData.qr);
+                                         if (result && result.pageSize) {
+                                             Generator = mod.default;
+                                             AndroidBridge.log("Found Generator in: " + modName);
+                                             break;
+                                         }
+                                     } catch(e) {}
+                                 }
+                             }
+                        }
+                        
+                        if (!Generator) {
+                            // Last ditch: check Entry default
+                             try {
+                                 const res = Comp(propsData.student, propsData.student, propsData.qr);
+                                 if (res && res.pageSize) Generator = Comp;
+                             } catch(e){}
+                        }
+                        
+                        if (!Generator) throw "PDF Generator function could not be located.";
+
+                        AndroidBridge.log("JS: Generating PDF...");
+                        
+                        // IMPORTANT: The generator usually expects (student, data, qr)
+                        // We need to construct 'data' correctly. Usually it matches student info.
+                        
+                        const docDef = Generator(propsData.student, propsData.student, propsData.qr);
+                        
+                        const pdfDocGenerator = pdfMake.createPdf(docDef);
+                        pdfDocGenerator.getBase64(function(b64) {
+                             AndroidBridge.returnPdf(b64);
+                        });
                         
                     } catch(e) { 
                         AndroidBridge.returnError("Setup Error: " + e.toString()); 
