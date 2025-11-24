@@ -22,14 +22,12 @@ class ReferenceJsFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
     
-    // Cache: FileName -> BundleVariableName
     private val moduleVarNames = mutableMapOf<String, String>()
     private val processedFiles = mutableSetOf<String>()
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         moduleVarNames.clear()
         processedFiles.clear()
-        
         val scriptBuilder = StringBuilder()
         
         try {
@@ -38,15 +36,13 @@ class ReferenceJsFetcher {
             val mainJsPath = findMatch(indexHtml, """src=["'](/assets/index\.[^"']+\.js)["']""") 
                 ?: throw Exception("Main JS not found in index.html")
             
-            // 2. Scan Main JS to find Reference Module
             val mainJsName = getName(mainJsPath)
             logger("Scanning $mainJsName...")
             val mainContent = fetchString("$baseUrl/assets/$mainJsName")
             
-            // Try to find Reference module
+            // Find Reference Module (supporting standard or split chunks)
             var refJsPath = findMatch(mainContent, """["']([^"']*References\d*\.[^"']+\.js)["']""")
             
-            // Fallback: Check StudentDocuments
             if (refJsPath == null) {
                  val docsJsPath = findMatch(mainContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                  if (docsJsPath != null) {
@@ -55,39 +51,36 @@ class ReferenceJsFetcher {
                  }
             }
 
-            if (refJsPath == null) throw Exception("References module not found. Regex failed on dependency tree.")
+            if (refJsPath == null) throw Exception("References module not found.")
             
             val entryFileName = getName(refJsPath)
             logger("Found Entry: $entryFileName")
 
-            // 3. Setup Environment
+            // Setup Global Environment
             scriptBuilder.append("""
                 window.window_location = { origin: '$baseUrl' };
                 window.__bundled_modules__ = {};
-                window.__module_errors__ = [];
                 
                 // Polyfill Vue
                 const Vue = window.Vue;
                 const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent, resolveComponent, openBlock, createElementBlock, createBaseVNode, toDisplayString, createVNode, withCtx, createTextVNode, pushScopeId, popScopeId } = Vue;
                 
-                // Module definition helper with error tracking
                 function defineBundledModule(name, factory) {
                     try {
-                        console.log("Init module: " + name);
+                        // console.log("Init: " + name);
                         window.__bundled_modules__[name] = factory();
                     } catch (e) {
                         console.error("FAILED module: " + name, e);
-                        window.__module_errors__.push({name: name, error: e.toString()});
-                        // AndroidBridge.returnError("Module " + name + ": " + e.message);
+                        if(window.AndroidBridge) window.AndroidBridge.returnError("Module " + name + ": " + e.message);
                     }
                 }
             """.trimIndent())
             scriptBuilder.append("\n")
 
-            // 4. Fetch and Bundle
+            // Start Recursion
             val entryVarName = fetchRecursive(logger, entryFileName, scriptBuilder, language, dictionary)
 
-            // 5. Expose Entry
+            // Expose Entry
             scriptBuilder.append("\nwindow.RefEntry = $entryVarName;\n")
 
             return@withContext PdfResources(scriptBuilder.toString())
@@ -112,7 +105,6 @@ class ReferenceJsFetcher {
             return moduleVarNames[cleanName]!!
         }
         
-        // Unique variable name for the module
         val varName = "Mod_" + cleanName.replace(Regex("[^a-zA-Z0-9]"), "_")
         moduleVarNames[cleanName] = varName
         processedFiles.add(cleanName)
@@ -120,7 +112,7 @@ class ReferenceJsFetcher {
         var content = try {
             fetchString("$baseUrl/assets/$cleanName")
         } catch (e: Exception) {
-            logger("Network Error $cleanName: ${e.message}")
+            logger("Network Error $cleanName")
             return "{}"
         }
         
@@ -130,8 +122,8 @@ class ReferenceJsFetcher {
             }
         }
 
-        // --- Recursive Dependency Fetching ---
-        // Matches: import ... from "./file.js"
+        // --- Scan Imports ---
+        // Regex handles: import A from "b"; import { A } from "b"; import "b";
         val importRegex = Regex("""import\s*(?:(?:\{[^}]*\}|[\w${'$'}*]+(?:\s+as\s+[\w${'$'}]+)?)(?:\s*from)?)?\s*["'](\.?\/?)([^"']+\.js)["'];?""")
         
         val deps = mutableListOf<String>()
@@ -140,61 +132,92 @@ class ReferenceJsFetcher {
         }
         
         for (dep in deps) {
-            // Recursively fetch before writing current module (Topological-ish sort)
             fetchRecursive(logger, dep, sb, language, dictionary)
         }
 
-        // --- Rewriting Code for No-Module Environment ---
+        // --- Rewriting ---
         var newContent = content
 
-        // 1. Re-exports: export { a } from './b.js' -> const { a } = Mod_B;
+        // 1. Re-exports: export { a } from './b.js' 
+        // Matches: export { a, b as c } from "./foo.js"
         newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\}\s*from\s*["']([^"']+)["'];?""")) { m ->
-            val clauses = m.groupValues[1]
+            val body = m.groupValues[1]
             val depName = getName(m.groupValues[2])
             val depVar = moduleVarNames[depName] ?: "{}"
-            "\nconst { $clauses } = $depVar;\n"
+            
+            // Convert "a, b as c" -> "const { a, c: b } = Mod;" (Note: b as c means c is the exported name, b is internal)
+            // Actually, simpler: Just extract them to locals, the later export logic will grab them.
+            // "const { a, b: c } = Mod;" 
+            // Wait, `export { b as c } from '...'` means we import `b` from '...' and export it as `c`.
+            // So we need: `const { b: c } = Mod_...` -> then `export { c }` logic handles the rest? 
+            // No, simpler to map directly to exports if possible, but we are in a function.
+            
+            // Let's just destruct them into local variables with the *exported* name to satisfy potential local usage or subsequent export.
+            val destructuring = body.split(",").joinToString(", ") { part ->
+                val kv = part.trim().split(Regex("""\s+as\s+"""))
+                if (kv.size == 1) kv[0] // { a }
+                else "${kv[0]}: ${kv[1]}" // { b as c } -> { b: c } in destructuring
+            }
+            "\nconst { $destructuring } = $depVar;\n"
+        }
+        
+        // 2. Handle `export * from '...'`
+        newContent = newContent.replace(Regex("""export\s*\*\s*from\s*["']([^"']+)["'];?""")) { m ->
+            val depName = getName(m.groupValues[1])
+            val depVar = moduleVarNames[depName] ?: "{}"
+            "\nObject.assign(__exports__, $depVar);\n"
         }
 
-        // 2. Imports: import ... from './b.js' -> const ... = Mod_B;
+        // 3. Regular Imports
         newContent = importRegex.replace(newContent) { match ->
             val fullStatement = match.value
-            // Extract the clause (between 'import' and 'from')
-            // We re-parse specifically to handle the 'from' part reliably
             val fromIndex = fullStatement.indexOf("from")
             val depFile = getName(match.groupValues[2])
             val depVar = moduleVarNames[depFile] ?: "{}"
 
             if (fromIndex == -1) {
-                // Side effect: import "./foo.js"
+                // Side effect import
                 "\n/* Side effect: $depFile */\n"
             } else {
+                // Parse the clause: " { a, b as c } " or " * as ns " or " Def "
                 val clause = fullStatement.substring(6, fromIndex).trim()
+                
                 if (clause.contains("* as")) {
+                    // Namespace: import * as ns from ...
                     val alias = clause.split("as")[1].trim()
                     "\nconst $alias = $depVar;\n"
                 } else if (clause.startsWith("{")) {
-                    // Named: import { a, b } from ...
-                    "\nconst $clause = $depVar;\n"
+                    // Named: import { a, b as c } from ...
+                    // FIX: Convert "b as c" to "b: c" for object destructuring
+                    val inner = clause.trim().removeSurrounding("{", "}").trim()
+                    if (inner.isEmpty()) {
+                        "" 
+                    } else {
+                        val destructured = inner.split(",").joinToString(", ") { part ->
+                            // "b as c" -> "b: c"
+                            val kv = part.trim().split(Regex("""\s+as\s+"""))
+                            if (kv.size > 1) "${kv[0]}: ${kv[1]}" else kv[0]
+                        }
+                        "\nconst { $destructured } = $depVar;\n"
+                    }
                 } else {
                     // Default: import A from ...
-                    // Fallback to default or self
                     "\nconst $clause = $depVar.default || $depVar;\n"
                 }
             }
         }
 
-        // 3. Export Declarations: export const x = ... -> const x = ...
+        // 4. Export Declarations: export const x = ...
         val exportedNames = mutableListOf<String>()
-        // Regex to catch: export const/let/var/function/class/async function NAME
         val exportDeclRegex = Regex("""export\s+(?:async\s+)?(?:const|let|var|function|class)\s+([\w${'$'}]+)""")
         exportDeclRegex.findAll(content).forEach { exportedNames.add(it.groupValues[1]) }
         
         newContent = newContent.replace(Regex("""export\s+(?=(async\s+)?(?:const|let|var|function|class))"""), "")
 
-        // 4. Export Default: export default ... -> __exports__.default = ...
+        // 5. Export Default
         newContent = newContent.replace(Regex("""export\s+default\s+"""), "\n__exports__.default = ")
 
-        // 5. Named Exports: export { a, b as c }
+        // 6. Export List: export { a, b as c }
         newContent = newContent.replace(Regex("""export\s*\{\s*([^}]+)\s*\};?""")) { m ->
             val body = m.groupValues[1]
             val assigns = body.split(",").joinToString(";") { part ->
@@ -205,27 +228,21 @@ class ReferenceJsFetcher {
             "\n$assigns;\n"
         }
 
-        // 6. Misc Cleanup
+        // Cleanup
         newContent = newContent.replace("import.meta.url", "'$baseUrl'")
-        // Remove CSS imports entirely
         newContent = newContent.replace(Regex("""import\s+["'][^"']+\.css["'];?"""), "")
 
-        // Wrap in IIFE and define
+        // Bundle
         sb.append("\n// --- Module: $cleanName ---\n")
-        // We use 'defineBundledModule' to wrap execution in try-catch for granular error reporting
         sb.append("defineBundledModule('$cleanName', () => {\n")
         sb.append("  const __exports__ = {};\n")
-        // Inject content inside
         sb.append(newContent)
         sb.append("\n")
-        // Manual exports mapping
         exportedNames.forEach { name ->
             sb.append("  try { __exports__.$name = $name; } catch(e){}\n")
         }
         sb.append("  return __exports__;\n")
         sb.append("});\n")
-        
-        // Assign the result to the varName so other modules can use it
         sb.append("const $varName = window.__bundled_modules__['$cleanName'] || {};\n")
 
         return varName
@@ -244,7 +261,7 @@ class ReferenceJsFetcher {
         return if (match != null && match.groups.size > 1) match.groupValues[1] else null
     }
     
-    private fun getName(path: String) = path.substringAfterLast("/").substringBefore("?")
+    private fun getName(path: String) = path.split('/').last().split('?').first()
 }
 
 class ReferencePdfGenerator(private val context: Context) {
@@ -269,7 +286,6 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webChromeClient = object : WebChromeClient() {
                 override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
-                    // IMPORTANT: Log everything to help debug specific file issues
                     logCallback("[JS] ${cm.message()} (Line ${cm.lineNumber()})")
                     return true
                 }
@@ -288,7 +304,7 @@ class ReferencePdfGenerator(private val context: Context) {
                 }
                 @JavascriptInterface
                 fun returnError(msg: String) {
-                    if (continuation.isActive) continuation.resumeWithException(Exception("JS Error: $msg"))
+                    if (continuation.isActive) continuation.resumeWithException(Exception("JS: $msg"))
                 }
             }, "AndroidBridge")
 
@@ -305,7 +321,6 @@ class ReferencePdfGenerator(private val context: Context) {
             <div id="app"></div>
             <script>
                 window.onerror = function(msg, url, line) { 
-                    console.error("Global Error: " + msg + " @ " + line);
                     AndroidBridge.returnError(msg + " @ " + line); 
                 };
                 
@@ -319,26 +334,18 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // Inject Bundled Code
                 try {
                     ${resources.combinedScript}
                 } catch (e) {
-                    console.error("Bundle Injection Error", e);
-                    AndroidBridge.returnError("Bundle Syntax Error: " + e.message);
+                    AndroidBridge.returnError("Script Inject: " + e.message);
                 }
             
                 async function runGeneration() {
-                    // Check for module initialization errors first
-                    if (window.__module_errors__ && window.__module_errors__.length > 0) {
-                        const firstErr = window.__module_errors__[0];
-                        AndroidBridge.returnError("Module Failed: " + firstErr.name + " - " + firstErr.error);
-                        return;
-                    }
-
+                    // Check for bundle errors
+                    // We can inspect the global errors array if we defined one, 
+                    // or just rely on the module returning empty.
+                    
                     try {
-                        console.log("Starting PDF Generation...");
-                        
-                        // Find the Generator function dynamically
                         let Generator = null;
                         const Entry = window.RefEntry;
                         
@@ -350,31 +357,31 @@ class ReferencePdfGenerator(private val context: Context) {
                             } catch(e) { return false; }
                         };
 
+                        // 1. Check Entry Default
                         if (Entry) {
-                            if (isGen(Entry)) Generator = Entry;
-                            else if (isGen(Entry.default)) Generator = Entry.default;
+                            if (isGen(Entry.default)) Generator = Entry.default;
+                            else if (isGen(Entry)) Generator = Entry;
                         }
                         
-                        // Fallback: Scan all bundled modules
+                        // 2. Fallback: Scan all modules
                         if (!Generator && window.__bundled_modules__) {
                             for (const key in window.__bundled_modules__) {
                                 const mod = window.__bundled_modules__[key];
-                                if (isGen(mod)) { Generator = mod; break; }
-                                if (mod.default && isGen(mod.default)) { Generator = mod.default; break; }
+                                if (mod && isGen(mod.default)) { Generator = mod.default; break; }
                             }
                         }
 
+                        // 3. Vue Setup Fallback
                         if (!Generator && Entry && (Entry.default || Entry).setup) {
-                             // Try to extract from Vue component setup
                              const Comp = Entry.default || Entry;
                              const { reactive } = Vue;
-                             // This might trigger side effects that register the generator globally or similar
-                             Comp.setup(reactive(propsData), { attrs:{}, slots:{}, emit:()=>{} });
-                             // Re-scan logic... (simplified here)
+                             try {
+                                 Comp.setup(reactive(propsData), { attrs:{}, slots:{}, emit:()=>{} });
+                             } catch(e) {}
                         }
 
                         if (!Generator) {
-                             throw "PDF Generator function not found in any loaded module.";
+                             throw "PDF Generator function not found.";
                         }
 
                         const docDef = Generator(propsData.student, propsData.student, propsData.qr);
@@ -383,12 +390,11 @@ class ReferencePdfGenerator(private val context: Context) {
                         });
                         
                     } catch(e) { 
-                        AndroidBridge.returnError("Runtime Logic: " + e.toString()); 
+                        AndroidBridge.returnError("Logic: " + e.toString()); 
                     }
                 }
                 
-                // Delay slightly to ensure scripts parsed
-                setTimeout(runGeneration, 100);
+                setTimeout(runGeneration, 200);
             </script>
             </body>
             </html>
@@ -396,7 +402,7 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Logic runs via setTimeout in HTML
+                    // Logic via setTimeout
                 }
             }
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
