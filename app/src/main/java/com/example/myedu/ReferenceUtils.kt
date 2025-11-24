@@ -21,7 +21,7 @@ class ReferenceJsFetcher {
     
     private val fetchedModules = mutableMapOf<String, String>()
     // Key: FileName, Value: Assigned JS variable name
-    private val moduleVarNames = mutableMapOf<String, String>() 
+    private val moduleVarNames = mutableMapOf<String, String>()
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         fetchedModules.clear()
@@ -116,41 +116,57 @@ class ReferenceJsFetcher {
         moduleVarNames[fileName] = depVarName
 
         // --- Step 2: Identify Imports and Recurse ---
-        // Match imports ending in .js, regardless of path prefix. (FIX for Fetch Error / "as" error)
+        // Match: import Name from 'path' OR import { A } from 'path'. The path is GROUP 3.
         val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
+        
+        // Store all original match values and details for removal and header generation
+        val importDetails = mutableListOf<Triple<String, String, String>>()
 
         for (match in imports) {
-            val depPath = match.groupValues[3]
+            // Check for valid path, which should always be in group 3 for our regex
+            val depPath = match.groupValues.getOrNull(3) ?: continue // Skip if path is missing (error prevention)
+            val fullMatch = match.value
             val depFileName = getName(depPath)
+            
             val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
+
+            // Extract the parts needed for header construction (default/named imports)
+            val defaultImport = match.groupValues.getOrNull(1) ?: ""
+            val namedImports = match.groupValues.getOrNull(2) ?: ""
+
+            importDetails.add(Triple(fullMatch, defaultImport, namedImports))
         }
 
-        // --- Step 3: Parse Exports and Construct Return Statement (Fix for Syntax Errors) ---
+        // --- Step 3: Parse Exports and Construct Return Statement ---
         val exportMap = mutableMapOf<String, String>() 
-        val contentBuilder = StringBuilder(content)
-        
+        var cleanContent = content
+
         // 1. Capture and remove named exports: export { A, B as C };
-        val namedExportsRegex = Regex("""export\s*\{[\s\S]*?\}\s*;?\s*""")
-        namedExportsRegex.findAll(contentBuilder.toString()).toList().forEach { match ->
-            match.groupValues[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
+        val namedExportsRegex = Regex("""(export\s*\{([\s\S]*?)\}\s*;?\s*)""")
+        namedExportsRegex.findAll(cleanContent).toList().forEach { match ->
+            val fullMatch = match.groupValues[1]
+            val exportBlock = match.groupValues[2]
+            
+            // Parse content inside { }
+            exportBlock.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
                 val parts = exportItem.split(Regex("""\s+as\s+"""))
                 val localName = parts[0].trim()
                 val exportedName = if (parts.size == 2) parts[1].trim() else localName
                 exportMap[exportedName] = localName
             }
             // Remove the statement from the content
-            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(match.value, ""))
+            cleanContent = cleanContent.replace(fullMatch, "")
         }
         
         // 2. Capture and remove default export: export default X;
-        val defaultExportRegex = Regex("""export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*""")
-        val defaultExportMatch = defaultExportRegex.find(contentBuilder.toString())
+        val defaultExportRegex = Regex("""(export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*)""")
+        val defaultExportMatch = defaultExportRegex.find(cleanContent)
         if (defaultExportMatch != null) {
-            exportMap["default"] = defaultExportMatch.groupValues[1].trim()
-            // Remove the statement from the content
-            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(defaultExportMatch.value, ""))
+            val fullMatch = defaultExportMatch.groupValues[1]
+            exportMap["default"] = defaultExportMatch.groupValues[2].trim() // Index 2 contains the identifier
+            cleanContent = cleanContent.replace(fullMatch, "")
         }
         
         // 3. Create the Return Statement
@@ -161,23 +177,22 @@ class ReferenceJsFetcher {
         
         // --- Step 4: Clean Imports & Assemble IIFE ---
 
-        // 1. Remove remaining import declarations from the content body
-        imports.forEach { match ->
-            // Use original match value to remove it
-            contentBuilder.replace(0, contentBuilder.length, contentBuilder.toString().replace(match.value, ""))
+        // 1. Remove all import statements
+        importDetails.forEach { (fullMatch, _, _) ->
+            cleanContent = cleanContent.replace(fullMatch, "")
         }
         
-        // 2. Remove HTML and license comments (Source of '--' error)
-        var finalContent = contentBuilder.toString()
+        // 2. Remove comments and HTML fragments (Source of '--' error)
+        cleanContent = cleanContent
             .replace(Regex(""""""), "")
             .replace(Regex("""/\*![\s\S]*?\*/"""), "")
 
         // 3. Create header with local imports
         val header = StringBuilder()
-        imports.forEach { match ->
-            val defaultImport = match.groupValues[1]
-            val namedImports = match.groupValues[2]
-            val depFileName = getName(match.groupValues[3])
+        importDetails.forEach { (fullMatch, defaultImport, namedImports) ->
+            // Extract the dependency file name from the full match for variable lookup
+            val depPathMatch = Regex("""['"]([^"']+\.js)['"]""").find(fullMatch)
+            val depFileName = depPathMatch?.groupValues?.get(1)?.let { getName(it) } ?: ""
             val depVarNameInMap = moduleVarNames[depFileName]
 
             if (depVarNameInMap != null) {
@@ -191,7 +206,7 @@ class ReferenceJsFetcher {
         }
 
         // 4. Assemble the module IIFE
-        sb.append("const $depVarName = (() => {\n$header\n$finalContent\n$returnStatement\n})();\n")
+        sb.append("const $depVarName = (() => {\n$header\n$cleanContent\n$returnStatement\n})();\n")
     }
 
     private fun fetchString(url: String): String {
