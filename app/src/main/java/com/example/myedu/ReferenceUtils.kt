@@ -103,9 +103,7 @@ class ReferenceJsFetcher {
             var cleanRef = cleanJsContent(refContent)
             if (language == "en" && dictionary.isNotEmpty()) {
                 logger("Translating Reference Template...")
-                dictionary.forEach { (ru, en) -> if (ru.length > 2) cleanRef = cleanRef.replace(ru, en) }
-                val courseArrayRegex = Regex("""const\s+\w+\s*=\s*\[\s*["']первого["']\s*,\s*["']второго["'][^\]]*\]""")
-                cleanRef = cleanRef.replace(courseArrayRegex, """const h=["1st","2nd","3rd","4th","5th","6th","7th","8th"]""")
+                dictionary.forEach { (ru, en) -> if (ru.length > 1) cleanRef = cleanRef.replace(ru, en) }
             }
 
             val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\([a-zA-Z0-9,]*\)\s*=>\s*\{[^}]*pageSize:["']A4["']""")
@@ -248,7 +246,12 @@ class ReferencePdfGenerator(private val context: Context) {
                         AndroidBridge.log("JS: Ref Driver started...");
                         if (typeof window.RefDocGenerator !== 'function') throw "Generator function not found.";
                         translateData();
-                        let courses = lang === "en" ? ["1st","2nd","3rd","4th","5th","6th","7th","8th"] : ["первого","второго","третьего","четвертого","пятого","шестого","седьмого"];
+                        
+                        let courses = ["первого","второго","третьего","четвертого","пятого","шестого","седьмого","восьмого"];
+                        if (lang === "en") {
+                            courses = courses.map(c => translateString(c));
+                        }
+
                         const activeSem = studentInfo.active_semester || 1;
                         const totalSem = licenseInfo.total_semester || 8;
                         const e = Math.floor((activeSem - 1) / 2);
@@ -259,8 +262,10 @@ class ReferencePdfGenerator(private val context: Context) {
                         const studId = studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_student : "0";
                         const payId = studentInfo.payment_form_id || (studentInfo.lastStudentMovement ? studentInfo.lastStudentMovement.id_payment_form : "1");
                         const docIdStr = "№ 7-" + second + "-" + studId + "-" + payId;
+                        
                         let address = univInfo.address_ru || "г. Ош, ул. Ленина 331";
                         if(lang === "en") address = translateString(address);
+                        
                         const d = { id: docIdStr, edunum: courseStr, date: new Date().toLocaleDateString("$dateLocale"), adress: address };
                         const docDef = window.RefDocGenerator(studentInfo, d, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
