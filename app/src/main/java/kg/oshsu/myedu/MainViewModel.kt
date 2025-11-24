@@ -87,7 +87,6 @@ class MainViewModel : ViewModel() {
             NetworkClient.cookieJar.injectSessionCookies(token)
             loadOfflineData()
             appState = "APP"
-            // Force refresh from internet every time app starts
             refreshAllData()
         } else {
             appState = "LOGIN"
@@ -238,9 +237,7 @@ class MainViewModel : ViewModel() {
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
-                // Get Raw JSON data as required by the generator
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                // Manipulate JSON for Full Name
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
                 infoJson.put("fullName", fullName)
@@ -294,7 +291,6 @@ class MainViewModel : ViewModel() {
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
                 
-                // Fetch Raw Data
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
@@ -364,28 +360,5 @@ class MainViewModel : ViewModel() {
         } catch (e: Exception) {
             pdfStatusMessage = "Upload failed: ${e.message}"
         }
-    }
-}
-
-class DictionaryUtils { 
-    private val client = OkHttpClient()
-    suspend fun fetchDictionary(url: String): Map<String, String> = withContext(Dispatchers.IO) {
-        val map = mutableMapOf<String, String>()
-        if (url.isBlank()) return@withContext map
-        try {
-            val request = Request.Builder().url(url).build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val jsonStr = response.body?.string() ?: "{}"
-                    val json = JSONObject(jsonStr)
-                    val keys = json.keys()
-                    while (keys.hasNext()) {
-                        val key = keys.next()
-                        map[key] = json.optString(key)
-                    }
-                }
-            }
-        } catch (e: Exception) { e.printStackTrace() }
-        return@withContext map
     }
 }
