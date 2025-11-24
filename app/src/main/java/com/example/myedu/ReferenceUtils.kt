@@ -1,9 +1,8 @@
-//
 package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
+import android.util.Base64 // Import added to resolve Unresolved reference
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -22,7 +21,7 @@ class ReferenceJsFetcher {
     
     private val fetchedModules = mutableMapOf<String, String>()
     // Key: FileName, Value: Assigned JS variable name
-    private val moduleVarNames = mutableMapOf<String, String>()
+    private val moduleVarNames = mutableMapOf<String, String>() 
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         fetchedModules.clear()
@@ -54,7 +53,6 @@ class ReferenceJsFetcher {
             scriptBuilder.append("const Vue = window.Vue;\n")
             scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance } = Vue;\n")
 
-            // 3. Recursively fetch and bundle all JS dependencies
             logger("Fetching $entryFileName and dependencies...")
             fetchModuleRecursive(logger, entryFileName, entryModuleName, scriptBuilder, dictionary, language)
 
@@ -62,6 +60,7 @@ class ReferenceJsFetcher {
             var generatorVarName: String? = null
             
             for ((fileName, content) in fetchedModules) {
+                // Heuristic: Check for pdfmake structure markers
                 if (content.contains("pageSize") && (content.contains("A4") || content.contains("portrait"))) {
                     val varName = moduleVarNames[fileName]
                     if (varName != null) {
@@ -100,7 +99,6 @@ class ReferenceJsFetcher {
     ) {
         if (fetchedModules.containsKey(fileName)) return
         
-        // --- Step 1: Fetch and Translate ---
         var content = try {
             fetchString("$baseUrl/assets/$fileName")
         } catch (e: Exception) {
@@ -114,40 +112,46 @@ class ReferenceJsFetcher {
              }
         }
         fetchedModules[fileName] = content
-        // Generate a consistently unique variable name for each module file
         val depVarName = fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().takeLast(4)
-        moduleVarNames[fileName] = depVarName // Store the determined variable name
+        moduleVarNames[fileName] = depVarName
 
         // --- Step 2: Identify Imports and Recurse ---
+        // Matches: import Name from './file.js' OR import { A, B } from './file.js'
         val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']\./([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
 
         for (match in imports) {
             val depPath = match.groupValues[3]
             val depFileName = getName(depPath)
-            // Use the stored unique name for recursion
-            val nextVarName = moduleVarNames[depFileName] ?: depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
+            val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
         }
 
-        // --- Step 3: Parse Exports and Construct Return Statement ---
+        // --- Step 3: Parse Exports and Construct Return Statement (The fix for syntax errors) ---
         val exportMap = mutableMapOf<String, String>() 
         
-        // Handle Default Export
-        val defaultExportMatch = Regex("""export\s+default\s+([a-zA-Z0-9_$]+)""").find(content)
-        if (defaultExportMatch != null) {
-            exportMap["default"] = defaultExportMatch.groupValues[1].trim()
-        }
+        // 3a. Capture Named Exports for the return object, and simultaneously remove the entire export block
+        val namedExportsRegex = Regex("""export\s*\{[\s\S]*?\}\s*;?\s*""")
+        val cleanedContent = StringBuilder(content)
         
-        // Handle Named Exports
-        val namedExportsMatches = Regex("""export\s*\{([^}]+)\}""").findAll(content).toList()
-        namedExportsMatches.forEach { match ->
+        namedExportsRegex.findAll(content).toList().forEach { match ->
+            // Parse content inside { } to determine what was exported
             match.groupValues[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
                 val parts = exportItem.split(Regex("""\s+as\s+"""))
                 val localName = parts[0].trim()
                 val exportedName = if (parts.size == 2) parts[1].trim() else localName
                 exportMap[exportedName] = localName
             }
+            // Remove the matched export statement from the content
+            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(match.value, ""))
+        }
+        
+        // 3b. Capture Default Export, removing it from content
+        val defaultExportRegex = Regex("""export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*""")
+        val defaultExportMatch = defaultExportRegex.find(cleanedContent.toString())
+        if (defaultExportMatch != null) {
+            exportMap["default"] = defaultExportMatch.groupValues[1].trim()
+            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(defaultExportMatch.value, ""))
         }
         
         // Create the Return Statement from collected exports
@@ -155,47 +159,43 @@ class ReferenceJsFetcher {
             if (it.key == it.value) it.key else "${it.key}: ${it.value}"
         }
         val returnStatement = "return { $exportsList };"
-
-        // --- Step 4: Clean Content & Assemble IIFE ---
         
-        // 1. Remove export declarations from the body content
-        var strippedContent = content
-            .replace(Regex("""export\s+default\s+[a-zA-Z0-9_$]+"""), "")
-            .replace(Regex("""export\s*\{[^}]*\}"""), "")
-            
-        // 2. Remove all detected imports from the body content
+        // --- Step 4: Final Clean-up and Assembly ---
+
+        // 1. Remove all import statements that we already processed
         imports.forEach { match ->
-            strippedContent = strippedContent.replace(match.value, "")
+            // Match the import statement plus optional trailing semicolon/whitespace
+            val pattern = Regex(Regex.escape(match.value) + """\s*;\s*""")
+            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(pattern.toString(), ""))
+            // Fallback for tricky imports
+            cleanedContent.replace(0, cleanedContent.length, cleanedContent.toString().replace(match.value, ""))
         }
         
-        // 3. Remove comments and HTML fragments (prioritize removing known syntax breakers)
-        strippedContent = strippedContent
+        // 2. Remove HTML and license comments (source of '--' and other issues)
+        var finalContent = cleanedContent.toString()
+            .replace(Regex(""""""), "") // HTML/Vue comments (Source of '--' error)
             .replace(Regex("""/\*![\s\S]*?\*/"""), "") // Multi-line/license comments
-            .replace(Regex(""""""), "") // HTML/Vue comments
-            // Note: Single-line comment removal is avoided as it can corrupt valid regex literals in minified code.
 
-        // 4. Create header with local imports (mapping the unique names back to local variable names)
+        // 3. Create header with local imports
         val header = StringBuilder()
         imports.forEach { match ->
             val defaultImport = match.groupValues[1]
             val namedImports = match.groupValues[2]
             val depFileName = getName(match.groupValues[3])
-            val depVarName = moduleVarNames[depFileName]
+            val depVarNameInMap = moduleVarNames[depFileName]
 
-            if (depVarName != null) {
+            if (depVarNameInMap != null) {
                  if (defaultImport.isNotEmpty()) {
-                     header.append("const $defaultImport = $depVarName.default || $depVarName;\n")
+                     header.append("const $defaultImport = $depVarNameInMap.default || $depVarNameInMap;\n")
                  }
                  if (namedImports.isNotEmpty()) {
-                     // For named imports like { a, b as c }, rewrite them as destructuring from the module var.
-                     // The actual 'as' alias parsing is left to the JS runtime via destructuring.
-                     header.append("const { $namedImports } = $depVarName;\n")
+                     header.append("const { $namedImports } = $depVarNameInMap;\n")
                  }
             }
         }
 
-        // 5. Assemble the module IIFE
-        sb.append("const $depVarName = (() => {\n$header\n$strippedContent\n$returnStatement\n})();\n")
+        // 4. Assemble the module IIFE
+        sb.append("const $depVarName = (() => {\n$header\n$finalContent\n$returnStatement\n})();\n")
     }
 
     private fun fetchString(url: String): String {
@@ -278,12 +278,10 @@ class ReferencePdfGenerator(private val context: Context) {
             </script>
 
             <script>
-                // Load the bundled scripts (References7.js and its dependencies)
                 ${resources.combinedScript}
             </script>
 
             <script>
-                // Helper to extract computed data from the Vue Component
                 function runGeneration() {
                     try {
                         AndroidBridge.log("JS: Starting generation...");
@@ -297,16 +295,13 @@ class ReferencePdfGenerator(private val context: Context) {
                         const props = reactive(propsData);
                         const context = { attrs: {}, slots: {}, emit: () => {} };
                         
-                        // Run setup
                         const state = Comp.setup(props, context);
                         
-                        // Wait briefly for any watchers/computeds to settle
                         setTimeout(() => {
                              try {
                                  
                                  let dataObj = null;
                                  
-                                 // Heuristic: Find the object that contains 'edunum' and 'id'
                                  for (const key in state) {
                                      const val = unref(state[key]);
                                      if (val && typeof val === 'object' && val.edunum && val.id) {
@@ -315,7 +310,6 @@ class ReferencePdfGenerator(private val context: Context) {
                                      }
                                  }
                                  
-                                 // Fallback: Construct from common variable names in the state
                                  if (!dataObj) {
                                      dataObj = {
                                          id: unref(state.docId || state.id || state.doc_id),
