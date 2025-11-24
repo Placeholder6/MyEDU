@@ -68,10 +68,13 @@ class MainViewModel : ViewModel() {
     private val refFetcher = ReferenceJsFetcher()
     private val dictUtils = DictionaryUtils()
 
+    // PdfResources is for Transcript (from JsResourceFetcher)
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
-    private var cachedRefResourcesRu: PdfResources? = null
-    private var cachedRefResourcesEn: PdfResources? = null
+    
+    // ReferenceResources is for Reference (from ReferenceJsFetcher)
+    private var cachedRefResourcesRu: ReferenceResources? = null
+    private var cachedRefResourcesEn: ReferenceResources? = null
 
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
