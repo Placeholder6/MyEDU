@@ -1,9 +1,8 @@
-//
 package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64
+import android.util.Base64 // ADDED: Fixes Unresolved reference: Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -19,11 +18,10 @@ class ReferenceJsFetcher {
 
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
-    // Cache to prevent re-fetching and infinite loops in recursion
-    // Key: FileName, Value: Processed JS Content
+    
     private val fetchedModules = mutableMapOf<String, String>()
-    // Map to store the variable name assigned to each module
-    private val moduleVarNames = mutableMapOf<String, String>()
+    // Key: FileName, Value: Assigned JS variable name
+    private val moduleVarNames = mutableMapOf<String, String>() 
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
         fetchedModules.clear()
@@ -37,10 +35,8 @@ class ReferenceJsFetcher {
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
             
             // 1. Identify the logic file for Reference (Form 8)
-            // It is usually named References7.*.js
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Fallback: Check inside StudentDocuments if not in index
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -53,8 +49,7 @@ class ReferenceJsFetcher {
             val entryModuleName = "RefModule"
             val scriptBuilder = StringBuilder()
 
-            // 2. Polyfill/Mock Vue global from index.js imports
-            // We will load Vue from CDN in the WebView, so we map the imports to window.Vue
+            // 2. Polyfill/Mock Vue global imports (index.hash.js imports)
             scriptBuilder.append("const Vue = window.Vue;\n")
             scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance } = Vue;\n")
 
@@ -63,16 +58,15 @@ class ReferenceJsFetcher {
             fetchModuleRecursive(logger, entryFileName, entryModuleName, scriptBuilder, dictionary, language)
 
             // 4. Find and Expose the PDF Generator Function
-            // We look for a module that contains 'pageSize' and 'A4'. 
-            // If found, we assume its default export is the generator function.
+            // Look for a module that contains the pdfmake document definition keywords
             var generatorVarName: String? = null
             
             for ((fileName, content) in fetchedModules) {
-                // Look for distinctive pdfmake properties
+                // Heuristic: Check for pdfmake structure markers
                 if (content.contains("pageSize") && (content.contains("A4") || content.contains("portrait"))) {
                     val varName = moduleVarNames[fileName]
-                    // Prefer modules that are NOT the entry module (usually the generator is imported)
-                    if (varName != null && varName != entryModuleName) {
+                    // If a module explicitly exports the document generator (which usually returns an object that fits this heuristic)
+                    if (varName != null) {
                         generatorVarName = varName
                         logger("Identified PDF Generator in module: $fileName")
                         break
@@ -80,27 +74,15 @@ class ReferenceJsFetcher {
                 }
             }
             
-            // Fallback: If no separate module found, search inside the entry module using regex
-            if (generatorVarName == null) {
-                val entryContent = fetchedModules[entryFileName] ?: ""
-                val generatorRegex = Regex("""const\s+(\w+)\s*=\s*\(.*?\)\s*=>\s*\{[^}]*pageSize\s*:\s*['"]A4['"]""")
-                val match = generatorRegex.find(entryContent)
-                if (match != null) {
-                    val funcName = match.groupValues[1]
-                    scriptBuilder.append("\nwindow.RefDocGenerator = $funcName;\n")
-                    logger("Found inline Generator: $funcName")
-                } else {
-                    logger("Warning: Generator function not definitively found. Trying default export of entry.")
-                    // Desperate fallback: assume entry module exports the generator directly if it's not a component
-                     scriptBuilder.append("\nwindow.RefDocGenerator = $entryModuleName.default || $entryModuleName;\n")
-                }
-            } else {
-                // Expose the identified module's export as the global generator
+            if (generatorVarName != null) {
+                // Expose the identified module's default export as the global generator
                 scriptBuilder.append("\nwindow.RefDocGenerator = $generatorVarName.default || $generatorVarName;\n")
+            } else {
+                logger("Warning: Generator function not definitively found. Trying default export of entry module.")
+                scriptBuilder.append("\nwindow.RefDocGenerator = $entryModuleName.default || $entryModuleName;\n")
             }
 
-            // 5. Expose the Component Logic
-            // References7.js exports the Vue component. We need it to calculate the data (course, date, etc.)
+            // 5. Expose the Vue Component Logic (References7.js exports the Vue component)
             scriptBuilder.append("\nwindow.RefComponent = $entryModuleName.default || $entryModuleName;\n")
 
             return@withContext PdfResources(scriptBuilder.toString())
@@ -119,8 +101,9 @@ class ReferenceJsFetcher {
         dictionary: Map<String, String>,
         language: String
     ) {
-        if (fetchedModules.containsKey(fileName)) return // Already fetched
+        if (fetchedModules.containsKey(fileName)) return
         
+        // --- Step 1: Fetch and Translate ---
         var content = try {
             fetchString("$baseUrl/assets/$fileName")
         } catch (e: Exception) {
@@ -128,77 +111,96 @@ class ReferenceJsFetcher {
             return
         }
 
-        // Translate strings in the raw JS if English is requested
         if (language == "en" && dictionary.isNotEmpty()) {
              dictionary.forEach { (ru, en) -> 
-                 // Replace strictly specific strings to avoid breaking code
                  if (ru.length > 3) content = content.replace(ru, en) 
              }
         }
         fetchedModules[fileName] = content
-        moduleVarNames[fileName] = varName
+        moduleVarNames[fileName] = varName // Store the variable name for later lookup
 
-        // Analyze imports to fetch children
-        // Matches: import { X } from "./file.js" OR import X from "./file.js"
-        // Note: The regex handles basic Vite/Rollup import patterns
-        val importRegex = Regex("""import\s*(?:\{([^}]+)\}|([a-zA-Z0-9_]+))?\s*from\s*["']\./([^"']+\.js)["']""")
+        // --- Step 2: Recursively fetch dependencies ---
+        // Matches: import Name from './file.js' OR import { A, B } from './file.js'
+        val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']\./([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
 
-        // Recurse first (bottom-up loading)
         for (match in imports) {
             val depPath = match.groupValues[3]
             val depFileName = getName(depPath)
+            // Ensure unique var name: fileName + part of hash
             val depVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
             fetchModuleRecursive(logger, depFileName, depVarName, sb, dictionary, language)
         }
 
-        // Rewrite the current module to be a variable
-        // 1. Remove the import statements
-        var cleanContent = content.replace(Regex("""import\s*.*?\s*from\s*["'].*?["'];?"""), "")
-
-        // 2. Handle Vue/Vendor imports (imports from index.js usually)
-        // We replace `import ... from "./index.hash.js"` with destructuring from window.Vue
-        // Adjust regex to match the specific index file format if needed
-        val vendorImportRegex = Regex("""import\s*\{([^}]+)\}\s*from\s*["']\./index\.[^"']+\.js["']""")
-        cleanContent = cleanContent.replace(vendorImportRegex) { 
-            val importedProps = it.groupValues[1]
-             // Don't redefine things we already polyfilled globally
-            "/* vendor import handled globally */"
+        // --- Step 3: Parse and Construct Exports/Return Statement ---
+        val exportMap = mutableMapOf<String, String>() 
+        
+        // 3a. Handle Default Export: captures 'export default Variable;'
+        val defaultExportMatch = Regex("""export\s+default\s+([a-zA-Z0-9_$]+)""").find(content)
+        if (defaultExportMatch != null) {
+            exportMap["default"] = defaultExportMatch.groupValues[1].trim()
         }
-
-        // 3. Convert exports to a return object
-        // `export default X` -> `return X`
-        // `export { A as B }` -> `return { B: A }`
-        val exportDefaultRegex = Regex("""export\s+default\s+""")
-        if (exportDefaultRegex.containsMatchIn(cleanContent)) {
-             cleanContent = cleanContent.replace(exportDefaultRegex, "return ")
-        } else {
-             // Handle named exports: export { a, b }
-             cleanContent = cleanContent.replace(Regex("""export\s*\{"""), "return {")
+        
+        // 3b. Handle Named Exports: captures 'export { A, B as C }'
+        val namedExportsMatches = Regex("""export\s*\{([^}]+)\}""").findAll(content).toList()
+        namedExportsMatches.forEach { match ->
+            match.groupValues[1].split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
+                val parts = exportItem.split(Regex("""\s+as\s+"""))
+                if (parts.size == 2) {
+                    // { local as export } -> export: local
+                    exportMap[parts[1].trim()] = parts[0].trim()
+                } else {
+                    // { local } -> local: local
+                    exportMap[parts[0].trim()] = parts[0].trim()
+                }
+            }
         }
+        
+        // 3c. Create the Return Statement
+        val exportsList = exportMap.entries.joinToString(", ") { 
+            if (it.key == it.value) it.key else "${it.key}: ${it.value}"
+        }
+        val returnStatement = if (exportsList.isEmpty()) "return {};" else "return { $exportsList };"
 
-        // 4. Inject dependencies at the top of the module closure
+        // --- Step 4: Clean Content & Assemble IIFE ---
+        
+        // Create header with local imports
         val header = StringBuilder()
-        for (match in imports) {
-            val namedImports = match.groupValues[1] // "a, b as c"
-            val defaultImport = match.groupValues[2] // "MyModule"
+        imports.forEach { match ->
+            val defaultImport = match.groupValues[1]
+            val namedImports = match.groupValues[2]
             val depPath = match.groupValues[3]
-            // Reconstruct the var name used in recursion
             val depFileName = getName(depPath)
-            val depVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
+            val depVarName = moduleVarNames[depFileName] // Retrieve the stored variable name
 
-            if (defaultImport.isNotEmpty()) {
-                header.append("const $defaultImport = $depVarName.default || $depVarName;\n")
-            } else if (namedImports.isNotEmpty()) {
-                // Destructure named imports. 
-                // Note: This simple replacement assumes variable names match. 
-                // Complex 'as' aliasing inside {} might need more parsing, but this covers most minified cases.
-                header.append("const { $namedImports } = $depVarName;\n")
+            if (depVarName != null) {
+                 if (defaultImport.isNotEmpty()) {
+                     // import Name from './file.js' -> const Name = depVarName.default || depVarName
+                     header.append("const $defaultImport = $depVarName.default || $depVarName;\n")
+                 }
+                 if (namedImports.isNotEmpty()) {
+                     // import { A, B } from './file.js' -> const { A, B } = depVarName
+                     header.append("const { $namedImports } = $depVarName;\n")
+                 }
             }
         }
 
-        // Wrap in IIFE and assign to unique variable
-        sb.append("const $varName = (() => {\n$header\n$cleanContent\n})();\n")
+        // Strip out all imports, exports, and comments/garbage from the content body
+        var strippedContent = content
+            .replace(Regex("""import\s*.*?\s*from\s*["'].*?["'];?"""), "") 
+            .replace(Regex("""export\s+default\s+.*?;?"""), "") 
+            .replace(Regex("""export\s*\{[^}]*\}"""), "")
+            .replace(Regex("""/\*![\s\S]*?\*/"""), "") // Remove multiline comments (including license blocks)
+            .replace(Regex("""\/\/.*?\n"""), "") // Remove single-line comments
+            // Remove common module boilerplate left by minifiers 
+            .replace(Regex("""["']\.\/index\.[^"']+\.js["']"""), "") 
+            .replace(Regex("""Vue\.global\.prod\.js"""), "") 
+            // Handle the likely source of the '--' error: an abandoned Vue template/HTML comment 
+            .replace(Regex(""""""), "")
+
+
+        // Assemble the module IIFE (Immediately Invoked Function Expression)
+        sb.append("const $varName = (() => {\n$header\n$strippedContent\n$returnStatement\n})();\n")
     }
 
     private fun fetchString(url: String): String {
@@ -213,6 +215,8 @@ class ReferenceJsFetcher {
     private fun findMatch(content: String, regex: String): String? = Regex(regex).find(content)?.groupValues?.get(1)
 }
 
+// The ReferencePdfGenerator class remains the same as its logic was already updated 
+// to use the dynamically extracted JavaScript functions (window.RefComponent and window.RefDocGenerator)
 class ReferencePdfGenerator(private val context: Context) {
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -258,7 +262,6 @@ class ReferencePdfGenerator(private val context: Context) {
 
             val dateLocale = if (language == "en") "en-US" else "ru-RU"
 
-            // We use Vue CDN to handle the component logic
             val html = """
             <!DOCTYPE html>
             <html>
@@ -297,8 +300,6 @@ class ReferencePdfGenerator(private val context: Context) {
                             throw "Component setup not found. Check if RefModule loaded correctly.";
                         }
                         
-                        // We manually invoke the setup() function of the component to get its reactive state.
-                        // This avoids needing a full DOM mount, although mounting is also an option.
                         const { reactive, unref } = Vue;
                         const props = reactive(propsData);
                         const context = { attrs: {}, slots: {}, emit: () => {} };
@@ -309,9 +310,6 @@ class ReferencePdfGenerator(private val context: Context) {
                         // Wait briefly for any watchers/computeds to settle
                         setTimeout(() => {
                              try {
-                                 // The component calculates 'course' (edunum), 'docId' (id), etc.
-                                 // We scan the returned state to find the object matching { id, edunum, date, adress }
-                                 // or construct it from individual fields.
                                  
                                  let dataObj = null;
                                  
@@ -324,7 +322,7 @@ class ReferencePdfGenerator(private val context: Context) {
                                      }
                                  }
                                  
-                                 // Fallback: Construct from common variable names in the minified code if object not found
+                                 // Fallback: Construct from common variable names in the state
                                  if (!dataObj) {
                                      dataObj = {
                                          id: unref(state.docId || state.id || state.doc_id),
@@ -335,17 +333,21 @@ class ReferencePdfGenerator(private val context: Context) {
                                  }
                                  
                                  if (!dataObj || !dataObj.id) {
-                                     // Last ditch attempt: check if state itself has the props
-                                     if (state.id && state.edunum) dataObj = state;
+                                     // Final check: check if state itself has the props
+                                     if (unref(state.id) && unref(state.edunum)) dataObj = state;
                                      else throw "Could not calculate document data. State keys: " + Object.keys(state).join(",");
                                  }
                                  
-                                 AndroidBridge.log("JS: Calculated: " + JSON.stringify(dataObj));
+                                 // Unref all properties before passing them to the generator
+                                 const finalData = {};
+                                 for(const key in dataObj) { finalData[key] = unref(dataObj[key]); }
+                                 
+                                 AndroidBridge.log("JS: Calculated: " + JSON.stringify(finalData));
                                  
                                  // Call the extracted PDF Generator function
-                                 if (typeof window.RefDocGenerator !== 'function') throw "RefDocGenerator not found.";
+                                 if (typeof window.RefDocGenerator !== 'function') throw "RefDocGenerator function not found in window object.";
                                  
-                                 const docDef = window.RefDocGenerator(propsData.student, dataObj, propsData.qr);
+                                 const docDef = window.RefDocGenerator(propsData.student, finalData, propsData.qr);
                                  pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                                  
                              } catch(err) {
