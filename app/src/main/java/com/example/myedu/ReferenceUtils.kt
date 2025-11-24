@@ -16,7 +16,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import org.json.JSONObject
-import java.util.regex.Pattern
 
 class ReferenceJsFetcher {
 
@@ -42,29 +41,32 @@ class ReferenceJsFetcher {
             // 1. Identify the logic file for Reference
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
-                // Fallback check in StudentDocuments
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
                     refJsPath = findMatch(docsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
                 }
             }
+            
             if (refJsPath == null) throw Exception("References7 JS missing in dependency chain")
             
             val entryFileName = getName(refJsPath)
+            
+            // Build the monolithic script
             val scriptBuilder = StringBuilder()
 
             // 2. Polyfill Environment
             scriptBuilder.append("const Vue = window.Vue;\n")
             scriptBuilder.append("const { ref, computed, reactive, unref, toRef, watch, onMounted, getCurrentInstance, defineComponent, resolveComponent, openBlock, createElementBlock, createBaseVNode, toDisplayString, createVNode, withCtx, createTextVNode } = Vue;\n")
             scriptBuilder.append("const window_location = { origin: '$baseUrl' };\n")
-
+            
             // 3. Recursively fetch modules
             logger("Fetching module tree starting from $entryFileName...")
             val entryVarName = fetchModuleRecursive(logger, entryFileName, scriptBuilder, dictionary, language)
 
-            // 4. Find and Expose the PDF Generator
+            // 4. Dynamic PDF Generator Discovery
             var generatorVarName: String? = null
+            
             for ((fileName, varName) in moduleVarNames) {
                 val content = fetchedModules[fileName] ?: ""
                 // Heuristic: pdfMake definitions use pageSize and A4/portrait
@@ -100,12 +102,13 @@ class ReferenceJsFetcher {
             return moduleVarNames[fileName]!!
         }
 
+        // Generate a safe unique variable name for this module
         val uniqueVarName = "Mod_" + fileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + fileName.hashCode().toString().replace("-", "N")
         moduleVarNames[fileName] = uniqueVarName 
 
-        // SAFETY CHECK 1: Skip non-JS files (CSS, etc) to prevent "Unexpected token" errors
+        // Skip non-JS files
         if (!fileName.endsWith(".js")) {
-            sb.append("const $uniqueVarName = { default: {} }; // Skipped non-JS file\n")
+            sb.append("const $uniqueVarName = { default: {} }; // Mocked non-JS file\n")
             return uniqueVarName
         }
 
@@ -116,14 +119,13 @@ class ReferenceJsFetcher {
             "export default {};"
         }
 
-        // SAFETY CHECK 2: Detect HTML 404 pages masquerading as JS
+        // Detect HTML 404 pages masquerading as JS
         if (content.trim().startsWith("<")) {
-             logger("Warning: $fileName returned HTML (likely 404). Mocking empty.")
+             logger("Warning: $fileName returned HTML. Mocking empty.")
              sb.append("const $uniqueVarName = { default: {} }; // Mocked HTML response\n")
              return uniqueVarName
         }
 
-        // Translate if needed
         if (language == "en" && dictionary.isNotEmpty()) {
              dictionary.forEach { (ru, en) -> 
                  if (ru.length > 3) content = content.replace(ru, en) 
@@ -140,22 +142,19 @@ class ReferenceJsFetcher {
             "import { $imports } from \"$path\"; export { $imports };"
         }
 
-        // Handle `export * from 'b'` by converting to import and marking for spread later
+        // Handle `export * from 'b'`
         val starDependencies = mutableListOf<String>()
         content = content.replace(Regex("""export\s*\*\s*from\s*["']([^"']+)["'];?""")) {
             val path = it.groupValues[1]
             val starDepName = "StarDep_" + path.hashCode().toString().replace("-", "_")
-            // Inject a special import we can catch in the main loop
             "import * as $starDepName from \"$path\"; /*STAR_EXPORT*/"
         }
 
         // --- Main Import Resolution ---
-        // Regex handles:
-        // 1. import Ident from "path"
-        // 2. import { a, b } from "path"
-        // 3. import * as ns from "path"
-        // 4. import "path" (side effect)
-        val importRegex = Regex("""import\s*(?:([\w\s{},*${'$'}]+)\s+from\s*)?["']([^"']+)["'];?""")
+        // Regex: import [Clause] from 'path';
+        // Clause can be "{ a, b }", "Def", "* as N", or empty (side-effect)
+        // [FIX]: \s*from allows for minified code like `import{x}from"y"`
+        val importRegex = Regex("""import\s*(?:([\w\s{},*${'$'}]+)\s*from\s*)?["']([^"']+)["'];?""")
         val matches = importRegex.findAll(content).toList()
         
         val replacements = mutableListOf<Pair<String, String>>()
@@ -166,22 +165,23 @@ class ReferenceJsFetcher {
             val path = match.groups[2]?.value ?: continue
             
             val depFileName = getName(path)
+            // RECURSION: Fetch dependency first so it's defined above
             val depVarName = fetchModuleRecursive(logger, depFileName, sb, dictionary, language)
             
             val replacementLine = StringBuilder()
             
             if (importClause == null) {
-                // Side effect: import "foo.css" -> replaced by comments in recursion if non-js
-                replacementLine.append("// Side-effect import: $depFileName")
+                // Side effect: import "./foo.js"
+                replacementLine.append("// Imported side-effect: $depFileName")
             } else if (importClause.contains("* as")) {
-                // Namespace import: import * as NS from ...
+                // Namespace: import * as NS
                 val varName = importClause.split("as")[1].trim()
                 replacementLine.append("const $varName = $depVarName;")
                 if (fullMatch.contains("/*STAR_EXPORT*/")) {
                     starDependencies.add(varName)
                 }
             } else if (importClause.contains("{")) {
-                // Named imports: import { a, b as c } from ...
+                // Named: import { a, b as c }
                 val cleanClause = importClause.replace("{", "").replace("}", "").trim()
                 val parts = cleanClause.split(",")
                 val destructuring = parts.joinToString(",") { 
@@ -189,7 +189,7 @@ class ReferenceJsFetcher {
                 }
                 replacementLine.append("const { $destructuring } = $depVarName;")
             } else {
-                // Default import: import A from ...
+                // Default: import A
                 replacementLine.append("const ${importClause.trim()} = $depVarName.default || $depVarName;")
             }
             replacementLine.append("\n")
@@ -202,7 +202,7 @@ class ReferenceJsFetcher {
             modifiedContent = modifiedContent.replace(target, replacement)
         }
         
-        // Cleanup remaining import artifacts (like CSS imports that Regex missed or malformed)
+        // Cleanup CSS imports that regex might have missed if they were complex
         modifiedContent = modifiedContent.replace(Regex("""import\s+["'][^"']+\.(css|svg|png|jpg|jpeg)["'];?"""), "// asset removed\n")
 
         // --- Export Handling ---
@@ -232,16 +232,15 @@ class ReferenceJsFetcher {
         // Handle inline exports: export const x = ...
         modifiedContent = modifiedContent.replace(Regex("""export\s+(const|var|let|function|class)\s+"""), "$1 ")
         
-        // Handle `import.meta` which causes syntax errors in some webviews
+        // Handle import.meta
         modifiedContent = modifiedContent.replace("import.meta", "({url: ''})")
 
-        // --- Final Assembly ---
+        // --- Wrap in IIFE ---
         sb.append("\n// --- Module: $fileName ---\n")
         sb.append("const $uniqueVarName = (() => {\n")
         sb.append(modifiedContent)
         sb.append("\n\nreturn { ")
         
-        // Spread star exports first
         starDependencies.forEach { starVar ->
             sb.append("...$starVar, ")
         }
@@ -344,22 +343,23 @@ class ReferencePdfGenerator(private val context: Context) {
                 };
             </script>
 
-            <script>
+            <script type="module">
                 try {
                     ${resources.combinedScript}
                 } catch (e) {
                     AndroidBridge.returnError("Script Injection Error: " + e.message);
                     console.error(e);
                 }
-            </script>
-
-            <script>
-                function runGeneration() {
+            
+                async function runGeneration() {
                     try {
                         AndroidBridge.log("JS: Starting generation...");
                         
+                        // Small delay to ensure IIFEs ran
+                        await new Promise(r => setTimeout(r, 100));
+                        
                         if (typeof window.RefDocGenerator !== 'function') {
-                            throw "Generator function (RefDocGenerator) not found. Check if module with 'pageSize' was loaded.";
+                            throw "RefDocGenerator not found. Check if module with 'pageSize' was loaded.";
                         }
 
                         const Comp = window.RefComponent;
@@ -371,15 +371,15 @@ class ReferencePdfGenerator(private val context: Context) {
                         const props = reactive(propsData);
                         const context = { attrs: {}, slots: {}, emit: () => {} };
                         
-                        // Run setup() to get derived data (like course number)
+                        // Run setup() to get derived data
                         const state = Comp.setup(props, context);
                         
-                        // Wait for any async watchers/promises in setup
+                        // Wait for any async watchers
                         setTimeout(() => {
                              try {
                                  let dataObj = null;
                                  
-                                 // Smart scan for the data object in the component state
+                                 // Smart scan
                                  if (state && typeof state === 'object') {
                                      if (unref(state.edunum)) {
                                          dataObj = {};
@@ -395,7 +395,6 @@ class ReferencePdfGenerator(private val context: Context) {
                                      }
                                  }
 
-                                 // Fallback to props if logic failed
                                  if (!dataObj) {
                                      AndroidBridge.log("JS: Warning - State scan failed, using raw props.");
                                      dataObj = propsData.student;
@@ -414,7 +413,7 @@ class ReferencePdfGenerator(private val context: Context) {
                              } catch(err) {
                                  AndroidBridge.returnError("Logic Error: " + err.toString());
                              }
-                        }, 1000);
+                        }, 500);
                         
                     } catch(e) { 
                         AndroidBridge.returnError("Setup Error: " + e.toString()); 
@@ -429,7 +428,7 @@ class ReferencePdfGenerator(private val context: Context) {
             
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
-                    // Script runs inline
+                    // Logic runs in module script
                 }
             }
             webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
