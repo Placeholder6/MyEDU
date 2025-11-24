@@ -1,9 +1,8 @@
-//
 package com.example.myedu
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.util.Base64 // Fix for Unresolved reference
+import android.util.Base64
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -22,7 +21,7 @@ class ReferenceJsFetcher {
     
     // Cache to prevent re-fetching and infinite loops in recursion
     private val fetchedModules = mutableMapOf<String, String>()
-    // Key: FileName, Value: Assigned JS variable name
+    // Map to store the variable name assigned to each module
     private val moduleVarNames = mutableMapOf<String, String>() 
 
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String>): PdfResources = withContext(Dispatchers.IO) {
@@ -32,7 +31,6 @@ class ReferenceJsFetcher {
         try {
             logger("Finding entry point...")
             val indexHtml = fetchString("$baseUrl/")
-            // Regex safety: use findMatch helper which handles missing groups
             val mainJsName = findMatch(indexHtml, """src="/assets/(index\.[^"]+\.js)"""") 
                 ?: throw Exception("Main JS missing")
             val mainJsContent = fetchString("$baseUrl/assets/$mainJsName")
@@ -119,25 +117,21 @@ class ReferenceJsFetcher {
         moduleVarNames[fileName] = depVarName
 
         // --- Step 2: Identify Imports and Recurse ---
-        // Match: import Name from 'path' OR import { A } from 'path'. Path is in the last capturing group.
-        // We allow flexible path matching to catch ./, ../, or just filename
         val importRegex = Regex("""import\s*(?:(\w+)\s+from\s*|(?:\s*\{([^}]+)\}\s*from\s*))?["']([^"']+\.js)["']""")
         val imports = importRegex.findAll(content).toList()
         
-        // Store all original match details for removal and header generation
         val importDetails = mutableListOf<Triple<String, String, String>>()
 
         for (match in imports) {
-            // Use getOrNull to prevent "No group 1" / IndexOutOfBounds errors
-            val depPath = match.groups[3]?.value ?: continue 
+            val depPath = safeGetGroup(match, 3) ?: continue 
             val fullMatch = match.value
             val depFileName = getName(depPath)
             
             val nextVarName = depFileName.replace(Regex("[^a-zA-Z0-9]"), "_") + "_" + depFileName.hashCode().toString().takeLast(4)
             fetchModuleRecursive(logger, depFileName, nextVarName, sb, dictionary, language)
 
-            val defaultImport = match.groups[1]?.value ?: ""
-            val namedImports = match.groups[2]?.value ?: ""
+            val defaultImport = safeGetGroup(match, 1) ?: ""
+            val namedImports = safeGetGroup(match, 2) ?: ""
 
             importDetails.add(Triple(fullMatch, defaultImport, namedImports))
         }
@@ -146,27 +140,33 @@ class ReferenceJsFetcher {
         val exportMap = mutableMapOf<String, String>() 
         var cleanContent = content
 
-        // 1. Capture and remove named exports: export { A, B as C };
+        // 1. Capture and remove named exports
         val namedExportsRegex = Regex("""(export\s*\{([\s\S]*?)\}\s*;?\s*)""")
-        namedExportsRegex.findAll(cleanContent).toList().forEach { match ->
-            val fullMatch = match.groupValues[1]
-            val exportBlock = match.groupValues[2]
-            
+        val namedExportsMatches = namedExportsRegex.findAll(cleanContent).toList()
+        
+        for (match in namedExportsMatches) {
+             cleanContent = cleanContent.replace(match.value, "")
+        }
+
+        for (match in namedExportsMatches) {
+            val exportBlock = safeGetGroup(match, 2) ?: ""
             exportBlock.split(',').map { it.trim() }.filter { it.isNotEmpty() }.forEach { exportItem ->
                 val parts = exportItem.split(Regex("""\s+as\s+"""))
                 val localName = parts[0].trim()
                 val exportedName = if (parts.size == 2) parts[1].trim() else localName
                 exportMap[exportedName] = localName
             }
-            cleanContent = cleanContent.replace(fullMatch, "")
         }
         
-        // 2. Capture and remove default export: export default X;
+        // 2. Capture and remove default export
         val defaultExportRegex = Regex("""(export\s+default\s+([a-zA-Z0-9_$]+)(?:;)?\s*)""")
         val defaultExportMatch = defaultExportRegex.find(cleanContent)
         if (defaultExportMatch != null) {
-            val fullMatch = defaultExportMatch.groupValues[1]
-            exportMap["default"] = defaultExportMatch.groupValues[2].trim() 
+            val fullMatch = defaultExportMatch.value
+            val identifier = safeGetGroup(defaultExportMatch, 2) ?: ""
+            if (identifier.isNotEmpty()) {
+                exportMap["default"] = identifier
+            }
             cleanContent = cleanContent.replace(fullMatch, "")
         }
         
@@ -177,12 +177,13 @@ class ReferenceJsFetcher {
         
         // --- Step 4: Clean Imports & Assemble IIFE ---
 
-        // 1. Remove all import statements
+        // 1. Remove imports
         importDetails.forEach { (fullMatch, _, _) ->
             cleanContent = cleanContent.replace(fullMatch, "")
         }
         
-        // 2. Remove comments and HTML fragments (Source of '--' error)
+        // 2. Remove Comments (Safely)
+        // Removing HTML comments and multi-line comments only to avoid breaking code
         cleanContent = cleanContent
             .replace(Regex(""""""), "")
             .replace(Regex("""/\*![\s\S]*?\*/"""), "")
@@ -191,7 +192,7 @@ class ReferenceJsFetcher {
         val header = StringBuilder()
         importDetails.forEach { (fullMatch, defaultImport, namedImports) ->
             val depPathMatch = Regex("""['"]([^"']+\.js)['"]""").find(fullMatch)
-            val depFileName = depPathMatch?.groupValues?.get(1)?.let { getName(it) } ?: ""
+            val depFileName = depPathMatch?.let { safeGetGroup(it, 1) }?.let { getName(it) } ?: ""
             val depVarNameInMap = moduleVarNames[depFileName]
 
             if (depVarNameInMap != null) {
@@ -199,7 +200,6 @@ class ReferenceJsFetcher {
                      header.append("const $defaultImport = $depVarNameInMap.default || $depVarNameInMap;\n")
                  }
                  if (namedImports.isNotEmpty()) {
-                     // Fix "Unexpected identifier 'as'": Replace "a as b" with "a: b" for JS destructuring
                      val safeNamedImports = namedImports.split(",").joinToString(",") { item ->
                          item.replace(Regex("""\s+as\s+"""), ": ")
                      }
@@ -222,14 +222,15 @@ class ReferenceJsFetcher {
 
     private fun getName(path: String) = path.split('/').last()
     
-    // Helper to safely get a capture group without throwing "No group 1" exceptions
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
-        return if (match != null && match.groups.size > 1) {
-            match.groupValues[1]
-        } else {
-            null
-        }
+        return safeGetGroup(match, 1)
+    }
+
+    // Helper to avoid "No group 1" IndexOutOfBoundsExceptions
+    private fun safeGetGroup(match: MatchResult?, index: Int): String? {
+        if (match == null) return null
+        return if (index < match.groupValues.size) match.groupValues[index] else null
     }
 }
 
@@ -325,7 +326,6 @@ class ReferencePdfGenerator(private val context: Context) {
                                  
                                  let dataObj = null;
                                  
-                                 // Scan state to find the data object (contains course, date, docId)
                                  for (const key in state) {
                                      const val = unref(state[key]);
                                      if (val && typeof val === 'object' && val.edunum && val.id) {
@@ -334,7 +334,6 @@ class ReferencePdfGenerator(private val context: Context) {
                                      }
                                  }
                                  
-                                 // Fallback construction
                                  if (!dataObj) {
                                      dataObj = {
                                          id: unref(state.docId || state.id || state.doc_id),
@@ -346,7 +345,7 @@ class ReferencePdfGenerator(private val context: Context) {
                                  
                                  if (!dataObj || !dataObj.id) {
                                      if (unref(state.id) && unref(state.edunum)) dataObj = state;
-                                     else throw "Could not calculate document data. State keys: " + Object.keys(state).join(",");
+                                     else throw "Could not calculate document data. State keys: " + Object.keys(unref(state)).join(",");
                                  }
                                  
                                  const finalData = {};
