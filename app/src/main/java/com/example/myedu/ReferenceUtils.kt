@@ -12,6 +12,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import org.json.JSONObject
 import java.util.regex.Pattern
 
@@ -39,6 +42,7 @@ class ReferenceJsFetcher {
             // 1. Identify the logic file for Reference
             var refJsPath = findMatch(mainJsContent, """["']([^"']*References7\.[^"']+\.js)["']""")
             if (refJsPath == null) {
+                // Fallback check in StudentDocuments
                 val docsJsPath = findMatch(mainJsContent, """["']([^"']*StudentDocuments\.[^"']+\.js)["']""")
                 if (docsJsPath != null) {
                     val docsContent = fetchString("$baseUrl/assets/${getName(docsJsPath)}")
@@ -142,7 +146,6 @@ class ReferenceJsFetcher {
             val path = it.groupValues[1]
             val starDepName = "StarDep_" + path.hashCode().toString().replace("-", "_")
             // Inject a special import we can catch in the main loop
-            // Using "import * as Name" syntax which we will handle
             "import * as $starDepName from \"$path\"; /*STAR_EXPORT*/"
         }
 
@@ -152,7 +155,6 @@ class ReferenceJsFetcher {
         // 2. import { a, b } from "path"
         // 3. import * as ns from "path"
         // 4. import "path" (side effect)
-        // It allows optional spaces around matching groups
         val importRegex = Regex("""import\s*(?:([\w\s{},*${'$'}]+)\s+from\s*)?["']([^"']+)["'];?""")
         val matches = importRegex.findAll(content).toList()
         
@@ -269,5 +271,168 @@ class ReferenceJsFetcher {
     private fun findMatch(content: String, regex: String): String? {
         val match = Regex(regex).find(content)
         return if (match != null && match.groups.size > 1) match.groupValues[1] else null
+    }
+}
+
+class ReferencePdfGenerator(private val context: Context) {
+
+    @SuppressLint("SetJavaScriptEnabled")
+    suspend fun generatePdf(
+        studentInfoJson: String,
+        licenseInfoJson: String,
+        univInfoJson: String,
+        linkId: Long,
+        qrUrl: String,
+        resources: PdfResources,
+        language: String = "ru",
+        dictionary: Map<String, String> = emptyMap(),
+        logCallback: (String) -> Unit
+    ): ByteArray = suspendCancellableCoroutine { continuation ->
+        
+        android.os.Handler(android.os.Looper.getMainLooper()).post {
+            val webView = WebView(context)
+            webView.settings.javaScriptEnabled = true
+            webView.settings.domStorageEnabled = true
+            
+            webView.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(cm: ConsoleMessage): Boolean {
+                    logCallback("[JS Ref] ${cm.message()} (Line ${cm.lineNumber()})")
+                    return true
+                }
+            }
+            webView.addJavascriptInterface(object : Any() {
+                @JavascriptInterface
+                fun returnPdf(base64: String) {
+                    try {
+                        val clean = base64.replace("data:application/pdf;base64,", "")
+                        val bytes = Base64.decode(clean, Base64.DEFAULT)
+                        if (continuation.isActive) continuation.resume(bytes)
+                    } catch (e: Exception) {
+                        if (continuation.isActive) continuation.resumeWithException(e)
+                    }
+                }
+                @JavascriptInterface
+                fun returnError(msg: String) {
+                    if (continuation.isActive) continuation.resumeWithException(Exception("JS Error: $msg"))
+                }
+                @JavascriptInterface
+                fun log(msg: String) = logCallback(msg)
+            }, "AndroidBridge")
+
+            val html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+                <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+                <style>body { background: #fff; }</style>
+            </head>
+            <body>
+            <div id="app"></div>
+            <script>
+                window.onerror = function(msg, url, line) { 
+                    AndroidBridge.returnError(msg + " @ " + line); 
+                };
+                
+                const propsData = {
+                    student: $studentInfoJson,
+                    info: $studentInfoJson,
+                    license: $licenseInfoJson,
+                    university: $univInfoJson,
+                    qr: "$qrUrl"
+                };
+            </script>
+
+            <script>
+                try {
+                    ${resources.combinedScript}
+                } catch (e) {
+                    AndroidBridge.returnError("Script Injection Error: " + e.message);
+                    console.error(e);
+                }
+            </script>
+
+            <script>
+                function runGeneration() {
+                    try {
+                        AndroidBridge.log("JS: Starting generation...");
+                        
+                        if (typeof window.RefDocGenerator !== 'function') {
+                            throw "Generator function (RefDocGenerator) not found. Check if module with 'pageSize' was loaded.";
+                        }
+
+                        const Comp = window.RefComponent;
+                        if (!Comp || !Comp.setup) {
+                            throw "Vue Component not found.";
+                        }
+                        
+                        const { reactive, unref } = Vue;
+                        const props = reactive(propsData);
+                        const context = { attrs: {}, slots: {}, emit: () => {} };
+                        
+                        // Run setup() to get derived data (like course number)
+                        const state = Comp.setup(props, context);
+                        
+                        // Wait for any async watchers/promises in setup
+                        setTimeout(() => {
+                             try {
+                                 let dataObj = null;
+                                 
+                                 // Smart scan for the data object in the component state
+                                 if (state && typeof state === 'object') {
+                                     if (unref(state.edunum)) {
+                                         dataObj = {};
+                                         for(const key in state) dataObj[key] = unref(state[key]);
+                                     } else {
+                                         for (const key in state) {
+                                             const val = unref(state[key]);
+                                             if (val && typeof val === 'object' && (val.edunum || val.id)) {
+                                                 dataObj = val;
+                                                 break;
+                                             }
+                                         }
+                                     }
+                                 }
+
+                                 // Fallback to props if logic failed
+                                 if (!dataObj) {
+                                     AndroidBridge.log("JS: Warning - State scan failed, using raw props.");
+                                     dataObj = propsData.student;
+                                 }
+                                 
+                                 const finalData = JSON.parse(JSON.stringify(dataObj));
+                                 
+                                 AndroidBridge.log("JS: Generating PDF...");
+                                 const docDef = window.RefDocGenerator(propsData.student, finalData, propsData.qr);
+                                 
+                                 const pdfDocGenerator = pdfMake.createPdf(docDef);
+                                 pdfDocGenerator.getBase64(function(b64) {
+                                     AndroidBridge.returnPdf(b64);
+                                 });
+                                 
+                             } catch(err) {
+                                 AndroidBridge.returnError("Logic Error: " + err.toString());
+                             }
+                        }, 1000);
+                        
+                    } catch(e) { 
+                        AndroidBridge.returnError("Setup Error: " + e.toString()); 
+                    }
+                }
+                
+                runGeneration();
+            </script>
+            </body>
+            </html>
+            """
+            
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    // Script runs inline
+                }
+            }
+            webView.loadDataWithBaseURL("https://myedu.oshsu.kg/", html, "text/html", "UTF-8", null)
+        }
     }
 }
