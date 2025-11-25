@@ -2,11 +2,13 @@ name: Build Release APK
 
 on:
   workflow_dispatch:
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
 
     env:
+      # These secrets must be set in your GitHub Repo Settings
       RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
       RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEYSTORE_ALIAS }}
       RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
@@ -22,20 +24,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4  # FIXED: Updated from v2 to v4
 
       - name: Set up JDK
-        uses: actions/setup-java@v3
+        uses: actions/setup-java@v4 # FIXED: Updated from v3 to v4
         with:
           distribution: "temurin"
           java-version: "17"
-          
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
       - name: Set up signing key
         run: |
+          # Decodes the base64 keystore to a file
           base64 -d <<< $KEYSTORE_BASE_64 > release.keystore
+          # Exports the path to the variable name expected by Gradle
           echo "RELEASE_STORE_FILE=$(realpath release.keystore)" >> $GITHUB_ENV
 
       - name: Build release APK
