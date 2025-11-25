@@ -15,7 +15,7 @@ jobs:
       KEYSTORE_BASE_64: ${{ secrets.KEYSTORE_BASE_64 }}
 
     permissions:
-      contents: read
+      contents: write
       packages: write
       checks: write
       pull-requests: write
@@ -43,15 +43,17 @@ jobs:
           echo "RELEASE_STORE_FILE=$(realpath release.keystore)" >> $GITHUB_ENV
         
       - name: Bump version code
-        run: 
-          CURRENT_VERSION=$(grep 'versionName' app/build.gradle.kts | awk -F '"' '{print $2}')
+        id: versioning
+        run: |
+          GRADLE_FILE="app/build.gradle.kts"
+          CURRENT_VERSION=$(grep 'versionName' $GRADLE_FILE | awk -F '"' '{print $2}')
           MAJOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $1}')
           CURRENT_MINOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $2}')
           NEW_MINOR=$(($CURRENT_MINOR + 1))
           NEW_VERSION_STRING="${MAJOR}.${NEW_MINOR}"
-          sed -i -E "s/versionName\s*=?\s*\"[0-9]+\.[0-9]+\"/versionName = \"$NEW_VERSION_STRING\"/" app/build.gradle.kts
-          sed -i "s/versionCode .*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
-          echo "::notice file=app/build.gradle.kts::Updated version to $NEW_VERSION_STRING"
+          sed -i -E "s/versionName\s*=?\s*\"[0-9]+\.[0-9]+\"/versionName = \"$NEW_VERSION_STRING\"/" $GRADLE_FILE
+          sed -i "s/versionCode .*/versionCode = ${{ github.run_number }}/" $GRADLE_FILE
+          echo "::notice file=$GRADLE_FILE::Updated version to $NEW_VERSION_STRING"
           echo "new_version=$NEW_VERSION_STRING" >> $GITHUB_OUTPUT
           
       - name: Build release APK
@@ -67,6 +69,6 @@ jobs:
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .
+          git add app/build.gradle.kts
           git commit -m "[skip ci] Auto-increment version to ${{ steps.versioning.outputs.new_version }}"
           git push
