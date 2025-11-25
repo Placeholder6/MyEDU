@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -66,7 +67,10 @@ import java.util.Locale
 
 // --- UI COMPONENT: LOGO ---
 @Composable
-fun OshSuLogo(modifier: Modifier = Modifier) {
+fun OshSuLogo(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.primary // Default to Monet Primary Color
+) {
     val context = LocalContext.current
     val url = "file:///android_asset/logo-dark4.svg"
     val imageLoader = remember { ImageLoader.Builder(context).components { add(SvgDecoder.Factory()) }.build() }
@@ -75,7 +79,8 @@ fun OshSuLogo(modifier: Modifier = Modifier) {
         imageLoader = imageLoader,
         contentDescription = "OshSU Logo",
         modifier = modifier,
-        contentScale = ContentScale.Fit
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tint) // Apply the dynamic tint
     )
 }
 
