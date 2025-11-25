@@ -41,7 +41,19 @@ jobs:
           base64 -d <<< $KEYSTORE_BASE_64 > release.keystore
           # Exports the path to the variable name expected by Gradle
           echo "RELEASE_STORE_FILE=$(realpath release.keystore)" >> $GITHUB_ENV
-
+        
+      - name: Bump version code
+        run: 
+          VERSION_NAME_LINE="versionName \"[0-9]+\\.[0-9]+\""
+          CURRENT_VERSION=$(grep 'versionName' app/build.gradle.kts | awk -F '"' '{print $2}')
+          MAJOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $1}')
+          CURRENT_MINOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $2}')
+          NEW_MINOR=$(($CURRENT_MINOR + 1))
+          NEW_VERSION_STRING="${MAJOR}.${NEW_MINOR}"
+          sed -i "s/$VERSION_NAME_LINE/versionName \"$NEW_VERSION_STRING\"/" app/build.gradle.kts
+          sed -i "s/versionCode .*/versionCode ${{ github.run_number }}/" app/build.gradle.kts
+          echo "::notice file=app/build.gradle.kts::Updated version to $NEW_VERSION_STRING"
+          
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
@@ -50,3 +62,11 @@ jobs:
         with:
           name: app-release.apk
           path: ./app/build/outputs/apk/release/app-release.apk
+
+      - name: Update Version Increment to Repo
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .
+          git commit -m "[skip ci] Auto-increment version to ${{ steps.versioning.outputs.new_version }}"
+          git push
