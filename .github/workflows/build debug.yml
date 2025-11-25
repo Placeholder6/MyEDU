@@ -17,14 +17,11 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
-    # Explicitly using Gradle 8.5 to prevent version errors
-    - name: Setup Gradle
-      uses: gradle/actions/setup-gradle@v3
-      with:
-        gradle-version: '8.5'
+    - name: Make gradlew executable
+      run: chmod +x ./gradlew
 
     - name: Build Debug APK
-      run: gradle assembleDebug --no-daemon --stacktrace
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
 
     - uses: actions/upload-artifact@v4
       with:
