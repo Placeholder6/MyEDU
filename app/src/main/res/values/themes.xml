@@ -1,10 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Base application theme. -->
     <style name="Theme.MyEDU" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Status bar color. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <!-- Customize your theme here. -->
         <item name="android:windowBackground">@color/white</item>
     </style>
 </resources>
