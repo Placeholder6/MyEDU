@@ -26,9 +26,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -43,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -69,7 +67,7 @@ import java.util.Locale
 @Composable
 fun OshSuLogo(
     modifier: Modifier = Modifier,
-    tint: Color = MaterialTheme.colorScheme.primary // Default to Monet Primary Color
+    tint: Color = MaterialTheme.colorScheme.primary
 ) {
     val context = LocalContext.current
     val url = "file:///android_asset/logo-dark4.svg"
@@ -80,7 +78,7 @@ fun OshSuLogo(
         contentDescription = "OshSU Logo",
         modifier = modifier,
         contentScale = ContentScale.Fit,
-        colorFilter = ColorFilter.tint(tint) // Apply the dynamic tint
+        colorFilter = ColorFilter.tint(tint)
     )
 }
 
@@ -183,25 +181,39 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 
-    // ROOT BOX: Enables Z-index layering.
     Box(modifier = Modifier.fillMaxSize()) {
-        
-        // LAYER 1: The Main Scaffold (Home, Schedule, etc.)
-        // This is always rendered, so it stays visible in the background during animations.
         Scaffold(
             bottomBar = {
-                // NavigationBar is always rendered here to prevent layout jumps.
-                // It will be covered by the full-screen overlays below.
                 NavigationBar {
-                    NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
+                    // Updated to use Filled icons for selected state and Outlined for unselected
+                    NavigationBarItem(
+                        icon = { Icon(if (vm.currentTab == 0) Icons.Filled.Home else Icons.Outlined.Home, null) },
+                        label = { Text("Home") },
+                        selected = vm.currentTab == 0,
+                        onClick = { vm.currentTab = 0 }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(if (vm.currentTab == 1) Icons.Filled.DateRange else Icons.Outlined.DateRange, null) },
+                        label = { Text("Schedule") },
+                        selected = vm.currentTab == 1,
+                        onClick = { vm.currentTab = 1 }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(if (vm.currentTab == 2) Icons.Filled.Description else Icons.Outlined.Description, null) },
+                        label = { Text("Grades") },
+                        selected = vm.currentTab == 2,
+                        onClick = { vm.currentTab = 2 }
+                    )
+                    NavigationBarItem(
+                        icon = { Icon(if (vm.currentTab == 3) Icons.Filled.Person else Icons.Outlined.Person, null) },
+                        label = { Text("Profile") },
+                        selected = vm.currentTab == 3,
+                        onClick = { vm.currentTab = 3 }
+                    )
                 }
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
-                 // Content is always rendered.
                  when(vm.currentTab) {
                     0 -> HomeScreen(vm)
                     1 -> ScheduleScreen(vm)
@@ -211,10 +223,6 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
 
-        // LAYER 2: Full Screen Overlays (Transcript / Reference)
-        // Placing these AFTER the Scaffold in the Box ensures they draw ON TOP.
-        // Because they fill max size, they will cover the Scaffold and the Bottom Bar.
-        
         AnimatedVisibility(
             visible = vm.showTranscriptScreen, 
             enter = slideInHorizontally { it }, 
@@ -233,7 +241,6 @@ fun MainAppStructure(vm: MainViewModel) {
             ReferenceView(vm) { vm.showReferenceScreen = false } 
         }
         
-        // LAYER 3: Bottom Sheet Popup (Class Details)
         if (vm.selectedClass != null) {
             ModalBottomSheet(
                 onDismissRequest = { vm.selectedClass = null },
@@ -254,7 +261,6 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current; val user = vm.userData; val profile = vm.profileData; val mov = profile?.studentMovement
     val activeSemester = profile?.active_semester ?: 1; val course = (activeSemester + 1) / 2
     
-    // Logic: Correct Faculty Name Extraction
     val facultyName = mov?.faculty?.let { it.name_en ?: it.name_ru } 
         ?: mov?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
         ?: "-"
@@ -263,7 +269,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
         topBar = { 
             TopAppBar(
                 title = { Text("Reference (Form 8)") }, 
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
             ) 
         },
         bottomBar = {
@@ -291,7 +297,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                OutlinedCard(Modifier.fillMaxWidth(), colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
                     Column(Modifier.padding(24.dp)) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp)); Spacer(Modifier.height(16.dp)); Text("CERTIFICATE OF STUDY", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center) }
                         Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(24.dp))
@@ -327,7 +333,7 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
         topBar = { 
             TopAppBar(
                 title = { Text("Full Transcript") }, 
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
             ) 
         },
         bottomBar = {
@@ -365,11 +371,19 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
                         yearData.semesters?.forEach { sem ->
                             item { Spacer(Modifier.height(12.dp)); Text(sem.semesterName ?: "Semester", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary); Spacer(Modifier.height(8.dp)) }
                             items(sem.subjects ?: emptyList()) { sub ->
-                                Card(Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Column(Modifier.weight(1f)) { Text(sub.subjectName ?: "Subject", fontWeight = FontWeight.SemiBold); Text("Code: ${sub.code ?: "-"} • Credits: ${sub.credit?.toInt() ?: 0}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
-                                        Column(horizontalAlignment = Alignment.End) { val total = sub.markList?.total?.toInt() ?: 0; Text("$total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (total >= 50) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error); Text(sub.examRule?.alphabetic ?: "-", style = MaterialTheme.typography.bodyMedium) }
-                                    }
+                                // Updated to use ListItem for consistency
+                                OutlinedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                                    ListItem(
+                                        headlineContent = { Text(sub.subjectName ?: "Subject", fontWeight = FontWeight.SemiBold) },
+                                        supportingContent = { Text("Code: ${sub.code ?: "-"} • Credits: ${sub.credit?.toInt() ?: 0}") },
+                                        trailingContent = {
+                                            val total = sub.markList?.total?.toInt() ?: 0
+                                            Column(horizontalAlignment = Alignment.End) {
+                                                Text("$total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (total >= 50) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error)
+                                                Text(sub.examRule?.alphabetic ?: "-", style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    )
                                 }
                             }
                         }
@@ -389,7 +403,6 @@ fun ProfileScreen(vm: MainViewModel) {
     val fullName = "${user?.last_name ?: ""} ${user?.name ?: ""}".trim().ifEmpty { "Student" }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Logic: Correct Faculty Name Extraction for Profile
     val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } 
         ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
         ?: "-"
@@ -397,18 +410,16 @@ fun ProfileScreen(vm: MainViewModel) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
-            // Settings Button
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                  IconButton(onClick = { showSettingsDialog = true }) { Icon(Icons.Default.Settings, "Settings") }
             }
-            // Profile Image
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(128.dp).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)), CircleShape).padding(3.dp).clip(CircleShape).background(MaterialTheme.colorScheme.background)) { AsyncImage(model = profile?.avatar, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape)) }
             Spacer(Modifier.height(16.dp)); Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
             
-            // Payment Status Section
             Spacer(Modifier.height(24.dp))
             if (pay != null) {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                // Updated to ElevatedCard
+                ElevatedCard(Modifier.fillMaxWidth(), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
                     Column(Modifier.padding(16.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("Tuition Contract", fontWeight = FontWeight.Bold); Icon(Icons.Outlined.Payments, null, tint = MaterialTheme.colorScheme.primary) }
                         Spacer(Modifier.height(12.dp))
@@ -419,7 +430,6 @@ fun ProfileScreen(vm: MainViewModel) {
                 Spacer(Modifier.height(24.dp))
             }
             
-            // Document Buttons
             InfoSection("Documents")
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { vm.showReferenceScreen = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Reference") }
@@ -427,13 +437,25 @@ fun ProfileScreen(vm: MainViewModel) {
             }
 
             Spacer(Modifier.height(24.dp)); InfoSection("Personal Details")
-            DetailCard(Icons.Outlined.School, "Faculty", facultyName)
-            DetailCard(Icons.Outlined.Book, "Speciality", profile?.studentMovement?.speciality?.name_en ?: "-")
+            // Updated to OutlinedCard wrapping ListItems for M3 style
+            OutlinedCard(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                ListItem(
+                    headlineContent = { Text("Faculty") },
+                    supportingContent = { Text(facultyName) },
+                    leadingContent = { Icon(Icons.Outlined.School, null) }
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ListItem(
+                    headlineContent = { Text("Speciality") },
+                    supportingContent = { Text(profile?.studentMovement?.speciality?.name_en ?: "-") },
+                    leadingContent = { Icon(Icons.Outlined.Book, null) }
+                )
+            }
+            
             Spacer(Modifier.height(32.dp)); Button(onClick = { vm.logout() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer), modifier = Modifier.fillMaxWidth()) { Text("Log Out") }; Spacer(Modifier.height(80.dp))
         }
     }
 
-    // Settings Dialog
     if (showSettingsDialog) {
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
@@ -509,7 +531,19 @@ fun ScheduleScreen(vm: MainViewModel) {
     val scope = rememberCoroutineScope()
     val initialPage = remember { val cal = Calendar.getInstance(); val dow = cal.get(Calendar.DAY_OF_WEEK); if (dow == Calendar.SUNDAY) 0 else (dow - 2).coerceIn(0, 5) }
     val pagerState = rememberPagerState(initialPage = initialPage) { tabs.size }
-    Scaffold(topBar = { CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) }) { padding ->
+    
+    // Updated to use scroll behavior for top app bar
+    val scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = { 
+            CenterAlignedTopAppBar(
+                title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) },
+                scrollBehavior = scrollBehavior
+            ) 
+        }
+    ) { padding ->
         Column(Modifier.padding(padding)) {
             TabRow(selectedTabIndex = pagerState.currentPage, containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.primary, indicator = { tabPositions -> if (pagerState.currentPage < tabPositions.size) { TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = MaterialTheme.colorScheme.primary) } }) { tabs.forEachIndexed { index, title -> Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) }) } }
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
@@ -528,10 +562,8 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
     val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
     val groupValue = item.stream?.numeric?.toString() ?: "?"
     
-    // FETCH TIME HERE
     val timeString = vm.getTimeString(item.id_lesson)
 
-    // GRADES LOGIC
     val activeSemester = vm.profileData?.active_semester
     val session = vm.sessionData
     val currentSemSession = session.find { it.semester?.id == activeSemester } ?: session.lastOrNull()
@@ -541,19 +573,15 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxWidth().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
-            // Header
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
                 Column(Modifier.padding(24.dp)) { 
                     Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(4.dp))
-                    
-                    // ADDED TIME ROW
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f), modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(timeString, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.9f))
                     }
-                    
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
                         AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
@@ -564,7 +592,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                 } 
             }
             
-            // Grades Section
             Spacer(Modifier.height(24.dp))
             Text("Current Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -587,7 +614,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                 }
             }
 
-            // Teacher Section
             Spacer(Modifier.height(24.dp))
             Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -602,7 +628,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                 } 
             }
 
-            // Location Section
             Spacer(Modifier.height(24.dp))
             Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -621,21 +646,18 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) { 
-                            // ADDRESS FALLBACK LOGIC
                             val address = item.classroom?.building?.getAddress()
                             val displayAddress = if (address.isNullOrBlank()) "Building" else address
                             
                             Text(displayAddress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                             Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                         }
-                        // Copy Button for Building
                         IconButton(onClick = { 
                             clipboardManager.setText(AnnotatedString(item.classroom?.building?.getName() ?: ""))
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
                         }) { 
                             Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
                         }
-                        // Map Button using Building Name
                         IconButton(onClick = { 
                             val locationName = item.classroom?.building?.getName() ?: ""
                             if (locationName.isNotEmpty()) { 
@@ -699,30 +721,75 @@ fun StatCard(
     }
 }
 
+// Updated ClassItem using M3 ListItem
 @Composable
 fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
-    val streamInfo = if (item.stream?.numeric != null) { val type = item.subject_type?.get(); if (type == "Lecture") "Stream ${item.stream.numeric}" else "Group ${item.stream.numeric}" } else ""
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)).padding(vertical = 8.dp)) {
-                Text("${item.id_lesson}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(timeString.split("-").firstOrNull()?.trim() ?: "", style = MaterialTheme.typography.labelSmall)
+    val streamInfo = if (item.stream?.numeric != null) { 
+        val type = item.subject_type?.get()
+        if (type == "Lecture") "Stream ${item.stream.numeric}" else "Group ${item.stream.numeric}" 
+    } else ""
+    
+    OutlinedCard(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        ListItem(
+            headlineContent = {
+                Text(
+                    item.subject?.get() ?: "Subject",
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            supportingContent = {
+                val metaText = buildString { 
+                    append(item.room?.name_en ?: "Room ?")
+                    append(" • ")
+                    append(item.subject_type?.get() ?: "Lesson")
+                    if (streamInfo.isNotEmpty()) { 
+                        append(" • ")
+                        append(streamInfo) 
+                    } 
+                }
+                Text(metaText, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            leadingContent = {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "${item.id_lesson}",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            trailingContent = {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        timeString.split("-").firstOrNull()?.trim() ?: "",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                val metaText = buildString { append(item.room?.name_en ?: "Room ?"); append(" • "); append(item.subject_type?.get() ?: "Lesson"); if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } }
-                Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            }
-            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
-        }
+        )
     }
 }
 
 @Composable
 fun InfoSection(title: String) { Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 4.dp)) }
 
+// Deprecated usage removed in ProfileScreen, relying on OutlinedCard+ListItem instead
 @Composable
 fun DetailCard(icon: ImageVector, title: String, value: String) {
     Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.3f))) {
@@ -764,7 +831,7 @@ fun GradesScreen(vm: MainViewModel) {
                         }
                     } else item { Text("Semester data not found.", color = Color.Gray) }
                 }
-                item { Spacer(Modifier.height(24.dp)) } // REDUCED PADDING
+                item { Spacer(Modifier.height(24.dp)) }
             }
         }
     }
