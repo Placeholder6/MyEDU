@@ -44,15 +44,15 @@ jobs:
         
       - name: Bump version code
         run: 
-          VERSION_NAME_LINE="versionName \"[0-9]+\\.[0-9]+\""
           CURRENT_VERSION=$(grep 'versionName' app/build.gradle.kts | awk -F '"' '{print $2}')
           MAJOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $1}')
           CURRENT_MINOR=$(echo $CURRENT_VERSION | awk -F '.' '{print $2}')
           NEW_MINOR=$(($CURRENT_MINOR + 1))
           NEW_VERSION_STRING="${MAJOR}.${NEW_MINOR}"
-          sed -i "s/$VERSION_NAME_LINE/versionName \"$NEW_VERSION_STRING\"/" app/build.gradle.kts
-          sed -i "s/versionCode .*/versionCode ${{ github.run_number }}/" app/build.gradle.kts
+          sed -i -E "s/versionName\s*=?\s*\"[0-9]+\.[0-9]+\"/versionName = \"$NEW_VERSION_STRING\"/" app/build.gradle.kts
+          sed -i "s/versionCode .*/versionCode = ${{ github.run_number }}/" app/build.gradle.kts
           echo "::notice file=app/build.gradle.kts::Updated version to $NEW_VERSION_STRING"
+          echo "new_version=$NEW_VERSION_STRING" >> $GITHUB_OUTPUT
           
       - name: Build release APK
         run: ./gradlew assembleRelease --no-daemon --stacktrace
