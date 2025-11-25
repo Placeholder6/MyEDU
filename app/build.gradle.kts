@@ -16,6 +16,36 @@ android {
         versionName = "1.0"
     }
 
+    // --- SIGNING CONFIGURATION ---
+    signingConfigs {
+        create("release") {
+            // Read from Environment Variables (CI)
+            val keystorePath = System.getenv("KEYSTORE_PATH")
+            val storePass = System.getenv("RELEASE_STORE_PASSWORD")
+            val keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+            val keyPass = System.getenv("RELEASE_KEY_PASSWORD")
+
+            if (keystorePath != null && storePass != null && keyAlias != null && keyPass != null) {
+                storeFile = file(keystorePath)
+                storePassword = storePass
+                this.keyAlias = keyAlias
+                keyPassword = keyPass
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            
+            // Only sign if config was successfully created
+            if (System.getenv("KEYSTORE_PATH") != null) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+    }
+
     // --- BUILD FEATURES ---
     buildFeatures { compose = true }
     
