@@ -1,7 +1,6 @@
 package kg.oshsu.myedu
 
 import android.Manifest
-import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -30,7 +29,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
@@ -71,13 +69,7 @@ import java.util.Locale
 fun OshSuLogo(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val url = "file:///android_asset/logo-dark4.svg"
-
-    val imageLoader = remember {
-        ImageLoader.Builder(context)
-            .components { add(SvgDecoder.Factory()) }
-            .build()
-    }
-
+    val imageLoader = remember { ImageLoader.Builder(context).components { add(SvgDecoder.Factory()) }.build() }
     AsyncImage(
         model = url,
         imageLoader = imageLoader,
@@ -89,16 +81,12 @@ fun OshSuLogo(modifier: Modifier = Modifier) {
 
 // --- ACTIVITY: MAIN ENTRY POINT ---
 class MainActivity : ComponentActivity() {
-    // Permission Request Handler
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { }
+    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        // Permission: Notifications (Android 13+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -109,10 +97,7 @@ class MainActivity : ComponentActivity() {
             val vm: MainViewModel = viewModel()
             val context = LocalContext.current
             
-            // Logic: Init Session
             LaunchedEffect(Unit) { vm.initSession(context) }
-            
-            // Logic: Schedule Notifications
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
                     ScheduleAlarmManager(context).scheduleNotifications(vm.fullSchedule, vm.timeMap)
@@ -131,10 +116,11 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
     val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else { if (darkTheme) darkColorScheme() else lightColorScheme() }
+    
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
-            val window = (view.context as Activity).window
+            val window = (view.context as android.app.Activity).window
             window.statusBarColor = Color.Transparent.toArgb()
             window.navigationBarColor = Color.Transparent.toArgb()
             WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
@@ -183,7 +169,6 @@ fun LoginScreen(vm: MainViewModel) {
 // --- UI: MAIN SCAFFOLD & BOTTOM NAV ---
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
-    // Logic: Handle Back Press for nested screens
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
@@ -202,7 +187,6 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }) { padding ->
         Box(Modifier.padding(padding)) {
-            // Main Tabs
             if (vm.selectedClass == null && !vm.showTranscriptScreen && !vm.showReferenceScreen) {
                 when(vm.currentTab) {
                     0 -> HomeScreen(vm)
@@ -211,7 +195,6 @@ fun MainAppStructure(vm: MainViewModel) {
                     3 -> ProfileScreen(vm)
                 }
             }
-            // Overlays
             AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
             AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
             AnimatedVisibility(visible = vm.selectedClass != null, enter = slideInVertically{it}, exit = slideOutVertically{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) { vm.selectedClass?.let { ClassDetailsScreen(it) { vm.selectedClass = null } } }
@@ -219,35 +202,69 @@ fun MainAppStructure(vm: MainViewModel) {
     }
 }
 
-// --- SCREEN: DOCUMENT REFERENCE (FORM 8) ---
+// --- SCREEN: REFERENCE VIEW ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current; val user = vm.userData; val profile = vm.profileData; val mov = profile?.studentMovement
     val activeSemester = profile?.active_semester ?: 1; val course = (activeSemester + 1) / 2
-    val facultyName = mov?.faculty?.name_en ?: mov?.speciality?.faculty?.name_en ?: mov?.faculty?.name_ru ?: "-"
     
-    Scaffold(topBar = { TopAppBar(title = { Text("Reference (Form 8)") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = { vm.generateAndOpenReference(context) }, enabled = !vm.isPdfGenerating) { if (vm.isPdfGenerating) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Print, "Download") } }) }) { padding ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // Logic: Correct Faculty Name Extraction
+    val facultyName = mov?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: mov?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: "-"
+    
+    Scaffold(
+        topBar = { 
+            TopAppBar(
+                title = { Text("Reference (Form 8)") }, 
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+            ) 
+        },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                Column(Modifier.padding(16.dp)) {
+                    if (vm.isPdfGenerating) {
+                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                             CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                             Spacer(Modifier.width(16.dp))
+                             Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
+                         }
+                    } else {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
+                            }
+                            Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                     Column(Modifier.padding(24.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { 
-                            OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp))
-                            Spacer(Modifier.height(16.dp))
-                            Text("CERTIFICATE OF STUDY", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp)); Spacer(Modifier.height(16.dp)); Text("CERTIFICATE OF STUDY", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center) }
                         Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(24.dp))
                         Text("This is to certify that", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text("${user?.last_name} ${user?.name}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(24.dp))
-                        RefDetailRow("Student ID", "${user?.id}"); RefDetailRow("Faculty", facultyName); RefDetailRow("Speciality", mov?.speciality?.name_en ?: "-"); RefDetailRow("Year of Study", "$course ($activeSemester Semester)"); RefDetailRow("Education Form", mov?.edu_form?.name_en ?: "-"); RefDetailRow("Payment", if (mov?.id_payment_form == 2) "Contract" else "Budget")
+                        RefDetailRow("Student ID", "${user?.id}"); 
+                        RefDetailRow("Faculty", facultyName); 
+                        RefDetailRow("Speciality", mov?.speciality?.name_en ?: "-"); 
+                        RefDetailRow("Year of Study", "$course ($activeSemester Semester)"); 
+                        RefDetailRow("Education Form", mov?.edu_form?.name_en ?: "-"); 
+                        RefDetailRow("Payment", if (mov?.id_payment_form == 2) "Contract" else "Budget")
                         Spacer(Modifier.height(32.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Active Student • ${SimpleDateFormat("dd.MM.yyyy", Locale.US).format(Date())}", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50)) }
                     }
                 }
-                Spacer(Modifier.height(24.dp)); Text("This is a preview.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline); Text("Click the printer icon to download official PDF.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                
                 if (vm.pdfStatusMessage != null) { Spacer(Modifier.height(16.dp)); Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.inverseSurface)) { Text(vm.pdfStatusMessage!!, color = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(16.dp)) } }
-                Spacer(Modifier.height(80.dp))
+                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -256,12 +273,43 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
 @Composable
 fun RefDetailRow(label: String, value: String) { Column(Modifier.padding(bottom = 16.dp)) { Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary); Text(value, style = MaterialTheme.typography.bodyLarge) } }
 
-// --- SCREEN: TRANSCRIPT PREVIEW ---
+// --- SCREEN: TRANSCRIPT VIEW ---
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
-    Scaffold(topBar = { TopAppBar(title = { Text("Full Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = { vm.generateAndOpenTranscript(context) }, enabled = !vm.isPdfGenerating && vm.transcriptData.isNotEmpty()) { if (vm.isPdfGenerating) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Print, "Print") } }) }) { padding ->
+    Scaffold(
+        topBar = { 
+            TopAppBar(
+                title = { Text("Full Transcript") }, 
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
+            ) 
+        },
+        bottomBar = {
+            if (vm.transcriptData.isNotEmpty()) {
+                Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                    Column(Modifier.padding(16.dp)) {
+                         if (vm.isPdfGenerating) {
+                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                                 Spacer(Modifier.width(16.dp))
+                                 Text("Generating PDF...", color = MaterialTheme.colorScheme.primary)
+                             }
+                         } else {
+                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (RU)") 
+                                }
+                                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp)); Text("PDF (EN)") 
+                                }
+                            }
+                         }
+                    }
+                }
+            }
+        }
+    ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             if (vm.isTranscriptLoading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             else if (vm.transcriptData.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No transcript data.") }
@@ -281,7 +329,7 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
                             }
                         }
                     }
-                    item { Spacer(Modifier.height(80.dp)) }
+                    item { Spacer(Modifier.height(20.dp)) }
                 }
             }
             if (vm.pdfStatusMessage != null) Card(modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.inverseSurface)) { Text(vm.pdfStatusMessage!!, color = MaterialTheme.colorScheme.inverseOnSurface, modifier = Modifier.padding(16.dp)) }
@@ -294,17 +342,25 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
 fun ProfileScreen(vm: MainViewModel) {
     val user = vm.userData; val profile = vm.profileData; val pay = vm.payStatus
     val fullName = "${user?.last_name ?: ""} ${user?.name ?: ""}".trim().ifEmpty { "Student" }
-    val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } ?: "-"
-    val specialityName = profile?.studentMovement?.speciality?.let { it.name_en ?: it.name_ru } ?: "-"
+    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    // Logic: Correct Faculty Name Extraction for Profile
+    val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: "-"
 
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(24.dp))
+            // Settings Button
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                 IconButton(onClick = { showSettingsDialog = true }) { Icon(Icons.Default.Settings, "Settings") }
+            }
             // Profile Image
             Box(contentAlignment = Alignment.Center, modifier = Modifier.size(128.dp).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)), CircleShape).padding(3.dp).clip(CircleShape).background(MaterialTheme.colorScheme.background)) { AsyncImage(model = profile?.avatar, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape)) }
             Spacer(Modifier.height(16.dp)); Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
             
-            // Payment Status
+            // Payment Status Section
             Spacer(Modifier.height(24.dp))
             if (pay != null) {
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
@@ -313,7 +369,6 @@ fun ProfileScreen(vm: MainViewModel) {
                         Spacer(Modifier.height(12.dp))
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("Paid", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline); Text("${pay.paid_summa?.toInt() ?: 0} KGS", style = MaterialTheme.typography.titleMedium, color = Color(0xFF4CAF50)) }; Column(horizontalAlignment = Alignment.End) { Text("Total", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline); Text("${pay.need_summa?.toInt() ?: 0} KGS", style = MaterialTheme.typography.titleMedium) } }
                         val debt = pay.getDebt(); if (debt > 0) { Spacer(Modifier.height(8.dp)); HorizontalDivider(); Spacer(Modifier.height(8.dp)); Text("Remaining: ${debt.toInt()} KGS", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
-                        if (!pay.access_message.isNullOrEmpty()) { Spacer(Modifier.height(12.dp)); HorizontalDivider(Modifier.padding(bottom=8.dp), color=MaterialTheme.colorScheme.error.copy(alpha=0.2f)); pay.access_message.forEach { msg -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) { Icon(Icons.Outlined.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp)); Spacer(Modifier.width(8.dp)); Text(msg, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) } } }
                     }
                 }
                 Spacer(Modifier.height(24.dp))
@@ -325,13 +380,31 @@ fun ProfileScreen(vm: MainViewModel) {
                 Button(onClick = { vm.showReferenceScreen = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Reference") }
                 Button(onClick = { vm.fetchTranscript() }, modifier = Modifier.weight(1f), enabled = !vm.isTranscriptLoading) { if (vm.isTranscriptLoading) CircularProgressIndicator(Modifier.size(18.dp), color=MaterialTheme.colorScheme.onPrimary, strokeWidth=2.dp) else Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Transcript") }
             }
-            Spacer(Modifier.height(24.dp)); InfoSection("Academic")
+
+            Spacer(Modifier.height(24.dp)); InfoSection("Personal Details")
             DetailCard(Icons.Outlined.School, "Faculty", facultyName)
-            DetailCard(Icons.Outlined.Book, "Speciality", specialityName)
-            Spacer(Modifier.height(24.dp)); InfoSection("Personal")
-            DetailCard(Icons.Outlined.Badge, "Passport", profile?.pdsstudentinfo?.getFullPassport() ?: "-"); DetailCard(Icons.Outlined.Phone, "Phone", profile?.pdsstudentinfo?.phone ?: "-")
+            DetailCard(Icons.Outlined.Book, "Speciality", profile?.studentMovement?.speciality?.name_en ?: "-")
             Spacer(Modifier.height(32.dp)); Button(onClick = { vm.logout() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer), modifier = Modifier.fillMaxWidth()) { Text("Log Out") }; Spacer(Modifier.height(80.dp))
         }
+    }
+
+    // Settings Dialog
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { showSettingsDialog = false },
+            title = { Text("Settings") },
+            text = {
+                Column {
+                    Text("Dictionary URL")
+                    OutlinedTextField(
+                        value = vm.dictionaryUrl, 
+                        onValueChange = { vm.dictionaryUrl = it },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("Done") } }
+        )
     }
 }
 
@@ -346,61 +419,21 @@ fun HomeScreen(vm: MainViewModel) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
             Spacer(Modifier.height(16.dp))
-            // Changed from Box to Row to prevent overlapping
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // 1. Greeting and Name (Weight ensures it doesn't overlap right side)
-                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { 
-                    Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-                    Text(
-                        text = user?.name ?: "Student", 
-                        style = MaterialTheme.typography.titleMedium, 
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,                    // Keep on one line
-                        overflow = TextOverflow.Ellipsis // Add "..." if name is too long
-                    ) 
-                }
-                // 2. Logo and Notification Icon
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary); Text(text = user?.name ?: "Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Box(modifier = Modifier.size(40.dp).clickable { showNewsSheet = true }, contentAlignment = Alignment.Center) {
-                        if (vm.newsList.isNotEmpty()) {
-                            BadgedBox(badge = { Badge { Text("${vm.newsList.size}") } }) { Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.primary) }
-                        } else {
-                            Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.onSurfaceVariant) 
-                        }
-                    }
+                    OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)); Spacer(Modifier.width(8.dp))
+                    Box(modifier = Modifier.size(40.dp).clickable { showNewsSheet = true }, contentAlignment = Alignment.Center) { if (vm.newsList.isNotEmpty()) { BadgedBox(badge = { Badge { Text("${vm.newsList.size}") } }) { Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.primary) } } else { Icon(Icons.Outlined.Notifications, contentDescription = "Announcements", tint = MaterialTheme.colorScheme.onSurfaceVariant) } }
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { 
-                StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f))
-                StatCard(Icons.Outlined.Groups, "Group", if (vm.determinedGroup != null) "Group ${vm.determinedGroup}" else profile?.studentMovement?.avn_group_name ?: "-", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) 
-            }
-            Spacer(Modifier.height(32.dp))
-            Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(16.dp))
-            if (vm.todayClasses.isEmpty()) {
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } 
-            } else {
-                vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } 
-            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); StatCard(Icons.Outlined.Groups, "Group", if (vm.determinedGroup != null) "Group ${vm.determinedGroup}" else profile?.studentMovement?.avn_group_name ?: "-", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) }
+            Spacer(Modifier.height(32.dp)); Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp))
+            if (vm.todayClasses.isEmpty()) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } } else { vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } }
             Spacer(Modifier.height(80.dp))
         }
     }    
-    // News Sheet
-    if (showNewsSheet) {
-        ModalBottomSheet(onDismissRequest = { showNewsSheet = false }) { 
-            Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { 
-                Text("Announcements", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                LazyColumn { items(vm.newsList) { news -> Card(Modifier.padding(top=8.dp).fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(news.title?:"", fontWeight=FontWeight.Bold); Text(news.message?:"") } } } } 
-            } 
-        } 
-    }
+    if (showNewsSheet) { ModalBottomSheet(onDismissRequest = { showNewsSheet = false }) { Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) { Text("Announcements", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); LazyColumn { items(vm.newsList) { news -> Card(Modifier.padding(top=8.dp).fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(news.title?:"", fontWeight=FontWeight.Bold); Text(news.message?:"") } } } } } } }
 }
 
 // --- SCREEN: SCHEDULE TAB ---
@@ -409,36 +442,14 @@ fun HomeScreen(vm: MainViewModel) {
 fun ScheduleScreen(vm: MainViewModel) {
     val tabs = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     val scope = rememberCoroutineScope()
-    val initialPage = remember {
-        val cal = Calendar.getInstance()
-        val dow = cal.get(Calendar.DAY_OF_WEEK)
-        if (dow == Calendar.SUNDAY) 0 else (dow - 2).coerceIn(0, 5)
-    }
+    val initialPage = remember { val cal = Calendar.getInstance(); val dow = cal.get(Calendar.DAY_OF_WEEK); if (dow == Calendar.SUNDAY) 0 else (dow - 2).coerceIn(0, 5) }
     val pagerState = rememberPagerState(initialPage = initialPage) { tabs.size }
-
     Scaffold(topBar = { CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) }) { padding ->
         Column(Modifier.padding(padding)) {
-            TabRow(
-                selectedTabIndex = pagerState.currentPage,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary,
-                indicator = { tabPositions ->
-                    if (pagerState.currentPage < tabPositions.size) {
-                        TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = MaterialTheme.colorScheme.primary)
-                    }
-                }
-            ) {
-                tabs.forEachIndexed { index, title -> Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) }) }
-            }
+            TabRow(selectedTabIndex = pagerState.currentPage, containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.primary, indicator = { tabPositions -> if (pagerState.currentPage < tabPositions.size) { TabRowDefaults.SecondaryIndicator(Modifier.tabIndicatorOffset(tabPositions[pagerState.currentPage]), color = MaterialTheme.colorScheme.primary) } }) { tabs.forEachIndexed { index, title -> Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) }) } }
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
                 val dayClasses = vm.fullSchedule.filter { it.day == pageIndex }
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-                    if (dayClasses.isEmpty()) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant); Spacer(Modifier.height(16.dp)); Text("No classes", color = Color.Gray) } }
-                    } else {
-                        LazyColumn(modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), contentPadding = PaddingValues(16.dp)) { items(dayClasses) { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } }; item { Spacer(Modifier.height(80.dp)) } }
-                    }
-                }
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { if (dayClasses.isEmpty()) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Column(horizontalAlignment = Alignment.CenterHorizontally) { Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant); Spacer(Modifier.height(16.dp)); Text("No classes", color = Color.Gray) } } } else { LazyColumn(modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), contentPadding = PaddingValues(16.dp)) { items(dayClasses) { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } }; item { Spacer(Modifier.height(80.dp)) } } } }
             }
         }
     }
@@ -451,31 +462,63 @@ fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
     val clipboardManager = LocalClipboardManager.current; val context = LocalContext.current; val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"; val groupValue = item.stream?.numeric?.toString() ?: "?"
     Scaffold(topBar = { TopAppBar(title = { Text("Class Details") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }) }) { padding -> 
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) { Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(24.dp)) { Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Spacer(Modifier.height(8.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") }); if (item.stream?.numeric != null) { AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) } } } }; Spacer(Modifier.height(24.dp)); Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp)); Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f)); IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) } } }; Spacer(Modifier.height(24.dp)); Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp)); Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Column { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) } }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant); Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }; IconButton(onClick = { val address = item.classroom?.building?.getAddress() ?: ""; if (address.isNotEmpty()) { val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address")); context.startActivity(intent) } }) { Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) } } } } } 
+            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(24.dp)) { Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Spacer(Modifier.height(8.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") }); if (item.stream?.numeric != null) { AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) } } } }
+                Spacer(Modifier.height(24.dp))
+                Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f)); IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) } } }
+                Spacer(Modifier.height(24.dp))
+                Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Column { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) } }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant); Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }; IconButton(onClick = { val address = item.classroom?.building?.getAddress() ?: ""; if (address.isNotEmpty()) { val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address")); context.startActivity(intent) } }) { Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) } } } }
+            }
         }
     }
 }
 
-// --- HELPER UI: STAT CARD ---
+// --- HELPER COMPONENTS ---
 @Composable
 fun StatCard(icon: ImageVector, label: String, value: String, bg: Color, modifier: Modifier = Modifier) {
-    ElevatedCard(modifier = modifier, colors = CardDefaults.elevatedCardColors(containerColor = bg)) { Column(Modifier.padding(16.dp)) { Icon(icon, null, tint = Color.Black.copy(alpha=0.7f)); Spacer(Modifier.height(8.dp)); Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f)); Text(text = value, style = if(value.length > 15) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
+    ElevatedButton(onClick = {}, modifier = modifier, colors = ButtonDefaults.elevatedButtonColors(containerColor = bg), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(16.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+            Icon(icon, null, tint = Color.Black.copy(alpha=0.7f)); Spacer(Modifier.height(8.dp))
+            Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f))
+            Text(text = value, style = if(value.length > 15) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+    }
 }
 
-// --- HELPER UI: CLASS LIST ITEM ---
 @Composable
 fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
     val streamInfo = if (item.stream?.numeric != null) { val type = item.subject_type?.get(); if (type == "Lecture") "Stream ${item.stream.numeric}" else "Group ${item.stream.numeric}" } else ""
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)).padding(vertical = 8.dp)) { Text("${item.id_lesson}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); Text(timeString.split("-").firstOrNull()?.trim() ?: "", style = MaterialTheme.typography.labelSmall) }; Spacer(Modifier.width(16.dp)); Column(modifier = Modifier.weight(1f)) { Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold); val metaText = buildString { append(item.room?.name_en ?: "Room ?"); append(" • "); append(item.subject_type?.get() ?: "Lesson"); if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } }; Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline); Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) }; Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline) } }
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)).padding(vertical = 8.dp)) {
+                Text("${item.id_lesson}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(timeString.split("-").firstOrNull()?.trim() ?: "", style = MaterialTheme.typography.labelSmall)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                val metaText = buildString { append(item.room?.name_en ?: "Room ?"); append(" • "); append(item.subject_type?.get() ?: "Lesson"); if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } }
+                Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            }
+            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
 }
 
-// --- HELPER UI: TEXT SECTION ---
 @Composable
 fun InfoSection(title: String) { Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp, start = 4.dp)) }
 
 @Composable
 fun DetailCard(icon: ImageVector, title: String, value: String) {
-    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.3f))) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(16.dp)); Column { Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(value, style = MaterialTheme.typography.bodyMedium) } } }
+    Card(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.3f))) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(24.dp)); Spacer(Modifier.width(16.dp))
+            Column { Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(value, style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
 }
 
 // --- SCREEN: GRADES TAB ---
@@ -499,8 +542,10 @@ fun GradesScreen(vm: MainViewModel) {
                                     Text(sub.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        ScoreColumn("M1", sub.marklist?.point1); ScoreColumn("M2", sub.marklist?.point2)
-                                        ScoreColumn("Exam", sub.marklist?.finally); ScoreColumn("Total", sub.marklist?.total, true)
+                                        ScoreColumn("M1", sub.marklist?.point1)
+                                        ScoreColumn("M2", sub.marklist?.point2)
+                                        ScoreColumn("Exam", sub.marklist?.finally)
+                                        ScoreColumn("Total", sub.marklist?.total, true)
                                     }
                                 }
                             }
@@ -517,6 +562,11 @@ fun GradesScreen(vm: MainViewModel) {
 fun ScoreColumn(label: String, score: Double?, isTotal: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-        Text("${score?.toInt() ?: 0}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = if (isTotal && (score ?: 0.0) >= 50) Color(0xFF4CAF50) else if (isTotal) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+        Text(
+            "${score?.toInt() ?: 0}", 
+            style = MaterialTheme.typography.bodyLarge, 
+            fontWeight = FontWeight.Bold, 
+            color = if (isTotal && (score ?: 0.0) >= 50) Color(0xFF4CAF50) else if (isTotal) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+        )
     }
 }

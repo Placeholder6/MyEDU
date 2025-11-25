@@ -7,10 +7,9 @@ import java.util.concurrent.TimeUnit
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
-import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
+import okhttp3.MultipartBody
 import okhttp3.RequestBody
 import okhttp3.Response
 import okhttp3.ResponseBody
@@ -27,14 +26,14 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-// --- DATA MODELS: AUTH ---
+// --- EXISTING DATA MODELS ---
 data class LoginRequest(val email: String, val password: String)
 data class LoginResponse(val status: String?, val authorisation: AuthData?)
 data class AuthData(val token: String?, val is_student: Boolean?)
 data class UserResponse(val user: UserData?)
 data class UserData(val id: Long, val name: String?, val last_name: String?, val email: String?)
 
-// --- DATA MODELS: PROFILE ---
+// ... [Keep existing Profile, Schedule, and Session models exactly as they were] ...
 data class StudentInfoResponse(
     @SerializedName("pdsstudentinfo") val pdsstudentinfo: PdsInfo?,
     @SerializedName("studentMovement") val studentMovement: MovementInfo?,
@@ -67,7 +66,6 @@ data class MovementInfo(
     @SerializedName("edu_form") val edu_form: NameObj?,
     @SerializedName("id_payment_form") val id_payment_form: Int?
 )
-
 data class NameObj(
     @SerializedName("name_en") val name_en: String?, 
     @SerializedName("name_ru") val name_ru: String?, 
@@ -87,8 +85,6 @@ data class NameObj(
         }
     }
 }
-
-// --- DATA MODELS: SCHEDULE ---
 data class EduYear(val id: Int, val name_en: String?, val active: Boolean)
 data class ScheduleWrapper(val schedule_items: List<ScheduleItem>?)
 data class ScheduleItem(val day: Int, val id_lesson: Int, val subject: NameObj?, val teacher: TeacherObj?, val room: RoomObj?, val subject_type: NameObj?, val classroom: ClassroomObj?, val stream: StreamObj?)
@@ -102,8 +98,6 @@ data class TeacherObj(val name: String?, val last_name: String?) { fun get(): St
 data class RoomObj(val name_en: String?)
 data class LessonTimeResponse(val id_lesson: Int, val begin_time: String?, val end_time: String?, val lesson: LessonNum?)
 data class LessonNum(val num: Int)
-
-// --- DATA MODELS: GRADES & NEWS ---
 data class PayStatusResponse(val paid_summa: Double?, val need_summa: Double?, val access_message: List<String>?) { fun getDebt(): Double = (need_summa ?: 0.0) - (paid_summa ?: 0.0) }
 data class NewsItem(val id: Int, val title: String?, val message: String?, val created_at: String?)
 data class SessionResponse(val semester: SemesterObj?, val subjects: List<SessionSubjectWrapper>?)
@@ -111,7 +105,7 @@ data class SemesterObj(val id: Int, val name_en: String?)
 data class SessionSubjectWrapper(val subject: NameObj?, val marklist: MarkList?)
 data class MarkList(val point1: Double?, val point2: Double?, val point3: Double?, val finally: Double?, val total: Double?)
 
-// --- DATA MODELS: DOCUMENTS ---
+// --- DOCUMENT MODELS ---
 data class DocIdRequest(val id: Long)
 data class DocKeyRequest(val key: String)
 data class TranscriptYear(@SerializedName("edu_year") val eduYear: String?, @SerializedName("semesters") val semesters: List<TranscriptSemester>?)
@@ -131,6 +125,20 @@ interface OshSuApi {
     @GET("public/api/studentscheduleitem") suspend fun getSchedule(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int, @Query("id_semester") semId: Int): List<ScheduleWrapper>
     @GET("public/api/studentsession") suspend fun getSession(@Query("id_semester") semesterId: Int): List<SessionResponse>
     @GET("public/api/studenttranscript") suspend fun getTranscript(@Query("id_student") studentId: Long, @Query("id_movement") movementId: Long): List<TranscriptYear>
+
+    // --- DOCS: RAW ENDPOINTS (Added for PDF Generators) ---
+    @GET("public/api/searchstudentinfo") 
+    suspend fun getStudentInfoRaw(@Query("id_student") studentId: Long): ResponseBody
+
+    @GET("public/api/studenttranscript")
+    suspend fun getTranscriptDataRaw(@Query("id_student") sId: Long, @Query("id_movement") mId: Long): ResponseBody
+
+    @GET("public/api/control/structure/specialitylicense")
+    suspend fun getSpecialityLicense(@Query("id_speciality") sId: Int, @Query("id_edu_form") eId: Int): ResponseBody
+
+    @GET("public/api/control/structure/university")
+    suspend fun getUniversityInfo(): ResponseBody
+    // -----------------------------------------------------
 
     // DOCS: Form 13 (Transcript)
     @POST("public/api/student/doc/form13link") suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
@@ -161,7 +169,12 @@ class UniversalCookieJar : CookieJar {
 class WindowsInterceptor : Interceptor {
     var authToken: String? = null
     override fun intercept(chain: Interceptor.Chain): Response {
-        val builder = chain.request().newBuilder().header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)").header("Accept", "application/json, text/plain, */*").header("Referer", "https://myedu.oshsu.kg/").header("Origin", "https://myedu.oshsu.kg")
+        val builder = chain.request().newBuilder()
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+            .header("Accept", "application/json, text/plain, */*")
+            .header("Referer", "https://myedu.oshsu.kg/")
+            .header("Origin", "https://myedu.oshsu.kg")
+        
         if (authToken != null) builder.header("Authorization", "Bearer $authToken")
         return chain.proceed(builder.build())
     }
@@ -170,5 +183,13 @@ class WindowsInterceptor : Interceptor {
 object NetworkClient {
     val cookieJar = UniversalCookieJar()
     val interceptor = WindowsInterceptor()
-    val api: OshSuApi = Retrofit.Builder().baseUrl("https://api.myedu.oshsu.kg/").client(OkHttpClient.Builder().cookieJar(cookieJar).addInterceptor(interceptor).connectTimeout(30, TimeUnit.SECONDS).build()).addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create())).build().create(OshSuApi::class.java)
+    val api: OshSuApi = Retrofit.Builder().baseUrl("https://api.myedu.oshsu.kg/")
+        .client(OkHttpClient.Builder()
+            .cookieJar(cookieJar)
+            .addInterceptor(interceptor)
+            .connectTimeout(60, TimeUnit.SECONDS) // Increased timeout for heavy PDF ops
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build())
+        .addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create()))
+        .build().create(OshSuApi::class.java)
 }
