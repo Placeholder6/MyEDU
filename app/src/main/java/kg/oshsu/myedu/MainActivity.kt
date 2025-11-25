@@ -209,6 +209,11 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current; val user = vm.userData; val profile = vm.profileData; val mov = profile?.studentMovement
     val activeSemester = profile?.active_semester ?: 1; val course = (activeSemester + 1) / 2
     
+    // Logic: Correct Faculty Name Extraction
+    val facultyName = mov?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: mov?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: "-"
+    
     Scaffold(
         topBar = { 
             TopAppBar(
@@ -216,7 +221,6 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
             ) 
         },
-        // FIXED: Buttons always present in Bottom Bar
         bottomBar = {
             Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
                 Column(Modifier.padding(16.dp)) {
@@ -242,14 +246,18 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                // Native Info Card
                 Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
                     Column(Modifier.padding(24.dp)) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp)); Spacer(Modifier.height(16.dp)); Text("CERTIFICATE OF STUDY", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center) }
                         Spacer(Modifier.height(24.dp)); HorizontalDivider(); Spacer(Modifier.height(24.dp))
                         Text("This is to certify that", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text("${user?.last_name} ${user?.name}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         Spacer(Modifier.height(24.dp))
-                        RefDetailRow("Student ID", "${user?.id}"); RefDetailRow("Faculty", mov?.faculty?.name_en ?: "-"); RefDetailRow("Speciality", mov?.speciality?.name_en ?: "-"); RefDetailRow("Year of Study", "$course ($activeSemester Semester)"); RefDetailRow("Education Form", mov?.edu_form?.name_en ?: "-"); RefDetailRow("Payment", if (mov?.id_payment_form == 2) "Contract" else "Budget")
+                        RefDetailRow("Student ID", "${user?.id}"); 
+                        RefDetailRow("Faculty", facultyName); 
+                        RefDetailRow("Speciality", mov?.speciality?.name_en ?: "-"); 
+                        RefDetailRow("Year of Study", "$course ($activeSemester Semester)"); 
+                        RefDetailRow("Education Form", mov?.edu_form?.name_en ?: "-"); 
+                        RefDetailRow("Payment", if (mov?.id_payment_form == 2) "Contract" else "Budget")
                         Spacer(Modifier.height(32.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text("Active Student • ${SimpleDateFormat("dd.MM.yyyy", Locale.US).format(Date())}", style = MaterialTheme.typography.labelMedium, color = Color(0xFF4CAF50)) }
                     }
@@ -277,7 +285,6 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }
             ) 
         },
-        // FIXED: Buttons always present in Bottom Bar
         bottomBar = {
             if (vm.transcriptData.isNotEmpty()) {
                 Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
@@ -337,6 +344,11 @@ fun ProfileScreen(vm: MainViewModel) {
     val fullName = "${user?.last_name ?: ""} ${user?.name ?: ""}".trim().ifEmpty { "Student" }
     var showSettingsDialog by remember { mutableStateOf(false) }
 
+    // Logic: Correct Faculty Name Extraction for Profile
+    val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
+        ?: "-"
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(24.dp))
@@ -370,7 +382,7 @@ fun ProfileScreen(vm: MainViewModel) {
             }
 
             Spacer(Modifier.height(24.dp)); InfoSection("Personal Details")
-            DetailCard(Icons.Outlined.School, "Faculty", profile?.studentMovement?.faculty?.name_en ?: "-")
+            DetailCard(Icons.Outlined.School, "Faculty", facultyName)
             DetailCard(Icons.Outlined.Book, "Speciality", profile?.studentMovement?.speciality?.name_en ?: "-")
             Spacer(Modifier.height(32.dp)); Button(onClick = { vm.logout() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer), modifier = Modifier.fillMaxWidth()) { Text("Log Out") }; Spacer(Modifier.height(80.dp))
         }
