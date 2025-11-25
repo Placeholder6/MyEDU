@@ -167,6 +167,7 @@ fun LoginScreen(vm: MainViewModel) {
 }
 
 // --- UI: MAIN SCAFFOLD & BOTTOM NAV ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -197,7 +198,18 @@ fun MainAppStructure(vm: MainViewModel) {
             }
             AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
             AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
-            AnimatedVisibility(visible = vm.selectedClass != null, enter = slideInVertically{it}, exit = slideOutVertically{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) { vm.selectedClass?.let { ClassDetailsScreen(it) { vm.selectedClass = null } } }
+            
+            // --- POPUP: CLASS DETAILS BOTTOM SHEET ---
+            if (vm.selectedClass != null) {
+                ModalBottomSheet(
+                    onDismissRequest = { vm.selectedClass = null },
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    dragHandle = { BottomSheetDefaults.DragHandle() }
+                ) {
+                    vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+                }
+            }
         }
     }
 }
@@ -455,22 +467,126 @@ fun ScheduleScreen(vm: MainViewModel) {
     }
 }
 
-// --- SCREEN: CLASS DETAILS ---
-@OptIn(ExperimentalMaterial3Api::class)
+// --- SHEET: CLASS DETAILS ---
 @Composable
-fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
-    val clipboardManager = LocalClipboardManager.current; val context = LocalContext.current; val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"; val groupValue = item.stream?.numeric?.toString() ?: "?"
-    Scaffold(topBar = { TopAppBar(title = { Text("Class Details") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }) }) { padding -> 
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(24.dp)) { Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Spacer(Modifier.height(8.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") }); if (item.stream?.numeric != null) { AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) } } } }
-                Spacer(Modifier.height(24.dp))
-                Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f)); IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) } } }
-                Spacer(Modifier.height(24.dp))
-                Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Column { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) } }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant); Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }; IconButton(onClick = { val address = item.classroom?.building?.getAddress() ?: ""; if (address.isNotEmpty()) { val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address")); context.startActivity(intent) } }) { Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) } } } }
+fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
+    val groupValue = item.stream?.numeric?.toString() ?: "?"
+
+    // GRADES LOGIC
+    val activeSemester = vm.profileData?.active_semester
+    val session = vm.sessionData
+    val currentSemSession = session.find { it.semester?.id == activeSemester } ?: session.lastOrNull()
+    val subjectGrades = currentSemSession?.subjects?.find { 
+        it.subject?.get() == item.subject?.get() 
+    }
+
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.fillMaxWidth().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            // Header
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
+                Column(Modifier.padding(24.dp)) { 
+                    Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
+                        AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
+                        if (item.stream?.numeric != null) { 
+                            AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) 
+                        } 
+                    } 
+                } 
             }
+            
+            // Grades Section
+            Spacer(Modifier.height(24.dp))
+            Text("Current Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) {
+                if (subjectGrades != null) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            ScoreColumn("M1", subjectGrades.marklist?.point1)
+                            ScoreColumn("M2", subjectGrades.marklist?.point2)
+                            ScoreColumn("Exam", subjectGrades.marklist?.finally)
+                            ScoreColumn("Total", subjectGrades.marklist?.total, true)
+                        }
+                    }
+                } else {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.width(16.dp))
+                        Text("No grades available for this subject yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+
+            // Teacher Section
+            Spacer(Modifier.height(24.dp))
+            Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                    Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(16.dp))
+                    Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { 
+                        Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
+                    } 
+                } 
+            }
+
+            // Location Section
+            Spacer(Modifier.height(24.dp))
+            Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
+                Column { 
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) { 
+                            Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) 
+                        } 
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) { 
+                            Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
+                        }
+                        // Copy Button for Building
+                        IconButton(onClick = { 
+                            clipboardManager.setText(AnnotatedString(item.classroom?.building?.getName() ?: ""))
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
+                        }) { 
+                            Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
+                        }
+                        // Map Button using Building Name
+                        IconButton(onClick = { 
+                            val locationName = item.classroom?.building?.getName() ?: ""
+                            if (locationName.isNotEmpty()) { 
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(locationName)}"))
+                                // Fallback if geo intent isn't handled or to force map search
+                                intent.setPackage("com.google.android.apps.maps")
+                                try {
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                     // Try generic if specific map fails
+                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(locationName)}")))
+                                }
+                            } 
+                        }) { 
+                            Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) 
+                        } 
+                    } 
+                } 
+            }
+            Spacer(Modifier.height(40.dp))
         }
     }
 }
