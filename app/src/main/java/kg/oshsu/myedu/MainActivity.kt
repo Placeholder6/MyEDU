@@ -177,39 +177,62 @@ fun MainAppStructure(vm: MainViewModel) {
             vm.showReferenceScreen -> vm.showReferenceScreen = false
         }
     }
-    Scaffold(bottomBar = {
-        // CHANGED: Always show NavigationBar so the background layout remains stable
-        NavigationBar {
-            NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-            NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-            NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
-            NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
-        }
-    }) { padding ->
-        Box(Modifier.padding(padding)) {
-            // CHANGED: Always show the underlying tab content (Home/Profile/etc)
-            // This ensures no blank screen when overlays are closed.
-            when(vm.currentTab) {
-                0 -> HomeScreen(vm)
-                1 -> ScheduleScreen(vm)
-                2 -> GradesScreen(vm)
-                3 -> ProfileScreen(vm)
-            }
 
-            // Overlays slide in on top of the existing content
-            AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
-            AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
-            
-            // --- POPUP: CLASS DETAILS BOTTOM SHEET ---
-            if (vm.selectedClass != null) {
-                ModalBottomSheet(
-                    onDismissRequest = { vm.selectedClass = null },
-                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    dragHandle = { BottomSheetDefaults.DragHandle() }
-                ) {
-                    vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+    // Use a Box to layer the Overlays (Transcript/Reference) ON TOP of the base Scaffold.
+    // This ensures the base screen (Home, Schedule, etc.) remains rendered in the background.
+    Box(modifier = Modifier.fillMaxSize()) {
+        
+        // LAYER 1: Base Application (Visible in background during animations)
+        Scaffold(
+            bottomBar = {
+                NavigationBar {
+                    NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
                 }
+            }
+        ) { padding ->
+            Box(Modifier.padding(padding)) {
+                 when(vm.currentTab) {
+                    0 -> HomeScreen(vm)
+                    1 -> ScheduleScreen(vm)
+                    2 -> GradesScreen(vm)
+                    3 -> ProfileScreen(vm)
+                }
+            }
+        }
+
+        // LAYER 2: Full Screen Overlays
+        // These sit on top of the Scaffold (covering the bottom bar) and slide in/out.
+        
+        AnimatedVisibility(
+            visible = vm.showTranscriptScreen, 
+            enter = slideInHorizontally { it }, 
+            exit = slideOutHorizontally { it },
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        ) { 
+            TranscriptView(vm) { vm.showTranscriptScreen = false } 
+        }
+
+        AnimatedVisibility(
+            visible = vm.showReferenceScreen, 
+            enter = slideInHorizontally { it }, 
+            exit = slideOutHorizontally { it },
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+        ) { 
+            ReferenceView(vm) { vm.showReferenceScreen = false } 
+        }
+        
+        // LAYER 3: Bottom Sheet Popup
+        if (vm.selectedClass != null) {
+            ModalBottomSheet(
+                onDismissRequest = { vm.selectedClass = null },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = MaterialTheme.colorScheme.surface,
+                dragHandle = { BottomSheetDefaults.DragHandle() }
+            ) {
+                vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
             }
         }
     }
