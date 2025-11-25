@@ -269,7 +269,8 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
         topBar = { 
             TopAppBar(
                 title = { Text("Reference (Form 8)") }, 
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
+                // REVERTED TO STANDARD FILLED ICON TO FIX BUILD ERROR
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, null) } }
             ) 
         },
         bottomBar = {
@@ -333,7 +334,8 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
         topBar = { 
             TopAppBar(
                 title = { Text("Full Transcript") }, 
-                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
+                // REVERTED TO STANDARD FILLED ICON TO FIX BUILD ERROR
+                navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, null) } }
             ) 
         },
         bottomBar = {
