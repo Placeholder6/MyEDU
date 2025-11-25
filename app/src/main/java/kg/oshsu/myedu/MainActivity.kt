@@ -467,35 +467,27 @@ fun HomeScreen(vm: MainViewModel) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-            
-            // --- MODIFIED STAT CARDS ---
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { 
-                // Semester Card with Stream
                 StatCard(
                     icon = Icons.Outlined.CalendarToday, 
                     label = "Semester", 
                     value = profile?.active_semester?.toString() ?: "-", 
-                    secondaryValue = vm.determinedStream?.let { "Stream $it" }, // Added Stream
+                    secondaryValue = vm.determinedStream?.let { "Stream $it" },
                     bg = MaterialTheme.colorScheme.primaryContainer, 
                     modifier = Modifier.weight(1f)
                 )
                 
-                // Group Card with Number and Name
                 val groupNum = vm.determinedGroup?.toString()
                 val groupName = profile?.studentMovement?.avn_group_name
-                
                 StatCard(
                     icon = Icons.Outlined.Groups, 
                     label = "Group", 
-                    // Main value is the number if available, otherwise the name
                     value = groupNum ?: groupName ?: "-", 
-                    // Secondary value is the name (INL...) if the number is shown
                     secondaryValue = if (groupNum != null) groupName else null, 
                     bg = MaterialTheme.colorScheme.secondaryContainer, 
                     modifier = Modifier.weight(1f)
                 ) 
             }
-            
             Spacer(Modifier.height(32.dp)); Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp))
             if (vm.todayClasses.isEmpty()) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } } else { vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } }
             Spacer(Modifier.height(80.dp))
@@ -530,6 +522,9 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
     val context = LocalContext.current
     val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
     val groupValue = item.stream?.numeric?.toString() ?: "?"
+    
+    // FETCH TIME HERE
+    val timeString = vm.getTimeString(item.id_lesson)
 
     // GRADES LOGIC
     val activeSemester = vm.profileData?.active_semester
@@ -545,7 +540,16 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
                 Column(Modifier.padding(24.dp)) { 
                     Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(4.dp))
+                    
+                    // ADDED TIME ROW
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(timeString, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.9f))
+                    }
+                    
+                    Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
                         AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
                         if (item.stream?.numeric != null) { 
@@ -612,7 +616,11 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) { 
-                            Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            // ADDRESS FALLBACK LOGIC
+                            val address = item.classroom?.building?.getAddress()
+                            val displayAddress = if (address.isNullOrBlank()) "Building" else address
+                            
+                            Text(displayAddress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                             Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                         }
                         // Copy Button for Building
@@ -665,8 +673,6 @@ fun StatCard(
             Icon(icon, null, tint = Color.Black.copy(alpha=0.7f))
             Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f))
-            
-            // Main Value
             Text(
                 text = value,
                 style = if(value.length > 8) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
@@ -675,13 +681,11 @@ fun StatCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            
-            // Secondary Value
             if (secondaryValue != null) {
                 Text(
                     text = secondaryValue,
-                    style = MaterialTheme.typography.bodySmall, // Smaller
-                    color = Color.Black.copy(alpha = 0.5f), // Less opacity
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Black.copy(alpha = 0.5f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -755,7 +759,7 @@ fun GradesScreen(vm: MainViewModel) {
                         }
                     } else item { Text("Semester data not found.", color = Color.Gray) }
                 }
-                item { Spacer(Modifier.height(80.dp)) }
+                item { Spacer(Modifier.height(24.dp)) } // REDUCED PADDING
             }
         }
     }
