@@ -178,13 +178,15 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 
-    // Use a Box to layer the Overlays (Transcript/Reference) ON TOP of the base Scaffold.
-    // This ensures the base screen (Home, Schedule, etc.) remains rendered in the background.
+    // ROOT BOX: Enables Z-index layering.
     Box(modifier = Modifier.fillMaxSize()) {
         
-        // LAYER 1: Base Application (Visible in background during animations)
+        // LAYER 1: The Main Scaffold (Home, Schedule, etc.)
+        // This is always rendered, so it stays visible in the background during animations.
         Scaffold(
             bottomBar = {
+                // NavigationBar is always rendered here to prevent layout jumps.
+                // It will be covered by the full-screen overlays below.
                 NavigationBar {
                     NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
                     NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
@@ -194,6 +196,7 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
+                 // Content is always rendered.
                  when(vm.currentTab) {
                     0 -> HomeScreen(vm)
                     1 -> ScheduleScreen(vm)
@@ -203,8 +206,9 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
 
-        // LAYER 2: Full Screen Overlays
-        // These sit on top of the Scaffold (covering the bottom bar) and slide in/out.
+        // LAYER 2: Full Screen Overlays (Transcript / Reference)
+        // Placing these AFTER the Scaffold in the Box ensures they draw ON TOP.
+        // Because they fill max size, they will cover the Scaffold and the Bottom Bar.
         
         AnimatedVisibility(
             visible = vm.showTranscriptScreen, 
@@ -224,7 +228,7 @@ fun MainAppStructure(vm: MainViewModel) {
             ReferenceView(vm) { vm.showReferenceScreen = false } 
         }
         
-        // LAYER 3: Bottom Sheet Popup
+        // LAYER 3: Bottom Sheet Popup (Class Details)
         if (vm.selectedClass != null) {
             ModalBottomSheet(
                 onDismissRequest = { vm.selectedClass = null },
