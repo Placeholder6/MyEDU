@@ -178,27 +178,25 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
     Scaffold(bottomBar = {
-        // Keep bottom bar visible unless in full screen specific views
-        if (!vm.showTranscriptScreen && !vm.showReferenceScreen) {
-            NavigationBar {
-                NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-                NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-                NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
-                NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
-            }
+        // CHANGED: Always show NavigationBar so the background layout remains stable
+        NavigationBar {
+            NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
+            NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
+            NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
+            NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
         }
     }) { padding ->
         Box(Modifier.padding(padding)) {
-            // FIX: Always render the content so the background is not blank when the popup opens
-            if (!vm.showTranscriptScreen && !vm.showReferenceScreen) {
-                when(vm.currentTab) {
-                    0 -> HomeScreen(vm)
-                    1 -> ScheduleScreen(vm)
-                    2 -> GradesScreen(vm)
-                    3 -> ProfileScreen(vm)
-                }
+            // CHANGED: Always show the underlying tab content (Home/Profile/etc)
+            // This ensures no blank screen when overlays are closed.
+            when(vm.currentTab) {
+                0 -> HomeScreen(vm)
+                1 -> ScheduleScreen(vm)
+                2 -> GradesScreen(vm)
+                3 -> ProfileScreen(vm)
             }
 
+            // Overlays slide in on top of the existing content
             AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
             AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
             
