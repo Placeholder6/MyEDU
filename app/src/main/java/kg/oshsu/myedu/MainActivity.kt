@@ -214,7 +214,7 @@ fun MainAppStructure(vm: MainViewModel) {
             visible = vm.showTranscriptScreen, 
             enter = slideInHorizontally { it }, 
             exit = slideOutHorizontally { it },
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            modifier = Modifier.fillMaxSize() 
         ) { 
             TranscriptView(vm) { vm.showTranscriptScreen = false } 
         }
@@ -223,7 +223,7 @@ fun MainAppStructure(vm: MainViewModel) {
             visible = vm.showReferenceScreen, 
             enter = slideInHorizontally { it }, 
             exit = slideOutHorizontally { it },
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)
+            modifier = Modifier.fillMaxSize()
         ) { 
             ReferenceView(vm) { vm.showReferenceScreen = false } 
         }
