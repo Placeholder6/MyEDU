@@ -40,7 +40,7 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             
             // Only sign if config was successfully created
-            if (System.getenv("KEYSTORE_PATH") != null) {
+            if (System.getenv("RELEASE_STORE_FILE") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
