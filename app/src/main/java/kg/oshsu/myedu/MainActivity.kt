@@ -29,7 +29,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -723,7 +722,8 @@ fun ProfileScreen(vm: MainViewModel) {
             HorizontalDivider(Modifier.padding(start = 56.dp))
             ListItem(
                 headlineContent = { Text("Log Out") },
-                leadingContent = { Icon(Icons.AutoMirrored.Filled.Logout, null, tint = MaterialTheme.colorScheme.error) },
+                // Replaced AutoMirrored.Logout with ExitToApp to avoid unresolved reference on older builds
+                leadingContent = { Icon(Icons.Filled.ExitToApp, null, tint = MaterialTheme.colorScheme.error) },
                 headlineColor = MaterialTheme.colorScheme.error,
                 modifier = Modifier.clickable { vm.logout() }
             )
@@ -784,19 +784,18 @@ fun GradesScreen(vm: MainViewModel) {
 }
 
 // --- OVERLAYS & SHEETS REMAIN SIMILAR BUT WITH UPDATED SHAPES ---
-// (TranscriptView and ReferenceView follow similar structure but use the Expressive shapes defined in MyEduTheme)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
     Scaffold(
         topBar = { 
-            TopAppBar(title = { Text("Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) 
+            // Replaced AutoMirrored ArrowBack with standard Filled ArrowBack
+            TopAppBar(title = { Text("Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, null) } }) 
         }
     ) { padding ->
         // Reuse existing logic with new Card styles
         LazyColumn(Modifier.padding(padding).padding(16.dp)) {
-             // ... (Implementation same as previous but using ExpressiveCardShape for items)
              items(vm.transcriptData) { year ->
                  Text(year.eduYear ?: "", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 12.dp))
                  year.semesters?.forEach { sem ->
@@ -818,7 +817,10 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
 @Composable
 fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Reference") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) }
+        topBar = { 
+            // Replaced AutoMirrored ArrowBack with standard Filled ArrowBack
+            TopAppBar(title = { Text("Reference") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, null) } }) 
+        }
     ) { padding ->
         Column(Modifier.padding(padding).verticalScroll(rememberScrollState()).padding(16.dp)) {
              OutlinedCard(Modifier.fillMaxWidth(), shape = ExpressiveCardShape) {
