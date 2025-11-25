@@ -178,7 +178,8 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
     Scaffold(bottomBar = {
-        if (vm.selectedClass == null && !vm.showTranscriptScreen && !vm.showReferenceScreen) {
+        // Keep bottom bar visible unless in full screen specific views
+        if (!vm.showTranscriptScreen && !vm.showReferenceScreen) {
             NavigationBar {
                 NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
                 NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
@@ -188,7 +189,8 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }) { padding ->
         Box(Modifier.padding(padding)) {
-            if (vm.selectedClass == null && !vm.showTranscriptScreen && !vm.showReferenceScreen) {
+            // FIX: Always render the content so the background is not blank when the popup opens
+            if (!vm.showTranscriptScreen && !vm.showReferenceScreen) {
                 when(vm.currentTab) {
                     0 -> HomeScreen(vm)
                     1 -> ScheduleScreen(vm)
@@ -196,6 +198,7 @@ fun MainAppStructure(vm: MainViewModel) {
                     3 -> ProfileScreen(vm)
                 }
             }
+
             AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
             AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
             
