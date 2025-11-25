@@ -20,7 +20,7 @@ android {
     signingConfigs {
         create("release") {
             // Read from Environment Variables (CI)
-            val keystorePath = System.getenv("KEYSTORE_PATH")
+            val keystorePath = System.getenv("RELEASE_STORE_FILE")
             val storePass = System.getenv("RELEASE_STORE_PASSWORD")
             val keyAlias = System.getenv("RELEASE_KEY_ALIAS")
             val keyPass = System.getenv("RELEASE_KEY_PASSWORD")
