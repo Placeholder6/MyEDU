@@ -467,7 +467,35 @@ fun HomeScreen(vm: MainViewModel) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); StatCard(Icons.Outlined.Groups, "Group", if (vm.determinedGroup != null) "Group ${vm.determinedGroup}" else profile?.studentMovement?.avn_group_name ?: "-", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) }
+            
+            // --- MODIFIED STAT CARDS ---
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { 
+                // Semester Card with Stream
+                StatCard(
+                    icon = Icons.Outlined.CalendarToday, 
+                    label = "Semester", 
+                    value = profile?.active_semester?.toString() ?: "-", 
+                    secondaryValue = vm.determinedStream?.let { "Stream $it" }, // Added Stream
+                    bg = MaterialTheme.colorScheme.primaryContainer, 
+                    modifier = Modifier.weight(1f)
+                )
+                
+                // Group Card with Number and Name
+                val groupNum = vm.determinedGroup?.toString()
+                val groupName = profile?.studentMovement?.avn_group_name
+                
+                StatCard(
+                    icon = Icons.Outlined.Groups, 
+                    label = "Group", 
+                    // Main value is the number if available, otherwise the name
+                    value = groupNum ?: groupName ?: "-", 
+                    // Secondary value is the name (INL...) if the number is shown
+                    secondaryValue = if (groupNum != null) groupName else null, 
+                    bg = MaterialTheme.colorScheme.secondaryContainer, 
+                    modifier = Modifier.weight(1f)
+                ) 
+            }
+            
             Spacer(Modifier.height(32.dp)); Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp))
             if (vm.todayClasses.isEmpty()) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } } else { vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } }
             Spacer(Modifier.height(80.dp))
@@ -618,12 +646,46 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
 
 // --- HELPER COMPONENTS ---
 @Composable
-fun StatCard(icon: ImageVector, label: String, value: String, bg: Color, modifier: Modifier = Modifier) {
-    ElevatedButton(onClick = {}, modifier = modifier, colors = ButtonDefaults.elevatedButtonColors(containerColor = bg), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(16.dp)) {
+fun StatCard(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    secondaryValue: String? = null,
+    bg: Color,
+    modifier: Modifier = Modifier
+) {
+    ElevatedButton(
+        onClick = {},
+        modifier = modifier,
+        colors = ButtonDefaults.elevatedButtonColors(containerColor = bg),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(16.dp)
+    ) {
         Column(Modifier.fillMaxWidth()) {
-            Icon(icon, null, tint = Color.Black.copy(alpha=0.7f)); Spacer(Modifier.height(8.dp))
+            Icon(icon, null, tint = Color.Black.copy(alpha=0.7f))
+            Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f))
-            Text(text = value, style = if(value.length > 15) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            
+            // Main Value
+            Text(
+                text = value,
+                style = if(value.length > 8) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            // Secondary Value
+            if (secondaryValue != null) {
+                Text(
+                    text = secondaryValue,
+                    style = MaterialTheme.typography.bodySmall, // Smaller
+                    color = Color.Black.copy(alpha = 0.5f), // Less opacity
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
