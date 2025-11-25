@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -66,7 +67,10 @@ import java.util.Locale
 
 // --- UI COMPONENT: LOGO ---
 @Composable
-fun OshSuLogo(modifier: Modifier = Modifier) {
+fun OshSuLogo(
+    modifier: Modifier = Modifier,
+    tint: Color = MaterialTheme.colorScheme.primary // Default to Monet Primary Color
+) {
     val context = LocalContext.current
     val url = "file:///android_asset/logo-dark4.svg"
     val imageLoader = remember { ImageLoader.Builder(context).components { add(SvgDecoder.Factory()) }.build() }
@@ -75,7 +79,8 @@ fun OshSuLogo(modifier: Modifier = Modifier) {
         imageLoader = imageLoader,
         contentDescription = "OshSU Logo",
         modifier = modifier,
-        contentScale = ContentScale.Fit
+        contentScale = ContentScale.Fit,
+        colorFilter = ColorFilter.tint(tint) // Apply the dynamic tint
     )
 }
 
@@ -167,6 +172,7 @@ fun LoginScreen(vm: MainViewModel) {
 }
 
 // --- UI: MAIN SCAFFOLD & BOTTOM NAV ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -176,28 +182,67 @@ fun MainAppStructure(vm: MainViewModel) {
             vm.showReferenceScreen -> vm.showReferenceScreen = false
         }
     }
-    Scaffold(bottomBar = {
-        if (vm.selectedClass == null && !vm.showTranscriptScreen && !vm.showReferenceScreen) {
-            NavigationBar {
-                NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-                NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-                NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
-                NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
+
+    // ROOT BOX: Enables Z-index layering.
+    Box(modifier = Modifier.fillMaxSize()) {
+        
+        // LAYER 1: The Main Scaffold (Home, Schedule, etc.)
+        // This is always rendered, so it stays visible in the background during animations.
+        Scaffold(
+            bottomBar = {
+                // NavigationBar is always rendered here to prevent layout jumps.
+                // It will be covered by the full-screen overlays below.
+                NavigationBar {
+                    NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
+                    NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
+                }
             }
-        }
-    }) { padding ->
-        Box(Modifier.padding(padding)) {
-            if (vm.selectedClass == null && !vm.showTranscriptScreen && !vm.showReferenceScreen) {
-                when(vm.currentTab) {
+        ) { padding ->
+            Box(Modifier.padding(padding)) {
+                 // Content is always rendered.
+                 when(vm.currentTab) {
                     0 -> HomeScreen(vm)
                     1 -> ScheduleScreen(vm)
                     2 -> GradesScreen(vm)
                     3 -> ProfileScreen(vm)
                 }
             }
-            AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
-            AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally{it}, exit = slideOutHorizontally{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { ReferenceView(vm) { vm.showReferenceScreen = false } }
-            AnimatedVisibility(visible = vm.selectedClass != null, enter = slideInVertically{it}, exit = slideOutVertically{it}, modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) { vm.selectedClass?.let { ClassDetailsScreen(it) { vm.selectedClass = null } } }
+        }
+
+        // LAYER 2: Full Screen Overlays (Transcript / Reference)
+        // Placing these AFTER the Scaffold in the Box ensures they draw ON TOP.
+        // Because they fill max size, they will cover the Scaffold and the Bottom Bar.
+        
+        AnimatedVisibility(
+            visible = vm.showTranscriptScreen, 
+            enter = slideInHorizontally { it }, 
+            exit = slideOutHorizontally { it },
+            modifier = Modifier.fillMaxSize() 
+        ) { 
+            TranscriptView(vm) { vm.showTranscriptScreen = false } 
+        }
+
+        AnimatedVisibility(
+            visible = vm.showReferenceScreen, 
+            enter = slideInHorizontally { it }, 
+            exit = slideOutHorizontally { it },
+            modifier = Modifier.fillMaxSize()
+        ) { 
+            ReferenceView(vm) { vm.showReferenceScreen = false } 
+        }
+        
+        // LAYER 3: Bottom Sheet Popup (Class Details)
+        if (vm.selectedClass != null) {
+            ModalBottomSheet(
+                onDismissRequest = { vm.selectedClass = null },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = MaterialTheme.colorScheme.surface,
+                dragHandle = { BottomSheetDefaults.DragHandle() }
+            ) {
+                vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+            }
         }
     }
 }
@@ -427,7 +472,27 @@ fun HomeScreen(vm: MainViewModel) {
                 }
             }
             Spacer(Modifier.height(24.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { StatCard(Icons.Outlined.CalendarToday, "Semester", profile?.active_semester?.toString() ?: "-", MaterialTheme.colorScheme.primaryContainer, Modifier.weight(1f)); StatCard(Icons.Outlined.Groups, "Group", if (vm.determinedGroup != null) "Group ${vm.determinedGroup}" else profile?.studentMovement?.avn_group_name ?: "-", MaterialTheme.colorScheme.secondaryContainer, Modifier.weight(1f)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) { 
+                StatCard(
+                    icon = Icons.Outlined.CalendarToday, 
+                    label = "Semester", 
+                    value = profile?.active_semester?.toString() ?: "-", 
+                    secondaryValue = vm.determinedStream?.let { "Stream $it" },
+                    bg = MaterialTheme.colorScheme.primaryContainer, 
+                    modifier = Modifier.weight(1f)
+                )
+                
+                val groupNum = vm.determinedGroup?.toString()
+                val groupName = profile?.studentMovement?.avn_group_name
+                StatCard(
+                    icon = Icons.Outlined.Groups, 
+                    label = "Group", 
+                    value = groupNum ?: groupName ?: "-", 
+                    secondaryValue = if (groupNum != null) groupName else null, 
+                    bg = MaterialTheme.colorScheme.secondaryContainer, 
+                    modifier = Modifier.weight(1f)
+                ) 
+            }
             Spacer(Modifier.height(32.dp)); Text("${vm.todayDayName}'s Classes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold); Spacer(Modifier.height(16.dp))
             if (vm.todayClasses.isEmpty()) { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(24.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Weekend, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(16.dp)); Text("No classes today!", style = MaterialTheme.typography.bodyLarge) } } } else { vm.todayClasses.forEach { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } } }
             Spacer(Modifier.height(80.dp))
@@ -455,34 +520,181 @@ fun ScheduleScreen(vm: MainViewModel) {
     }
 }
 
-// --- SCREEN: CLASS DETAILS ---
-@OptIn(ExperimentalMaterial3Api::class)
+// --- SHEET: CLASS DETAILS ---
 @Composable
-fun ClassDetailsScreen(item: ScheduleItem, onClose: () -> Unit) {
-    val clipboardManager = LocalClipboardManager.current; val context = LocalContext.current; val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"; val groupValue = item.stream?.numeric?.toString() ?: "?"
-    Scaffold(topBar = { TopAppBar(title = { Text("Class Details") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }) }) { padding -> 
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.padding(padding).fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { Column(Modifier.padding(24.dp)) { Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer); Spacer(Modifier.height(8.dp)); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") }); if (item.stream?.numeric != null) { AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) } } } }
-                Spacer(Modifier.height(24.dp))
-                Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f)); IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) } } }
-                Spacer(Modifier.height(24.dp))
-                Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Spacer(Modifier.height(8.dp))
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { Column { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline); Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) } }; HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant); Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary); Spacer(Modifier.width(16.dp)); Column(Modifier.weight(1f)) { Text(item.classroom?.building?.getAddress() ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline); Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }; IconButton(onClick = { val address = item.classroom?.building?.getAddress() ?: ""; if (address.isNotEmpty()) { val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=$address")); context.startActivity(intent) } }) { Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) } } } }
+fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
+    val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
+    val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
+    val groupValue = item.stream?.numeric?.toString() ?: "?"
+    
+    // FETCH TIME HERE
+    val timeString = vm.getTimeString(item.id_lesson)
+
+    // GRADES LOGIC
+    val activeSemester = vm.profileData?.active_semester
+    val session = vm.sessionData
+    val currentSemSession = session.find { it.semester?.id == activeSemester } ?: session.lastOrNull()
+    val subjectGrades = currentSemSession?.subjects?.find { 
+        it.subject?.get() == item.subject?.get() 
+    }
+
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.fillMaxWidth().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
+            // Header
+            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
+                Column(Modifier.padding(24.dp)) { 
+                    Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Spacer(Modifier.height(4.dp))
+                    
+                    // ADDED TIME ROW
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f), modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(timeString, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.9f))
+                    }
+                    
+                    Spacer(Modifier.height(16.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
+                        AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
+                        if (item.stream?.numeric != null) { 
+                            AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) 
+                        } 
+                    } 
+                } 
             }
+            
+            // Grades Section
+            Spacer(Modifier.height(24.dp))
+            Text("Current Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) {
+                if (subjectGrades != null) {
+                    Column(Modifier.padding(16.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            ScoreColumn("M1", subjectGrades.marklist?.point1)
+                            ScoreColumn("M2", subjectGrades.marklist?.point2)
+                            ScoreColumn("Exam", subjectGrades.marklist?.finally)
+                            ScoreColumn("Total", subjectGrades.marklist?.total, true)
+                        }
+                    }
+                } else {
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.outline)
+                        Spacer(Modifier.width(16.dp))
+                        Text("No grades available for this subject yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+
+            // Teacher Section
+            Spacer(Modifier.height(24.dp))
+            Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                    Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.width(16.dp))
+                    Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { clipboardManager.setText(AnnotatedString(item.teacher?.get() ?: "")); Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { 
+                        Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
+                    } 
+                } 
+            }
+
+            // Location Section
+            Spacer(Modifier.height(24.dp))
+            Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.height(8.dp))
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
+                Column { 
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) { 
+                            Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) 
+                        } 
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
+                        Icon(Icons.Outlined.Business, null, tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) { 
+                            // ADDRESS FALLBACK LOGIC
+                            val address = item.classroom?.building?.getAddress()
+                            val displayAddress = if (address.isNullOrBlank()) "Building" else address
+                            
+                            Text(displayAddress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
+                        }
+                        // Copy Button for Building
+                        IconButton(onClick = { 
+                            clipboardManager.setText(AnnotatedString(item.classroom?.building?.getName() ?: ""))
+                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
+                        }) { 
+                            Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
+                        }
+                        // Map Button using Building Name
+                        IconButton(onClick = { 
+                            val locationName = item.classroom?.building?.getName() ?: ""
+                            if (locationName.isNotEmpty()) { 
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(locationName)}"))
+                                try {
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "No map app found", Toast.LENGTH_SHORT).show()
+                                }
+                            } 
+                        }) { 
+                            Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) 
+                        } 
+                    } 
+                } 
+            }
+            Spacer(Modifier.height(40.dp))
         }
     }
 }
 
 // --- HELPER COMPONENTS ---
 @Composable
-fun StatCard(icon: ImageVector, label: String, value: String, bg: Color, modifier: Modifier = Modifier) {
-    ElevatedButton(onClick = {}, modifier = modifier, colors = ButtonDefaults.elevatedButtonColors(containerColor = bg), shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(16.dp)) {
+fun StatCard(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    secondaryValue: String? = null,
+    bg: Color,
+    modifier: Modifier = Modifier
+) {
+    ElevatedButton(
+        onClick = {},
+        modifier = modifier,
+        colors = ButtonDefaults.elevatedButtonColors(containerColor = bg),
+        shape = RoundedCornerShape(12.dp),
+        contentPadding = PaddingValues(16.dp)
+    ) {
         Column(Modifier.fillMaxWidth()) {
-            Icon(icon, null, tint = Color.Black.copy(alpha=0.7f)); Spacer(Modifier.height(8.dp))
+            Icon(icon, null, tint = Color.Black.copy(alpha=0.7f))
+            Spacer(Modifier.height(8.dp))
             Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f))
-            Text(text = value, style = if(value.length > 15) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                text = value,
+                style = if(value.length > 8) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (secondaryValue != null) {
+                Text(
+                    text = secondaryValue,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Black.copy(alpha = 0.5f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -552,7 +764,7 @@ fun GradesScreen(vm: MainViewModel) {
                         }
                     } else item { Text("Semester data not found.", color = Color.Gray) }
                 }
-                item { Spacer(Modifier.height(80.dp)) }
+                item { Spacer(Modifier.height(24.dp)) } // REDUCED PADDING
             }
         }
     }
