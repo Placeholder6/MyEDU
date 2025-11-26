@@ -279,6 +279,7 @@ fun MainAppStructure(vm: MainViewModel) {
 }
 
 // --- SCREEN: HOME (BENTO GRID LAYOUT) ---
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(vm: MainViewModel) {
     val user = vm.userData
@@ -689,19 +690,19 @@ fun InfoBox(label: String, value: String, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
+    val context = LocalContext.current
     Scaffold(
         topBar = { TopAppBar(title = { Text("Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, null) } }) }
     ) { p ->
         Box(Modifier.padding(p).fillMaxSize()) {
             if(vm.isPdfGenerating) LinearProgressIndicator(Modifier.fillMaxWidth())
-            // (Keep existing PDF generation UI logic here or simplified for brevity)
             Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Rounded.PictureAsPdf, null, modifier = Modifier.size(64.dp).padding(bottom = 16.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Generate Official Transcript", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { vm.generateTranscriptPdf(LocalContext.current, "en") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download English PDF") }
+                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download English PDF") }
                 Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = { vm.generateTranscriptPdf(LocalContext.current, "ru") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download Russian PDF") }
+                OutlinedButton(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download Russian PDF") }
                 
                 if (vm.pdfStatusMessage != null) {
                     Spacer(Modifier.height(24.dp))
@@ -715,6 +716,7 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
+    val context = LocalContext.current
     Scaffold(
         topBar = { TopAppBar(title = { Text("Reference") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Rounded.ArrowBack, null) } }) }
     ) { p ->
@@ -724,9 +726,9 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                 Icon(Icons.Rounded.Description, null, modifier = Modifier.size(64.dp).padding(bottom = 16.dp), tint = MaterialTheme.colorScheme.primary)
                 Text("Student Reference (Form 8)", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { vm.generateReferencePdf(LocalContext.current, "en") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download English PDF") }
+                Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download English PDF") }
                 Spacer(Modifier.height(12.dp))
-                OutlinedButton(onClick = { vm.generateReferencePdf(LocalContext.current, "ru") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download Russian PDF") }
+                OutlinedButton(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text("Download Russian PDF") }
                  if (vm.pdfStatusMessage != null) {
                     Spacer(Modifier.height(24.dp))
                     Text(vm.pdfStatusMessage!!, color = MaterialTheme.colorScheme.secondary)
