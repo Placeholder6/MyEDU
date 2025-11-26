@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,7 +55,6 @@ fun ScheduleScreen(vm: MainViewModel) {
         }
     ) { padding ->
         Column(Modifier.padding(padding)) {
-            // UPDATED: PrimaryTabRow with explicit 'tabs' parameter
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surface,
@@ -78,26 +78,42 @@ fun ScheduleScreen(vm: MainViewModel) {
             
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
                 val dayClasses = vm.fullSchedule.filter { it.day == pageIndex }
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { 
-                    if (dayClasses.isEmpty()) { 
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant)
-                                Spacer(Modifier.height(16.dp))
-                                Text("No classes", color = Color.Gray) 
+                
+                // Wrapped in PullToRefreshBox
+                PullToRefreshBox(
+                    isRefreshing = vm.isRefreshing,
+                    onRefresh = { vm.refresh() },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { 
+                        if (dayClasses.isEmpty()) { 
+                            // Box(Modifier.fillMaxSize()) // Removed to allow pull-refresh on empty state
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp)
+                            ) {
+                                item {
+                                    Box(Modifier.fillMaxWidth().height(400.dp), contentAlignment = Alignment.Center) {
+                                        Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                            Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant)
+                                            Spacer(Modifier.height(16.dp))
+                                            Text("No classes", color = Color.Gray) 
+                                        }
+                                    }
+                                }
+                            }
+                        } else { 
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), 
+                                contentPadding = PaddingValues(16.dp)
+                            ) { 
+                                items(dayClasses) { item -> 
+                                    ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } 
+                                }
+                                item { Spacer(Modifier.height(80.dp)) } 
                             } 
                         } 
-                    } else { 
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), 
-                            contentPadding = PaddingValues(16.dp)
-                        ) { 
-                            items(dayClasses) { item -> 
-                                ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } 
-                            }
-                            item { Spacer(Modifier.height(80.dp)) } 
-                        } 
-                    } 
+                    }
                 }
             }
         }
@@ -106,17 +122,14 @@ fun ScheduleScreen(vm: MainViewModel) {
 
 @Composable
 fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
-    // UPDATED: New Clipboard API
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
     val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
     val groupValue = item.stream?.numeric?.toString() ?: "?"
-    
     val timeString = vm.getTimeString(item.id_lesson)
 
-    // Grades Logic
     val activeSemester = vm.profileData?.active_semester
     val session = vm.sessionData
     val currentSemSession = session.find { it.semester?.id == activeSemester } ?: session.lastOrNull()
@@ -126,18 +139,15 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxWidth().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
-            // Header
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
                 Column(Modifier.padding(24.dp)) { 
                     Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(4.dp))
-                    
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.AccessTime, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f), modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(timeString, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.9f))
                     }
-                    
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
                         AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
@@ -147,8 +157,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     } 
                 } 
             }
-            
-            // Grades Section
             Spacer(Modifier.height(24.dp))
             Text("Current Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -170,8 +178,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     }
                 }
             }
-
-            // Teacher Section
             Spacer(Modifier.height(24.dp))
             Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -181,19 +187,14 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     Spacer(Modifier.width(16.dp))
                     Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = { 
-                        // UPDATED: Using setClipEntry inside coroutine
                         val text = item.teacher?.get() ?: ""
-                        scope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("teacher", text)))
-                        }
+                        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("teacher", text))) }
                         Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
                     }) { 
                         Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
                     } 
                 } 
             }
-
-            // Location Section
             Spacer(Modifier.height(24.dp))
             Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
@@ -214,16 +215,12 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Column(Modifier.weight(1f)) { 
                             val address = item.classroom?.building?.getAddress()
                             val displayAddress = if (address.isNullOrBlank()) "Building" else address
-                            
                             Text(displayAddress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                             Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                         }
                         IconButton(onClick = { 
-                            // UPDATED: Using setClipEntry inside coroutine
                             val text = item.classroom?.building?.getName() ?: ""
-                            scope.launch {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("location", text)))
-                            }
+                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("location", text))) }
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
                         }) { 
                             Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
