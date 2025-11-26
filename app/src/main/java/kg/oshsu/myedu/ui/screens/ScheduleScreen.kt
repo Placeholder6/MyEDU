@@ -1,5 +1,6 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -23,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -33,39 +35,84 @@ import kg.oshsu.myedu.ScheduleItem
 import kg.oshsu.myedu.ui.components.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ScheduleScreen(vm: MainViewModel) {
     val tabs = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
     val scope = rememberCoroutineScope()
-    val initialPage = remember { val cal = Calendar.getInstance(); val dow = cal.get(Calendar.DAY_OF_WEEK); if (dow == Calendar.SUNDAY) 0 else (dow - 2).coerceIn(0, 5) }
+    val initialPage = remember { 
+        val cal = Calendar.getInstance()
+        val dow = cal.get(Calendar.DAY_OF_WEEK)
+        if (dow == Calendar.SUNDAY) 0 else (dow - 2).coerceIn(0, 5) 
+    }
     val pagerState = rememberPagerState(initialPage = initialPage) { tabs.size }
-    Scaffold(topBar = { CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) }) { padding ->
+    
+    Scaffold(
+        topBar = { 
+            CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) 
+        }
+    ) { padding ->
         Column(Modifier.padding(padding)) {
+            // UPDATED: PrimaryTabRow with explicit 'tabs' parameter
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary,
-                indicator = {
+                indicator = { 
                     TabRowDefaults.PrimaryIndicator(
                         modifier = Modifier.tabIndicatorOffset(pagerState.currentPage),
                         color = MaterialTheme.colorScheme.primary
                     )
+                },
+                tabs = {
+                    tabs.forEachIndexed { index, title -> 
+                        Tab(
+                            selected = pagerState.currentPage == index, 
+                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, 
+                            text = { Text(title) }
+                        ) 
+                    } 
                 }
             )
+            
+            HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
+                val dayClasses = vm.fullSchedule.filter { it.day == pageIndex }
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { 
+                    if (dayClasses.isEmpty()) { 
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) { 
+                                Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant)
+                                Spacer(Modifier.height(16.dp))
+                                Text("No classes", color = Color.Gray) 
+                            } 
+                        } 
+                    } else { 
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), 
+                            contentPadding = PaddingValues(16.dp)
+                        ) { 
+                            items(dayClasses) { item -> 
+                                ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } 
+                            }
+                            item { Spacer(Modifier.height(80.dp)) } 
+                        } 
+                    } 
+                }
+            }
         }
     }
 }
 
 @Composable
 fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
+    // UPDATED: New Clipboard API
     val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    
     val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
     val groupValue = item.stream?.numeric?.toString() ?: "?"
-    val scope = rememberCoroutineScope()
     
     val timeString = vm.getTimeString(item.id_lesson)
 
@@ -134,10 +181,13 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     Spacer(Modifier.width(16.dp))
                     Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = { 
-                        scope.launch { 
-                            clipboard.setText(AnnotatedString(item.teacher?.get() ?: "")) 
+                        // UPDATED: Using setClipEntry inside coroutine
+                        val text = item.teacher?.get() ?: ""
+                        scope.launch {
+                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("teacher", text)))
                         }
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() }) { 
+                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
+                    }) { 
                         Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
                     } 
                 } 
@@ -169,8 +219,10 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                             Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                         }
                         IconButton(onClick = { 
+                            // UPDATED: Using setClipEntry inside coroutine
+                            val text = item.classroom?.building?.getName() ?: ""
                             scope.launch {
-                                clipboard.setText(AnnotatedString(item.classroom?.building?.getName() ?: ""))
+                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("location", text)))
                             }
                             Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
                         }) { 
