@@ -12,6 +12,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -387,7 +388,7 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 // --- SCREEN: SCHEDULE TAB ---
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ScheduleScreen(vm: MainViewModel) {
     val tabs = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
