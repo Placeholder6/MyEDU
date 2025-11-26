@@ -71,9 +71,8 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as android.app.Activity).window
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            // Colors are handled by enableEdgeToEdge(), just set the icon contrast
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
     MaterialTheme(colorScheme = colorScheme, content = content)

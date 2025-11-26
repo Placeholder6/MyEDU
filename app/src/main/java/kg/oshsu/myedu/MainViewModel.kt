@@ -142,12 +142,11 @@ class MainViewModel : ViewModel() {
                     userData = user; profileData = profile
                     prefs?.saveData("user_data", user); prefs?.saveData("profile_data", profile)
                 }
-                if (profile != null) {
                     try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
                     try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
                     loadScheduleNetwork(profile)
                     fetchSession(profile)
-                }
+                
             } catch (e: Exception) {
                 if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
             } finally {

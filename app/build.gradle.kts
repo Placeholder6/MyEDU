@@ -55,7 +55,9 @@ android {
     sourceCompatibility = JavaVersion.VERSION_17 // Was VERSION_1_8
     targetCompatibility = JavaVersion.VERSION_17 // Was VERSION_1_8
     }
-    kotlinOptions { jvmTarget = "17" } // Was "1.8"
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 dependencies {

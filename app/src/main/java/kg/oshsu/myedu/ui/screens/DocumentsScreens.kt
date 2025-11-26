@@ -34,7 +34,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val facultyName = mov?.faculty?.let { it.name_en ?: it.name_ru } ?: mov?.speciality?.faculty?.let { it.name_en ?: it.name_ru } ?: "-"
     
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Reference (Form 8)") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }) },
+        topBar = { TopAppBar(title = { Text("Reference (Form 8)") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) },
         bottomBar = {
             Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
                 Column(Modifier.padding(16.dp)) {
@@ -81,7 +81,7 @@ fun RefDetailRow(label: String, value: String) { Column(Modifier.padding(bottom 
 fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
     val context = LocalContext.current
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Full Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, null) } }) },
+        topBar = { TopAppBar(title = { Text("Full Transcript") }, navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }) },
         bottomBar = {
             if (vm.transcriptData.isNotEmpty()) {
                 Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
