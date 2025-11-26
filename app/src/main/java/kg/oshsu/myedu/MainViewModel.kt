@@ -28,6 +28,7 @@ class MainViewModel : ViewModel() {
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
+    var isRefreshing by mutableStateOf(false) // Added for Pull-to-Refresh
     var errorMsg by mutableStateOf<String?>(null)
     
     // --- STATE: USER DATA ---
@@ -68,11 +69,8 @@ class MainViewModel : ViewModel() {
     private val refFetcher = ReferenceJsFetcher()
     private val dictUtils = DictionaryUtils()
 
-    // PdfResources is for Transcript (from JsResourceFetcher)
     private var cachedResourcesRu: PdfResources? = null
     private var cachedResourcesEn: PdfResources? = null
-    
-    // ReferenceResources is for Reference (from ReferenceJsFetcher)
     private var cachedRefResourcesRu: ReferenceResources? = null
     private var cachedRefResourcesEn: ReferenceResources? = null
 
@@ -87,7 +85,7 @@ class MainViewModel : ViewModel() {
             NetworkClient.cookieJar.injectSessionCookies(token)
             loadOfflineData()
             appState = "APP"
-            refreshAllData()
+            refreshAllData(isSwipe = false)
         } else {
             appState = "LOGIN"
         }
@@ -117,7 +115,7 @@ class MainViewModel : ViewModel() {
                     prefs?.saveToken(token)
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
-                    refreshAllData()
+                    refreshAllData(isSwipe = false)
                     appState = "APP"
                 } else errorMsg = "Incorrect credentials"
             } catch (e: Exception) { errorMsg = "Login Failed: ${e.message}" }
@@ -125,37 +123,51 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- AUTH: LOGOUT LOGIC ---
     fun logout() {
         appState = "LOGIN"; currentTab = 0; userData = null; profileData = null; payStatus = null; newsList = emptyList(); fullSchedule = emptyList(); sessionData = emptyList(); transcriptData = emptyList()
         prefs?.clearAll(); NetworkClient.cookieJar.clear(); NetworkClient.interceptor.authToken = null
     }
 
-    // --- DATA: REFRESH ALL ---
-    private fun refreshAllData() {
+    // --- PUBLIC REFRESH ACTION ---
+    fun refresh() {
+        refreshAllData(isSwipe = true)
+    }
+
+    // --- CORE DATA FETCHING ---
+    private fun refreshAllData(isSwipe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) { isLoading = true }
+            withContext(Dispatchers.Main) { 
+                if (isSwipe) isRefreshing = true else isLoading = true 
+            }
             try {
                 val user = NetworkClient.api.getUser().user
                 val profile = NetworkClient.api.getProfile()
+                
                 withContext(Dispatchers.Main) {
-                    userData = user; profileData = profile
-                    prefs?.saveData("user_data", user); prefs?.saveData("profile_data", profile)
+                    userData = user
+                    profileData = profile
+                    prefs?.saveData("user_data", user)
+                    prefs?.saveData("profile_data", profile)
                 }
-                    try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
-                    try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
+
+                // Fetch optional data without blocking checks
+                try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
+                try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
+                
+                if (profile != null) {
                     loadScheduleNetwork(profile)
                     fetchSession(profile)
-                
+                }
             } catch (e: Exception) {
                 if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
             } finally {
-                withContext(Dispatchers.Main) { isLoading = false }
+                withContext(Dispatchers.Main) { 
+                    if (isSwipe) isRefreshing = false else isLoading = false 
+                }
             }
         }
     }
 
-    // --- SCHEDULE: FETCH ---
     private suspend fun loadScheduleNetwork(profile: StudentInfoResponse) {
         val mov = profile.studentMovement ?: return
         try {
@@ -185,14 +197,14 @@ class MainViewModel : ViewModel() {
     private fun fetchSession(profile: StudentInfoResponse) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                withContext(Dispatchers.Main) { isGradesLoading = true }
+                withContext(Dispatchers.Main) { if(!isRefreshing) isGradesLoading = true }
                 val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
                 withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
             } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
         }
     }
 
-    // --- DOCUMENTS: TRANSCRIPT FETCH ---
+    // --- DOCUMENTS & PDF LOGIC (Unchanged) ---
     fun fetchTranscript() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -211,14 +223,12 @@ class MainViewModel : ViewModel() {
     
     fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "Pair $lessonId"
 
-    // --- NEW PDF LOGIC: DICTIONARY ---
     private suspend fun fetchDictionaryIfNeeded() {
         if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
             cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
         }
     }
 
-    // --- NEW PDF LOGIC: TRANSCRIPT GENERATION ---
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
         val studentId = userData?.id ?: return
@@ -272,7 +282,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- NEW PDF LOGIC: REFERENCE GENERATION ---
     fun generateReferencePdf(context: Context, language: String) {
         if (isPdfGenerating) return
         val studentId = userData?.id ?: return
