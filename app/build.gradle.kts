@@ -56,6 +56,7 @@ android {
     targetCompatibility = JavaVersion.VERSION_17 // Was VERSION_1_8
     }
     kotlinOptions { jvmTarget = "17" } // Was "1.8"
+}
 
 dependencies {
     // --- ANDROID CORE ---
