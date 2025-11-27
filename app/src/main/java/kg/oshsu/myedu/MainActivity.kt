@@ -5,9 +5,9 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -21,13 +21,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kg.oshsu.myedu.ui.screens.*
 
@@ -36,7 +33,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        WindowCompat.setDecorFitsSystemWindows(window, false) // <-- Remove this line
+        
+        // Android 16 / Edge-to-Edge Standard
+        enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -71,7 +70,7 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as android.app.Activity).window
-            // Colors are handled by enableEdgeToEdge(), just set the icon contrast
+            // Let the system handle status bar colors with EdgeToEdge
             androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
@@ -89,7 +88,7 @@ fun AppContent(vm: MainViewModel) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -103,11 +102,33 @@ fun MainAppStructure(vm: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") }, selected = vm.currentTab == 0, onClick = { vm.currentTab = 0 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.DateRange, null) }, label = { Text("Schedule") }, selected = vm.currentTab == 1, onClick = { vm.currentTab = 1 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.Description, null) }, label = { Text("Grades") }, selected = vm.currentTab == 2, onClick = { vm.currentTab = 2 })
-                    NavigationBarItem(icon = { Icon(Icons.Default.Person, null) }, label = { Text("Profile") }, selected = vm.currentTab == 3, onClick = { vm.currentTab = 3 })
+                // MATERIAL 3 EXPRESSIVE: ShortNavigationBar
+                // This replaces the standard NavigationBar with the "pill" style
+                ShortNavigationBar {
+                    ShortNavigationBarItem(
+                        selected = vm.currentTab == 0,
+                        onClick = { vm.currentTab = 0 },
+                        icon = { Icon(Icons.Default.Home, null) },
+                        label = { Text("Home") }
+                    )
+                    ShortNavigationBarItem(
+                        selected = vm.currentTab == 1,
+                        onClick = { vm.currentTab = 1 },
+                        icon = { Icon(Icons.Default.DateRange, null) },
+                        label = { Text("Schedule") }
+                    )
+                    ShortNavigationBarItem(
+                        selected = vm.currentTab == 2,
+                        onClick = { vm.currentTab = 2 },
+                        icon = { Icon(Icons.Default.Description, null) },
+                        label = { Text("Grades") }
+                    )
+                    ShortNavigationBarItem(
+                        selected = vm.currentTab == 3,
+                        onClick = { vm.currentTab = 3 },
+                        icon = { Icon(Icons.Default.Person, null) },
+                        label = { Text("Profile") }
+                    )
                 }
             }
         ) { padding ->
