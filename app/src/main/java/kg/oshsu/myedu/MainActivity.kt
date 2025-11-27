@@ -17,10 +17,15 @@ import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -70,7 +75,6 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as android.app.Activity).window
-            // Let the system handle status bar colors with EdgeToEdge
             androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
@@ -88,6 +92,14 @@ fun AppContent(vm: MainViewModel) {
     }
 }
 
+// Data class to manage Navigation Items cleaner
+data class NavItem(
+    val label: String, 
+    val selectedIcon: ImageVector, 
+    val unselectedIcon: ImageVector,
+    val index: Int
+)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
@@ -99,36 +111,37 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 
+    // Define Items with Filled vs Outlined icons
+    val navItems = listOf(
+        NavItem("Home", Icons.Filled.Home, Icons.Outlined.Home, 0),
+        NavItem("Schedule", Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
+        NavItem("Grades", Icons.Filled.Description, Icons.Outlined.Description, 2),
+        NavItem("Profile", Icons.Filled.Person, Icons.Outlined.Person, 3)
+    )
+
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
                 // MATERIAL 3 EXPRESSIVE: ShortNavigationBar
-                // This replaces the standard NavigationBar with the "pill" style
                 ShortNavigationBar {
-                    ShortNavigationBarItem(
-                        selected = vm.currentTab == 0,
-                        onClick = { vm.currentTab = 0 },
-                        icon = { Icon(Icons.Default.Home, null) },
-                        label = { Text("Home") }
-                    )
-                    ShortNavigationBarItem(
-                        selected = vm.currentTab == 1,
-                        onClick = { vm.currentTab = 1 },
-                        icon = { Icon(Icons.Default.DateRange, null) },
-                        label = { Text("Schedule") }
-                    )
-                    ShortNavigationBarItem(
-                        selected = vm.currentTab == 2,
-                        onClick = { vm.currentTab = 2 },
-                        icon = { Icon(Icons.Default.Description, null) },
-                        label = { Text("Grades") }
-                    )
-                    ShortNavigationBarItem(
-                        selected = vm.currentTab == 3,
-                        onClick = { vm.currentTab = 3 },
-                        icon = { Icon(Icons.Default.Person, null) },
-                        label = { Text("Profile") }
-                    )
+                    navItems.forEach { item ->
+                        val isSelected = vm.currentTab == item.index
+                        
+                        ShortNavigationBarItem(
+                            selected = isSelected,
+                            onClick = { vm.currentTab = item.index },
+                            icon = {
+                                // ANIMATION: Crossfade creates the smooth "morph" effect
+                                Crossfade(targetState = isSelected, label = "IconFade") { selected ->
+                                    Icon(
+                                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                        contentDescription = item.label
+                                    )
+                                }
+                            },
+                            label = { Text(item.label) }
+                        )
+                    }
                 }
             }
         ) { padding ->
