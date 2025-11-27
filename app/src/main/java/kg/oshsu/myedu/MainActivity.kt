@@ -10,6 +10,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -28,7 +29,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kg.oshsu.myedu.ui.screens.*
@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Android 16 / Edge-to-Edge Standard
+        // Edge-to-Edge for Android 16+
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -92,7 +92,6 @@ fun AppContent(vm: MainViewModel) {
     }
 }
 
-// Data class to manage Navigation Items cleaner
 data class NavItem(
     val label: String, 
     val selectedIcon: ImageVector, 
@@ -111,7 +110,6 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 
-    // Define Items with Filled vs Outlined icons
     val navItems = listOf(
         NavItem("Home", Icons.Filled.Home, Icons.Outlined.Home, 0),
         NavItem("Schedule", Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
@@ -131,8 +129,12 @@ fun MainAppStructure(vm: MainViewModel) {
                             selected = isSelected,
                             onClick = { vm.currentTab = item.index },
                             icon = {
-                                // ANIMATION: Crossfade creates the smooth "morph" effect
-                                Crossfade(targetState = isSelected, label = "IconFade") { selected ->
+                                // ANIMATION: Crossfade handles the "Icon becomes filled" transition
+                                Crossfade(
+                                    targetState = isSelected, 
+                                    label = "IconFade",
+                                    animationSpec = tween(durationMillis = 200) // Smooth morph timing
+                                ) { selected ->
                                     Icon(
                                         imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
                                         contentDescription = item.label
@@ -146,15 +148,27 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
-                 when(vm.currentTab) {
-                    0 -> HomeScreen(vm)
-                    1 -> ScheduleScreen(vm)
-                    2 -> GradesScreen(vm)
-                    3 -> ProfileScreen(vm)
+                // ANIMATION: Top Level Transition (Fade Through)
+                // This implements the guideline: "destination screens use a top level transition pattern"
+                AnimatedContent(
+                    targetState = vm.currentTab,
+                    label = "TabTransition",
+                    transitionSpec = {
+                        fadeIn(animationSpec = tween(300)) togetherWith 
+                        fadeOut(animationSpec = tween(300))
+                    }
+                ) { targetTab ->
+                    when(targetTab) {
+                        0 -> HomeScreen(vm)
+                        1 -> ScheduleScreen(vm)
+                        2 -> GradesScreen(vm)
+                        3 -> ProfileScreen(vm)
+                    }
                 }
             }
         }
 
+        // Overlay Screens (Transcript/Reference)
         AnimatedVisibility(
             visible = vm.showTranscriptScreen, 
             enter = slideInHorizontally { it }, 
