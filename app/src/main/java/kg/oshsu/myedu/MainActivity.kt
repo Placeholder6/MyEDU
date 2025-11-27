@@ -120,36 +120,37 @@ fun MainAppStructure(vm: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
-                // MATERIAL 3 EXPRESSIVE: ShortNavigationBar
-                ShortNavigationBar {
-                    navItems.forEach { item ->
-                        val isSelected = vm.currentTab == item.index
-                        
-                        ShortNavigationBarItem(
-                            selected = isSelected,
-                            onClick = { vm.currentTab = item.index },
-                            icon = {
-                                // ANIMATION: Crossfade handles the "Icon becomes filled" transition
-                                Crossfade(
-                                    targetState = isSelected, 
-                                    label = "IconFade",
-                                    animationSpec = tween(durationMillis = 200) // Smooth morph timing
-                                ) { selected ->
-                                    Icon(
-                                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                        contentDescription = item.label
-                                    )
-                                }
-                            },
-                            label = { Text(item.label) }
-                        )
+                // Remove Ripple to fix "Double Animation" and show strict state bounce
+                CompositionLocalProvider(LocalRippleConfiguration provides null) {
+                    ShortNavigationBar {
+                        navItems.forEach { item ->
+                            val isSelected = vm.currentTab == item.index
+                            
+                            ShortNavigationBarItem(
+                                selected = isSelected,
+                                onClick = { vm.currentTab = item.index },
+                                icon = {
+                                    // Smooth morph between Filled/Outlined
+                                    Crossfade(
+                                        targetState = isSelected, 
+                                        label = "IconFade",
+                                        animationSpec = tween(durationMillis = 200) 
+                                    ) { selected ->
+                                        Icon(
+                                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
+                                            contentDescription = item.label
+                                        )
+                                    }
+                                },
+                                label = { Text(item.label) }
+                            )
+                        }
                     }
                 }
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
-                // ANIMATION: Top Level Transition (Fade Through)
-                // This implements the guideline: "destination screens use a top level transition pattern"
+                // Fade Through Transition for Top-Level Screens
                 AnimatedContent(
                     targetState = vm.currentTab,
                     label = "TabTransition",
@@ -168,7 +169,7 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
 
-        // Overlay Screens (Transcript/Reference)
+        // Overlay Screens
         AnimatedVisibility(
             visible = vm.showTranscriptScreen, 
             enter = slideInHorizontally { it }, 
