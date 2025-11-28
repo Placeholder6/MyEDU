@@ -28,7 +28,8 @@ class MainViewModel : ViewModel() {
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
-    var isRefreshing by mutableStateOf(false) // Added for Pull-to-Refresh
+    var isRefreshing by mutableStateOf(false) 
+    var isLoginSuccess by mutableStateOf(false) // [NEW] Trigger for expand animation
     var errorMsg by mutableStateOf<String?>(null)
     
     // --- STATE: USER DATA ---
@@ -107,7 +108,12 @@ class MainViewModel : ViewModel() {
     // --- AUTH: LOGIN LOGIC ---
     fun login(email: String, pass: String) {
         viewModelScope.launch {
-            isLoading = true; errorMsg = null; NetworkClient.cookieJar.clear(); NetworkClient.interceptor.authToken = null
+            isLoading = true
+            isLoginSuccess = false
+            errorMsg = null
+            NetworkClient.cookieJar.clear()
+            NetworkClient.interceptor.authToken = null
+            
             try {
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
                 val token = resp.authorisation?.token
@@ -115,17 +121,28 @@ class MainViewModel : ViewModel() {
                     prefs?.saveToken(token)
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
+                    
+                    // Trigger Expansion Animation
+                    isLoginSuccess = true 
+                    delay(800) // Wait for animation to cover screen
+                    
                     refreshAllData(isSwipe = false)
                     appState = "APP"
-                } else errorMsg = "Incorrect credentials"
-            } catch (e: Exception) { errorMsg = "Login Failed: ${e.message}" }
-            isLoading = false
+                } else {
+                    errorMsg = "Incorrect credentials"
+                }
+            } catch (e: Exception) { 
+                errorMsg = "Login Failed: ${e.message}" 
+            } finally {
+                // Reset states after transition or error
+                if (!isLoginSuccess) isLoading = false
+            }
         }
     }
 
     fun logout() {
         appState = "LOGIN"; currentTab = 0; userData = null; profileData = null; payStatus = null; newsList = emptyList(); fullSchedule = emptyList(); sessionData = emptyList(); transcriptData = emptyList()
-        prefs?.clearAll(); NetworkClient.cookieJar.clear(); NetworkClient.interceptor.authToken = null
+        prefs?.clearAll(); NetworkClient.cookieJar.clear(); NetworkClient.interceptor.authToken = null; isLoading = false; isLoginSuccess = false
     }
 
     // --- PUBLIC REFRESH ACTION ---
@@ -137,7 +154,7 @@ class MainViewModel : ViewModel() {
     private fun refreshAllData(isSwipe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) { 
-                if (isSwipe) isRefreshing = true else isLoading = true 
+                if (isSwipe) isRefreshing = true else if(!isLoginSuccess) isLoading = true 
             }
             try {
                 val user = NetworkClient.api.getUser().user
@@ -162,7 +179,7 @@ class MainViewModel : ViewModel() {
                 if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
             } finally {
                 withContext(Dispatchers.Main) { 
-                    if (isSwipe) isRefreshing = false else isLoading = false 
+                    if (isSwipe) isRefreshing = false else { isLoading = false; isLoginSuccess = false }
                 }
             }
         }
