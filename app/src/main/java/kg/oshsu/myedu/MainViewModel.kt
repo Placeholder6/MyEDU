@@ -1,20 +1,15 @@
 package kg.oshsu.myedu
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.gson.Gson
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
@@ -24,20 +19,23 @@ import java.util.Calendar
 import java.util.Locale
 
 class MainViewModel : ViewModel() {
-    // --- STATE: APP STATUS --- 
+    // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
-    var isRefreshing by mutableStateOf(false) 
-    var isLoginSuccess by mutableStateOf(false) // [NEW] Trigger for expand animation
-    var errorMsg by mutableStateOf<String?>(null)
+    var isRefreshing by mutableStateOf(false)
     
+    // [NEW] Trigger for the "Expand" animation on the Login Screen
+    var isLoginSuccess by mutableStateOf(false) 
+    
+    var errorMsg by mutableStateOf<String?>(null)
+
     // --- STATE: USER DATA ---
     var userData by mutableStateOf<UserData?>(null)
     var profileData by mutableStateOf<StudentInfoResponse?>(null)
     var payStatus by mutableStateOf<PayStatusResponse?>(null)
     var newsList by mutableStateOf<List<NewsItem>>(emptyList())
-    
+
     // --- STATE: SCHEDULE DATA ---
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
@@ -46,11 +44,11 @@ class MainViewModel : ViewModel() {
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
-    
+
     // --- STATE: GRADES DATA ---
     var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
     var isGradesLoading by mutableStateOf(false)
-    
+
     // --- STATE: DOCUMENTS & PDF ---
     var transcriptData by mutableStateOf<List<TranscriptYear>>(emptyList())
     var isTranscriptLoading by mutableStateOf(false)
@@ -64,7 +62,7 @@ class MainViewModel : ViewModel() {
     private var cachedDictionary: Map<String, String> = emptyMap()
 
     private var prefs: PrefsManager? = null
-    
+
     // --- RESOURCE CACHE ---
     private val jsFetcher = JsResourceFetcher()
     private val refFetcher = ReferenceJsFetcher()
@@ -113,7 +111,7 @@ class MainViewModel : ViewModel() {
             errorMsg = null
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
-            
+
             try {
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
                 val token = resp.authorisation?.token
@@ -121,28 +119,42 @@ class MainViewModel : ViewModel() {
                     prefs?.saveToken(token)
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
-                    
-                    // Trigger Expansion Animation
-                    isLoginSuccess = true 
-                    delay(800) // Wait for animation to cover screen
-                    
+
+                    // [UPDATED] Trigger Expansion Animation and wait
+                    isLoginSuccess = true
+                    delay(1200) // Wait for the "Expand" animation to cover the screen
+
                     refreshAllData(isSwipe = false)
                     appState = "APP"
                 } else {
                     errorMsg = "Incorrect credentials"
                 }
-            } catch (e: Exception) { 
-                errorMsg = "Login Failed: ${e.message}" 
+            } catch (e: Exception) {
+                errorMsg = "Login Failed: ${e.message}"
             } finally {
-                // Reset states after transition or error
+                // Only reset loading if we didn't succeed (if success, we transition away)
                 if (!isLoginSuccess) isLoading = false
             }
         }
     }
 
     fun logout() {
-        appState = "LOGIN"; currentTab = 0; userData = null; profileData = null; payStatus = null; newsList = emptyList(); fullSchedule = emptyList(); sessionData = emptyList(); transcriptData = emptyList()
-        prefs?.clearAll(); NetworkClient.cookieJar.clear(); NetworkClient.interceptor.authToken = null; isLoading = false; isLoginSuccess = false
+        appState = "LOGIN"
+        currentTab = 0
+        userData = null
+        profileData = null
+        payStatus = null
+        newsList = emptyList()
+        fullSchedule = emptyList()
+        sessionData = emptyList()
+        transcriptData = emptyList()
+        prefs?.clearAll()
+        NetworkClient.cookieJar.clear()
+        NetworkClient.interceptor.authToken = null
+        
+        // Reset Login States
+        isLoading = false
+        isLoginSuccess = false
     }
 
     // --- PUBLIC REFRESH ACTION ---
@@ -153,13 +165,13 @@ class MainViewModel : ViewModel() {
     // --- CORE DATA FETCHING ---
     private fun refreshAllData(isSwipe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) { 
-                if (isSwipe) isRefreshing = true else if(!isLoginSuccess) isLoading = true 
+            withContext(Dispatchers.Main) {
+                if (isSwipe) isRefreshing = true else if (!isLoginSuccess) isLoading = true
             }
             try {
                 val user = NetworkClient.api.getUser().user
                 val profile = NetworkClient.api.getProfile()
-                
+
                 withContext(Dispatchers.Main) {
                     userData = user
                     profileData = profile
@@ -170,7 +182,7 @@ class MainViewModel : ViewModel() {
                 // Fetch optional data without blocking checks
                 try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
                 try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
-                
+
                 if (profile != null) {
                     loadScheduleNetwork(profile)
                     fetchSession(profile)
@@ -178,13 +190,14 @@ class MainViewModel : ViewModel() {
             } catch (e: Exception) {
                 if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
             } finally {
-                withContext(Dispatchers.Main) { 
+                withContext(Dispatchers.Main) {
                     if (isSwipe) isRefreshing = false else { isLoading = false; isLoginSuccess = false }
                 }
             }
         }
     }
 
+    // [Keep the rest of the file (Schedule, PDF generation, etc.) exactly as is]
     private suspend fun loadScheduleNetwork(profile: StudentInfoResponse) {
         val mov = profile.studentMovement ?: return
         try {
@@ -221,7 +234,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- DOCUMENTS & PDF LOGIC (Unchanged) ---
     fun fetchTranscript() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
