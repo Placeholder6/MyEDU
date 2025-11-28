@@ -1,6 +1,8 @@
 package kg.oshsu.myedu
 
 import android.content.Context
+import android.content.Intent // [FIX] Added
+import android.net.Uri    // [FIX] Added
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -25,7 +27,7 @@ class MainViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
     var isRefreshing by mutableStateOf(false)
     
-    // [NEW] Trigger for the "Expand" animation on the Login Screen
+    // Trigger for the "Expand" animation on the Login Screen
     var isLoginSuccess by mutableStateOf(false) 
     
     var errorMsg by mutableStateOf<String?>(null)
@@ -120,7 +122,7 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // [UPDATED] Trigger Expansion Animation and wait
+                    // Trigger Expansion Animation and wait
                     isLoginSuccess = true
                     delay(1200) // Wait for the "Expand" animation to cover the screen
 
@@ -197,7 +199,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // [Keep the rest of the file (Schedule, PDF generation, etc.) exactly as is]
     private suspend fun loadScheduleNetwork(profile: StudentInfoResponse) {
         val mov = profile.studentMovement ?: return
         try {
