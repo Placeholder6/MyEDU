@@ -4,6 +4,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable // [FIX 1] Added Import
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -17,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha // [FIX 2] Added Import
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
@@ -269,7 +271,5 @@ fun createStarPath(points: Int, outerRadius: Float, innerRadius: Float): Path {
     return path
 }
 
-// Helper for Alpha modifier if not already available in scope
-fun Modifier.alpha(alpha: Float) = this.then(
-    androidx.compose.ui.draw.Alpha(alpha)
-)
+// [FIX 3] Removed the incorrect helper function 'fun Modifier.alpha(...)'.
+// We now rely on the standard import 'androidx.compose.ui.draw.alpha'.
