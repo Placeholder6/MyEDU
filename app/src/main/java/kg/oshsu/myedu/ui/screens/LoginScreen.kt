@@ -1,9 +1,12 @@
 package kg.oshsu.myedu.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -14,10 +17,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -26,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(vm: MainViewModel) {
     var email by remember { mutableStateOf("") }
@@ -34,50 +40,34 @@ fun LoginScreen(vm: MainViewModel) {
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // Infinite Animation for Background Shapes
-    val infiniteTransition = rememberInfiniteTransition(label = "background")
+    // -- ANIMATION STATES --
+    // Button Morphing
+    val buttonWidth by animateDpAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+        animationSpec = tween(durationMillis = 400, easing = FastOutSlowInEasing),
+        label = "BtnWidth"
+    )
     
-    // Slow, sweeping movement for giant shapes
-    val scrollOffset1 by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 2000f,
-        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing), RepeatMode.Restart),
-        label = "scroll1"
+    val buttonCornerRadius by animateIntAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 50 else 16, 
+        animationSpec = tween(400),
+        label = "BtnCorner"
     )
-    val scrollOffset2 by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = -2000f,
-        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing), RepeatMode.Restart),
-        label = "scroll2"
-    )
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(40000, easing = LinearEasing), RepeatMode.Restart),
-        label = "rotation"
+
+    // Screen Expansion (Transition from Loader to Full Screen)
+    val expandScale by animateFloatAsState(
+        targetValue = if (vm.isLoginSuccess) 50f else 1f,
+        animationSpec = tween(durationMillis = 600, easing = LinearOutSlowInEasing),
+        label = "ExpandScale"
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .background(MaterialTheme.colorScheme.surface)
     ) {
-        // --- GIANT BACKGROUND SHAPES ---
-        // Top Row: Scrolling Right
-        ExpressiveShapeRow(
-            offset = scrollOffset1,
-            rotation = rotation,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .offset(y = (-50).dp) // Shift up to cover top edge
-                .alpha(0.06f) // Subtle texture
-        )
-        // Bottom Row: Scrolling Left (Opposite)
-        ExpressiveShapeRow(
-            offset = scrollOffset2,
-            rotation = -rotation,
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .offset(y = 100.dp) // Shift down to cover bottom edge
-                .alpha(0.06f)
-        )
+        // --- DECORATIVE BACKGROUND (Expressive Solid Shapes) ---
+        ExpressiveBackground()
 
         // --- FOREGROUND CONTENT ---
         Column(
@@ -88,100 +78,128 @@ fun LoginScreen(vm: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Spacer(Modifier.height(64.dp))
+            Spacer(Modifier.height(48.dp))
             
-            // 1. Top Logo
+            // Logo Area
             OshSuLogo(
-                modifier = Modifier.width(180.dp).height(90.dp),
+                modifier = Modifier.width(160.dp).height(80.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
             
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(32.dp))
             Text(
-                text = "Welcome to MyEDU",
-                style = MaterialTheme.typography.displayMedium, // Expressive Type
+                text = "Welcome Back",
+                style = MaterialTheme.typography.displaySmall, 
                 color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                fontWeight = FontWeight.Bold
             )
             Text(
-                text = "Sign in to access your portal",
+                text = "Sign in to your account",
                 style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
             Spacer(Modifier.height(56.dp))
 
-            // 2. Expressive Input Form
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = { Text("Email Address") },
-                leadingIcon = { Icon(Icons.Default.Email, null) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(28.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
-                    focusedBorderColor = MaterialTheme.colorScheme.primary
-                ),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
-                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
-            )
+            // -- INPUT FIELDS --
+            // Container for inputs with unified styling
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                modifier = Modifier.widthIn(max = 400.dp)
+            ) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    leadingIcon = { Icon(Icons.Default.Email, null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(24.dp), // M3e Large Corner
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
+                )
 
-            Spacer(Modifier.height(16.dp))
-
-            OutlinedTextField(
-                value = pass,
-                onValueChange = { pass = it },
-                label = { Text("Password") },
-                leadingIcon = { Icon(Icons.Default.Lock, null) },
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                shape = RoundedCornerShape(28.dp),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(email, pass) })
-            )
+                OutlinedTextField(
+                    value = pass,
+                    onValueChange = { pass = it },
+                    label = { Text("Password") },
+                    leadingIcon = { Icon(Icons.Default.Lock, null) },
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedBorderColor = Color.Transparent
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(email, pass) })
+                )
+            }
 
             if (vm.errorMsg != null) {
                 Spacer(Modifier.height(20.dp))
-                Surface(
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        text = vm.errorMsg!!,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+                Text(
+                    text = vm.errorMsg!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    textAlign = TextAlign.Center
+                )
             }
 
-            Spacer(Modifier.height(40.dp))
+            Spacer(Modifier.height(48.dp))
 
-            // 3. Expressive Button with LoadingIndicator
-            Button(
-                onClick = { vm.login(email, pass) },
-                modifier = Modifier.fillMaxWidth().height(64.dp),
-                enabled = !vm.isLoading,
-                shape = RoundedCornerShape(20.dp)
-            ) {
-                if (vm.isLoading) {
-                    // STANDALONE EXPRESSIVE LOADING INDICATOR
-                    LoadingIndicator(
-                        modifier = Modifier.size(32.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
+            // --- MORPHING BUTTON ---
+            // We use a Box with dynamic size and shape
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(width = buttonWidth, height = 64.dp)
+                    // The Expand Scale applies here
+                    .scale(expandScale)
+                    .clip(RoundedCornerShape(percent = buttonCornerRadius))
+                    .background(MaterialTheme.colorScheme.primary)
+                    // If not success, allow click. If success, it just expands.
+                    .then(
+                         if (!vm.isLoading && !vm.isLoginSuccess) {
+                             Modifier.padding(0.dp) // Dummy
+                                 // Add clickable behavior only when it's a button
+                                 .clickable { vm.login(email, pass) }
+                         } else Modifier
                     )
-                } else {
-                    Text("Sign In", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            ) {
+                // Content Switcher
+                androidx.compose.animation.AnimatedContent(
+                    targetState = vm.isLoading || vm.isLoginSuccess,
+                    label = "BtnContent"
+                ) { loading ->
+                    if (loading) {
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 3.dp
+                        )
+                    } else {
+                        Text(
+                            "Sign In",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(horizontal = 24.dp)
+                        )
+                    }
                 }
             }
             
@@ -190,43 +208,68 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
-// Helper to render a row of shapes
+// --- EXPRESSIVE BACKGROUND ---
 @Composable
-fun ExpressiveShapeRow(offset: Float, rotation: Float, modifier: Modifier = Modifier) {
-    val icons = listOf(Icons.Default.Star, Icons.Default.Hexagon, Icons.Default.Circle, Icons.Default.Square)
-    
-    Layout(
-        content = {
-            repeat(10) { index ->
-                Icon(
-                    imageVector = icons[index % icons.size],
-                    contentDescription = null,
-                    // UPDATED: Giant size (360dp), removed background box
-                    modifier = Modifier
-                        .size(360.dp) 
-                        .rotate(rotation + (index * 60f)),
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        },
-        modifier = modifier.fillMaxWidth()
-    ) { measurables, constraints ->
-        val placeables = measurables.map { it.measure(constraints) }
-        
-        // Overlap them slightly (300 spacing for 360 width)
-        val itemSpacing = 300 
-        
-        // Define a large height for the row to accommodate giant shapes
-        layout(constraints.maxWidth, 400) { 
-            var xPos = offset.toInt() % (constraints.maxWidth + 1500) 
-            if (xPos > 0) xPos -= (constraints.maxWidth + 1500)
-            
-            placeables.forEach { placeable ->
-                // Center vertically in the row
-                val yPos = (400 - placeable.height) / 2
-                placeable.placeRelative(x = xPos, y = yPos)
-                xPos += itemSpacing
-            }
+fun ExpressiveBackground() {
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+
+    val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing)), label = "rot"
+    )
+
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.4f)) {
+        val w = size.width
+        val h = size.height
+
+        // 1. Giant Star/Flower Top Left
+        rotate(rotation, pivot = androidx.compose.ui.geometry.Offset(0f, 0f)) {
+            drawPath(
+                path = createStarPath(12, 400f, 300f),
+                color = primary,
+                style = Fill
+            )
+        }
+
+        // 2. Giant Circle Bottom Right
+        drawCircle(
+            color = secondary,
+            radius = 350f,
+            center = androidx.compose.ui.geometry.Offset(w, h * 0.9f)
+        )
+
+        // 3. Floating Rounded Rect (Pill) Middle Right
+        rotate(-rotation * 0.5f, pivot = androidx.compose.ui.geometry.Offset(w, h * 0.4f)) {
+             drawRoundRect(
+                 color = tertiary,
+                 topLeft = androidx.compose.ui.geometry.Offset(w - 200f, h * 0.3f),
+                 size = androidx.compose.ui.geometry.Size(300f, 150f),
+                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(75f, 75f)
+             )
         }
     }
 }
+
+// Helper for Star Shape
+fun createStarPath(points: Int, outerRadius: Float, innerRadius: Float): Path {
+    val path = Path()
+    val angleStep = Math.PI / points
+    
+    for (i in 0 until 2 * points) {
+        val r = if (i % 2 == 0) outerRadius else innerRadius
+        val angle = i * angleStep
+        val x = (r * Math.cos(angle)).toFloat()
+        val y = (r * Math.sin(angle)).toFloat()
+        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+    }
+    path.close()
+    return path
+}
+
+// Helper for Alpha modifier if not already available in scope
+fun Modifier.alpha(alpha: Float) = this.then(
+    androidx.compose.ui.draw.Alpha(alpha)
+)
