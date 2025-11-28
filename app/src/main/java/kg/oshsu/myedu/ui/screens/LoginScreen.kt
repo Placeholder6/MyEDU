@@ -17,11 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -30,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 
-// Opt-in for Expressive APIs (LoadingIndicator)
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(vm: MainViewModel) {
@@ -41,39 +36,47 @@ fun LoginScreen(vm: MainViewModel) {
 
     // Infinite Animation for Background Shapes
     val infiniteTransition = rememberInfiniteTransition(label = "background")
+    
+    // Slow, sweeping movement for giant shapes
     val scrollOffset1 by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 1000f,
-        animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing), RepeatMode.Restart),
+        initialValue = 0f, targetValue = 2000f,
+        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing), RepeatMode.Restart),
         label = "scroll1"
     )
     val scrollOffset2 by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = -1000f,
-        animationSpec = infiniteRepeatable(tween(25000, easing = LinearEasing), RepeatMode.Restart),
+        initialValue = 0f, targetValue = -2000f,
+        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing), RepeatMode.Restart),
         label = "scroll2"
     )
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(10000, easing = LinearEasing), RepeatMode.Restart),
+        animationSpec = infiniteRepeatable(tween(40000, easing = LinearEasing), RepeatMode.Restart),
         label = "rotation"
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest) // Expressive base
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
     ) {
-        // --- BACKGROUND SHAPES LAYERS ---
-        // Row 1: Scrolling Right
+        // --- GIANT BACKGROUND SHAPES ---
+        // Top Row: Scrolling Right
         ExpressiveShapeRow(
             offset = scrollOffset1,
             rotation = rotation,
-            modifier = Modifier.align(Alignment.TopStart).offset(y = 120.dp).alpha(0.1f)
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(y = (-50).dp) // Shift up to cover top edge
+                .alpha(0.06f) // Subtle texture
         )
-        // Row 2: Scrolling Left (Opposite)
+        // Bottom Row: Scrolling Left (Opposite)
         ExpressiveShapeRow(
             offset = scrollOffset2,
-            rotation = -rotation, // Rotate opposite too
-            modifier = Modifier.align(Alignment.BottomStart).offset(y = (-80).dp).alpha(0.1f)
+            rotation = -rotation,
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .offset(y = 100.dp) // Shift down to cover bottom edge
+                .alpha(0.06f)
         )
 
         // --- FOREGROUND CONTENT ---
@@ -85,16 +88,18 @@ fun LoginScreen(vm: MainViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // 1. Top Logo (Moved Up)
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(64.dp))
+            
+            // 1. Top Logo
             OshSuLogo(
-                modifier = Modifier.width(160.dp).height(80.dp),
+                modifier = Modifier.width(180.dp).height(90.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            Spacer(Modifier.height(16.dp))
+            
+            Spacer(Modifier.height(24.dp))
             Text(
                 text = "Welcome to MyEDU",
-                style = MaterialTheme.typography.displaySmall, // Expressive Type
+                style = MaterialTheme.typography.displayMedium, // Expressive Type
                 color = MaterialTheme.colorScheme.onSurface,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -106,10 +111,9 @@ fun LoginScreen(vm: MainViewModel) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(Modifier.height(48.dp))
+            Spacer(Modifier.height(56.dp))
 
             // 2. Expressive Input Form
-            // Email
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -117,7 +121,7 @@ fun LoginScreen(vm: MainViewModel) {
                 leadingIcon = { Icon(Icons.Default.Email, null) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                shape = RoundedCornerShape(24.dp), // Extra Large Corners
+                shape = RoundedCornerShape(28.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
                     focusedBorderColor = MaterialTheme.colorScheme.primary
@@ -128,7 +132,6 @@ fun LoginScreen(vm: MainViewModel) {
 
             Spacer(Modifier.height(16.dp))
 
-            // Password
             OutlinedTextField(
                 value = pass,
                 onValueChange = { pass = it },
@@ -142,34 +145,34 @@ fun LoginScreen(vm: MainViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                shape = RoundedCornerShape(24.dp), // Extra Large Corners
+                shape = RoundedCornerShape(28.dp),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(email, pass) })
             )
 
             if (vm.errorMsg != null) {
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(20.dp))
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
                         text = vm.errorMsg!!,
                         color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(40.dp))
 
-            // 3. Expressive Button with Loading Indicator
+            // 3. Expressive Button with LoadingIndicator
             Button(
                 onClick = { vm.login(email, pass) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
+                modifier = Modifier.fillMaxWidth().height(64.dp),
                 enabled = !vm.isLoading,
-                shape = RoundedCornerShape(18.dp) // Expressive Medium Shape
+                shape = RoundedCornerShape(20.dp)
             ) {
                 if (vm.isLoading) {
                     // STANDALONE EXPRESSIVE LOADING INDICATOR
@@ -178,7 +181,7 @@ fun LoginScreen(vm: MainViewModel) {
                         color = MaterialTheme.colorScheme.onPrimary
                     )
                 } else {
-                    Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Sign In", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
             }
             
@@ -192,21 +195,16 @@ fun LoginScreen(vm: MainViewModel) {
 fun ExpressiveShapeRow(offset: Float, rotation: Float, modifier: Modifier = Modifier) {
     val icons = listOf(Icons.Default.Star, Icons.Default.Hexagon, Icons.Default.Circle, Icons.Default.Square)
     
-    // Custom Layout to handle the infinite scrolling offset visually
     Layout(
         content = {
             repeat(10) { index ->
                 Icon(
                     imageVector = icons[index % icons.size],
                     contentDescription = null,
+                    // UPDATED: Giant size (360dp), removed background box
                     modifier = Modifier
-                        .size(64.dp)
-                        .rotate(rotation + (index * 45f)) // Rotate in place + offset
-                        .background(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f), 
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        .padding(12.dp), // Inner padding for shape visual
+                        .size(360.dp) 
+                        .rotate(rotation + (index * 60f)),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -214,13 +212,20 @@ fun ExpressiveShapeRow(offset: Float, rotation: Float, modifier: Modifier = Modi
         modifier = modifier.fillMaxWidth()
     ) { measurables, constraints ->
         val placeables = measurables.map { it.measure(constraints) }
-        layout(constraints.maxWidth, 100) {
-            var xPos = offset.toInt() % (constraints.maxWidth + 200) // Wrap around logic
-            if (xPos > 0) xPos -= (constraints.maxWidth + 200) // Ensure seamless loop start
+        
+        // Overlap them slightly (300 spacing for 360 width)
+        val itemSpacing = 300 
+        
+        // Define a large height for the row to accommodate giant shapes
+        layout(constraints.maxWidth, 400) { 
+            var xPos = offset.toInt() % (constraints.maxWidth + 1500) 
+            if (xPos > 0) xPos -= (constraints.maxWidth + 1500)
             
             placeables.forEach { placeable ->
-                placeable.placeRelative(x = xPos, y = 0)
-                xPos += 160 // Spacing between shapes
+                // Center vertically in the row
+                val yPos = (400 - placeable.height) / 2
+                placeable.placeRelative(x = xPos, y = yPos)
+                xPos += itemSpacing
             }
         }
     }
