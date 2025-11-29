@@ -113,6 +113,7 @@ fun LoginScreen(vm: MainViewModel) {
         label = "Width"
     )
 
+    // CHANGED: Target is 1f (normal size) by default, scales to 50f to cover screen
     val expandScale by animateFloatAsState(
         targetValue = if (vm.isLoginSuccess) 50f else 1f,
         animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
@@ -226,11 +227,14 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = BiasAlignment(0f, verticalBias)
         ) {
+            // REMOVED: The separate background Box that was scaling up from behind.
+            
+            // MAIN INDICATOR BOX
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
-                    .scale(expandScale)
+                    .scale(expandScale) // CHANGED: Scale applied directly to this container
                     .clip(RoundedCornerShape(100))
                     .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
