@@ -1,9 +1,7 @@
 package kg.oshsu.myedu.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.*
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -25,10 +23,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size // [FIXED] Added Import
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.translate // [FIXED] Added Import
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -97,6 +97,23 @@ fun LoginScreen(vm: MainViewModel) {
     val contentAlpha by animateFloatAsState(
         targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
         animationSpec = tween(500)
+    )
+    
+    // 3. Button Width Morph: Wide -> Compact (Circle/Square)
+    val buttonWidth by animateDpAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioLowBouncy, 
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "BtnWidth"
+    )
+
+    // 4. Button Corner Morph: Rounded Rect (24dp) -> Circle (50%)
+    val buttonCornerPercent by animateIntAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 50 else 16, 
+        animationSpec = tween(400),
+        label = "BtnCorner"
     )
 
     Box(
@@ -185,47 +202,59 @@ fun LoginScreen(vm: MainViewModel) {
             }
             Spacer(Modifier.height(48.dp))
             
-            // --- LOGIN BUTTON (Visible only when NOT loading) ---
-            Button(
-                onClick = { vm.login(email, pass) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(24.dp)
-            ) {
-                Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            // --- LOGIN BUTTON (Visible only when NOT loading/success to avoid double drawing) ---
+            if (!vm.isLoading && !vm.isLoginSuccess) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(64.dp)
+                        .padding(horizontal = 0.dp) // Reset padding
+                ) {
+                   // This space is reserved; the actual morphing box is below
+                }
             }
             Spacer(Modifier.weight(1f))
         }
 
-        // --- LOADING INDICATOR (No Background) ---
-        // Visible only during loading, centered on screen
-        if (vm.isLoading && !vm.isLoginSuccess) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                LoadingIndicator(
-                    modifier = Modifier.size(48.dp),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-
-        // --- SUCCESS EXPANSION ---
-        // A simple circular shape that expands from center to fill screen
-        if (vm.isLoginSuccess) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp) // Start size matches loader
-                        .scale(expandScale)
-                        .clip(androidx.compose.foundation.shape.CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
+        // --- MORPHING BUTTON / LOADING INDICATOR / SUCCESS EXPANSION ---
+        // This Box sits on top to handle the transitions smoothly
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 64.dp)
+                // 1. Success Expansion
+                .scale(if (vm.isLoginSuccess) expandScale + 1f else 1f) // expandScale starts at 0, we need it to grow
+                // 2. Morph Size
+                .size(width = buttonWidth, height = 64.dp)
+                // 3. Morph Shape
+                .clip(RoundedCornerShape(percent = buttonCornerPercent))
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) {
+                    vm.login(email, pass)
+                }
+        ) {
+             AnimatedContent(
+                targetState = vm.isLoading || vm.isLoginSuccess,
+                label = "BtnContent"
+            ) { loading ->
+                if (loading) {
+                    // Just the icon, no container
+                    LoadingIndicator(
+                        modifier = Modifier.size(32.dp),
+                        color = MaterialTheme.colorScheme.onPrimary
+                    )
+                } else {
+                    Text(
+                        "Sign In",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.padding(horizontal = 24.dp),
+                        maxLines = 1
+                    )
+                }
             }
         }
     }
