@@ -86,7 +86,10 @@ class MainViewModel : ViewModel() {
             NetworkClient.cookieJar.injectSessionCookies(token)
             loadOfflineData()
             appState = "APP"
-            refreshAllData(isSwipe = false)
+            // Trigger background refresh silently
+            viewModelScope.launch(Dispatchers.IO) {
+                try { fetchAllDataSuspend() } catch (_: Exception) {}
+            }
         } else {
             appState = "LOGIN"
         }
@@ -122,21 +125,27 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // Trigger Expansion Animation and wait
+                    // 1. Load Data FIRST (Spinner continues to spin)
+                    // We catch exceptions so login proceeds even if some data fails
+                    try {
+                        withContext(Dispatchers.IO) { fetchAllDataSuspend() }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    // 2. Trigger Expansion Animation (Zoom)
                     isLoginSuccess = true
                     // Wait for the slow zoom animation (2000ms) to complete before switching state
                     delay(2000) 
 
-                    refreshAllData(isSwipe = false)
                     appState = "APP"
                 } else {
                     errorMsg = "Incorrect credentials"
+                    isLoading = false
                 }
             } catch (e: Exception) {
                 errorMsg = "Login Failed: ${e.message}"
-            } finally {
-                // Only reset loading if we didn't succeed (if success, we transition away)
-                if (!isLoginSuccess) isLoading = false
+                isLoading = false
             }
         }
     }
@@ -162,41 +171,37 @@ class MainViewModel : ViewModel() {
 
     // --- PUBLIC REFRESH ACTION ---
     fun refresh() {
-        refreshAllData(isSwipe = true)
-    }
-
-    // --- CORE DATA FETCHING ---
-    private fun refreshAllData(isSwipe: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
-                if (isSwipe) isRefreshing = true else if (!isLoginSuccess) isLoading = true
-            }
+            withContext(Dispatchers.Main) { isRefreshing = true }
             try {
-                val user = NetworkClient.api.getUser().user
-                val profile = NetworkClient.api.getProfile()
-
-                withContext(Dispatchers.Main) {
-                    userData = user
-                    profileData = profile
-                    prefs?.saveData("user_data", user)
-                    prefs?.saveData("profile_data", profile)
-                }
-
-                // Fetch optional data without blocking checks
-                try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
-                try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
-
-                if (profile != null) {
-                    loadScheduleNetwork(profile)
-                    fetchSession(profile)
-                }
+                fetchAllDataSuspend()
             } catch (e: Exception) {
                 if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
             } finally {
-                withContext(Dispatchers.Main) {
-                    if (isSwipe) isRefreshing = false else { isLoading = false; isLoginSuccess = false }
-                }
+                withContext(Dispatchers.Main) { isRefreshing = false }
             }
+        }
+    }
+
+    // --- CORE DATA FETCHING (Suspendable) ---
+    private suspend fun fetchAllDataSuspend() {
+        val user = NetworkClient.api.getUser().user
+        val profile = NetworkClient.api.getProfile()
+
+        withContext(Dispatchers.Main) {
+            userData = user
+            profileData = profile
+            prefs?.saveData("user_data", user)
+            prefs?.saveData("profile_data", profile)
+        }
+
+        // Fetch optional data without blocking strict flow if they fail
+        try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
+        try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
+
+        if (profile != null) {
+            loadScheduleNetwork(profile)
+            fetchSessionSuspend(profile)
         }
     }
 
@@ -226,14 +231,12 @@ class MainViewModel : ViewModel() {
         todayClasses = fullSchedule.filter { it.day == apiDay }
     }
 
-    private fun fetchSession(profile: StudentInfoResponse) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                withContext(Dispatchers.Main) { if(!isRefreshing) isGradesLoading = true }
-                val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
-                withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
-            } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
-        }
+    private suspend fun fetchSessionSuspend(profile: StudentInfoResponse) {
+        try {
+            withContext(Dispatchers.Main) { if(!isRefreshing) isGradesLoading = true }
+            val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
+            withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
+        } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
     }
 
     fun fetchTranscript() {
