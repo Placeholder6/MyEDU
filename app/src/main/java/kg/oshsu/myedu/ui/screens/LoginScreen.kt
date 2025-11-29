@@ -113,7 +113,7 @@ fun LoginScreen(vm: MainViewModel) {
         label = "Width"
     )
 
-    // CHANGED: Target is 1f (normal size) by default, scales to 50f to cover screen
+    // Target is 1f (normal size) by default, scales to 50f to cover screen
     val expandScale by animateFloatAsState(
         targetValue = if (vm.isLoginSuccess) 50f else 1f,
         animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
@@ -227,16 +227,23 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = BiasAlignment(0f, verticalBias)
         ) {
-            // REMOVED: The separate background Box that was scaling up from behind.
-            
-            // MAIN INDICATOR BOX
+            // 1. SCALING BACKGROUND LAYER
+            // This box acts as the background. It scales up to fill the screen on success.
+            Box(
+                modifier = Modifier
+                    .size(width = width, height = 64.dp)
+                    .scale(expandScale)
+                    .clip(RoundedCornerShape(100))
+                    .background(containerColor)
+            )
+
+            // 2. CONTENT LAYER
+            // This box stays at the normal size (doesn't scale up 50x) so the loader remains visible.
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
-                    .scale(expandScale) // CHANGED: Scale applied directly to this container
                     .clip(RoundedCornerShape(100))
-                    .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
             ) {
                 AnimatedContent(
@@ -244,10 +251,15 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
-                        // Expressive Loading Indicator (Restored)
+                        // Switch color: Primary (Normal Loading) -> OnPrimary (Success/Zooming against blue bg)
+                        val indicatorColor by animateColorAsState(
+                            targetValue = if (vm.isLoginSuccess) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
+                            label = "LoaderColor"
+                        )
+                        
                         LoadingIndicator(
                             modifier = Modifier.size(32.dp),
-                            color = MaterialTheme.colorScheme.primary 
+                            color = indicatorColor
                         )
                     } else {
                         Text(
