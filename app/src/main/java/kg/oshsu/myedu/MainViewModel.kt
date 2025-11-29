@@ -1,8 +1,8 @@
 package kg.oshsu.myedu
 
 import android.content.Context
-import android.content.Intent // [FIX] Added
-import android.net.Uri    // [FIX] Added
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -124,7 +124,8 @@ class MainViewModel : ViewModel() {
 
                     // Trigger Expansion Animation and wait
                     isLoginSuccess = true
-                    delay(1200) // Wait for the "Expand" animation to cover the screen
+                    // Wait for the slow zoom animation (2000ms) to complete before switching state
+                    delay(2000) 
 
                     refreshAllData(isSwipe = false)
                     appState = "APP"
