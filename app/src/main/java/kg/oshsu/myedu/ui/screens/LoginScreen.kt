@@ -25,15 +25,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Matrix
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.drawscope.scale // [FIX] Added missing import
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -45,52 +42,47 @@ import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
-import kotlin.math.max
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
     // 1. "Very Sunny": A 12-pointed star with sharp inner cuts and rounded tips
-    fun verySunny(radius: Float = 1f): RoundedPolygon {
+    fun verySunny(numVertices: Int = 12): RoundedPolygon {
         return RoundedPolygon.star(
-            numVerticesPerRadius = 12,
-            innerRadius = 0.6f,
-            rounding = CornerRounding(radius = 0.1f), // Slightly rounded tips
-            innerRounding = CornerRounding(radius = 0f) // Sharp inner corners
+            numVerticesPerRadius = numVertices,
+            innerRadius = 0.65f,
+            rounding = CornerRounding(radius = 0.15f), // Softens the spikes
+            innerRounding = CornerRounding(radius = 0f) // Keeps inner cuts sharp
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": A 4-sided scalloped shape (Clover-like)
-    fun fourSidedCookie(radius: Float = 1f): RoundedPolygon {
+    // 2. "4 Sided Cookie": A 4-lobed scalloped shape (Clover-like)
+    fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
             innerRadius = 0.5f,
-            rounding = CornerRounding(radius = 0.4f), // Soft outer lobes
-            innerRounding = CornerRounding(radius = 0.4f) // Soft inner joins
+            rounding = CornerRounding(radius = 0.3f), 
+            innerRounding = CornerRounding(radius = 0.3f) 
         ).normalized()
     }
 
-    // 3. "Pill": The standard stadium shape (approximated by a very rounded rectangle if pill() isn't available)
-    fun pill(radius: Float = 1f): RoundedPolygon {
-        // Creates a rectangle with maximum corner rounding
+    // 3. "Pill": The standard stadium shape 
+    fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
-            rounding = CornerRounding(radius = 1.0f) // Fully rounded
+            rounding = CornerRounding(radius = 1.0f) // Max rounding makes it a circle/pill
         ).normalized()
-        // Note: For a true "long" pill, we stretch this in the Canvas using scale
     }
 
     // 4. "Square": A rectangle with standard Material 3 rounding (Squircle-ish)
-    fun square(radius: Float = 1f): RoundedPolygon {
+    fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
             rounding = CornerRounding(radius = 0.2f)
         ).normalized()
     }
 
-    // Helper to normalize shape size to 1x1 roughly
+    // Helper to keep shapes consistent
     private fun RoundedPolygon.normalized(): RoundedPolygon {
-        // In a real app, you might scale this based on bounds. 
-        // For simplicity, we return as is since Graphics Shapes defaults to radius ~1
         return this
     }
 }
@@ -151,7 +143,7 @@ fun LoginScreen(vm: MainViewModel) {
             OshSuLogo(modifier = Modifier.width(160.dp).height(80.dp))
             Spacer(Modifier.height(32.dp))
             
-            // Text Contrast Fix: Ensure text is explicitly colored for the surface
+            // Text Contrast Fix: Ensure text color is explicit
             Text(
                 "Welcome Back", 
                 style = MaterialTheme.typography.displaySmall, 
@@ -169,15 +161,13 @@ fun LoginScreen(vm: MainViewModel) {
             // Inputs Container
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 
-                // Contrast Fix: Added containerColor = surfaceContainerHigh
-                // This ensures the input is legible even if a shape floats behind it.
                 OutlinedTextField(
                     value = email, 
                     onValueChange = { email = it },
                     label = { Text("Email") },
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(24.dp), // Pill Shape UI
+                    shape = RoundedCornerShape(50), // Fully rounded Pill inputs
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -201,7 +191,7 @@ fun LoginScreen(vm: MainViewModel) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(50), // Fully rounded Pill inputs
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -262,7 +252,7 @@ fun LoginScreen(vm: MainViewModel) {
                     if (isActivating) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary, // Contrast Fix
+                            color = MaterialTheme.colorScheme.onPrimary, 
                             strokeWidth = 3.dp
                         )
                     } else {
@@ -284,6 +274,9 @@ fun ExpressiveShapesBackground() {
     val primary = MaterialTheme.colorScheme.primaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+    
+    // [FIX] Capture SurfaceVariant color OUTSIDE Canvas because Canvas is not @Composable scope
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant 
 
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
     val rotation by infiniteTransition.animateFloat(
@@ -295,14 +288,14 @@ fun ExpressiveShapesBackground() {
         animationSpec = infiniteRepeatable(tween(5000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float"
     )
 
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.3f)) { // Low alpha so text stands out
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.3f)) { 
         val w = size.width
         val h = size.height
 
         // 1. "Very Sunny" (Top Left)
         rotate(rotation, pivot = Offset(0f, 0f)) {
             translate(left = -50f, top = -50f) {
-                // Scale up the 1x1 polygon to 400x400
+                // Scale up the normalized polygon to 400x400
                 scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
                     val path = M3ExpressiveShapes.verySunny().toPath().asComposePath()
                     drawPath(path, primary, style = Fill)
@@ -323,7 +316,7 @@ fun ExpressiveShapesBackground() {
         // 3. "Pill" (Center Left) - Stretched to look like a capsule
         rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
             translate(left = -100f, top = h/2 - 100f) {
-                // Scale X more than Y to make it a "Pill"
+                // Scale X more than Y to make it a long "Pill"
                 scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
                     val path = M3ExpressiveShapes.pill().toPath().asComposePath()
                     drawPath(path, tertiary, style = Fill)
@@ -336,7 +329,8 @@ fun ExpressiveShapesBackground() {
             rotate(-rotation, pivot = Offset(75f, 75f)) {
                  scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
                      val path = M3ExpressiveShapes.square().toPath().asComposePath()
-                     drawPath(path, MaterialTheme.colorScheme.surfaceVariant, style = Fill)
+                     // [FIX] Use captured color, not MaterialTheme access
+                     drawPath(path, surfaceVariant, style = Fill)
                  }
             }
         }
