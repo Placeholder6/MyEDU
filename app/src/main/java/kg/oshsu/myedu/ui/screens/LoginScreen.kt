@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,12 +24,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size // [FIXED] Added Import
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.translate // [FIXED] Added Import
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -41,16 +42,17 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Shape Utilities
+ * Material 3 Expressive Shapes (Simulated)
  */
 object ExpressiveShapes {
-    // 12-point starburst
-    val Starburst = GenericShape { size, _ ->
+    // "Very Sunny" - A multi-pointed starburst (often 8+ points in M3)
+    val VerySunny = GenericShape { size, _ ->
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val outerRadius = minOf(size.width, size.height) / 2f
-        val innerRadius = outerRadius * 0.6f
-        val points = 12
+        val innerRadius = outerRadius * 0.75f // Shallower cut for "Sunny" look
+        val points = 20 // "Very" sunny implies more rays
+
         moveTo(centerX + outerRadius * cos(0f), centerY + outerRadius * sin(0f))
         for (i in 1 until points * 2) {
             val r = if (i % 2 == 0) outerRadius else innerRadius
@@ -59,18 +61,12 @@ object ExpressiveShapes {
         }
         close()
     }
-    
-    // 4-leaf clover-like shape
-    val Clover = GenericShape { size, _ ->
-        val w = size.width
-        val h = size.height
-        moveTo(w/2, h/2)
-        cubicTo(w/2, 0f, w, 0f, w, h/2)
-        cubicTo(w, h, w/2, h, w/2, h/2)
-        cubicTo(w/2, h, 0f, h, 0f, h/2)
-        cubicTo(0f, 0f, w/2, 0f, w/2, h/2)
-        close()
-    }
+
+    // "Pill" - Standard Stadium shape
+    val Pill = RoundedCornerShape(100) 
+
+    // "Square" - Small rounded corners, mostly square
+    val Square = RoundedCornerShape(16.dp) 
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
@@ -82,38 +78,43 @@ fun LoginScreen(vm: MainViewModel) {
     val focusManager = LocalFocusManager.current
 
     // --- ANIMATIONS ---
-    
-    // 1. Zoom Reveal: Slow expansion ONLY on success
-    val expandScale by animateFloatAsState(
-        targetValue = if (vm.isLoginSuccess) 50f else 0f, // Start at 0, grow huge
-        animationSpec = tween(
-            durationMillis = 2000, // Slow zoom
-            easing = LinearOutSlowInEasing
-        ),
-        label = "ExpandScale"
-    )
 
-    // 2. Content Fade: Hide form elements smoothly
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
-        animationSpec = tween(500)
-    )
-    
-    // 3. Button Width Morph: Wide -> Compact (Circle/Square)
-    val buttonWidth by animateDpAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+    // 1. Vertical Position: Button (Bottom) -> Loader (Center)
+    // We animate the Bias from 1.0 (Bottom) to 0.0 (Center)
+    val verticalBias by animateFloatAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.9f, // 0.9f pushes it to bottom area
         animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy, 
+            dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessLow
         ),
-        label = "BtnWidth"
+        label = "VerticalBias"
     )
 
-    // 4. Button Corner Morph: Rounded Rect (24dp) -> Circle (50%)
-    val buttonCornerPercent by animateIntAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 50 else 16, 
-        animationSpec = tween(400),
-        label = "BtnCorner"
+    // 2. Container Color: Solid (Button) -> Transparent (Loader) -> Solid (Success Expand)
+    val containerColor by animateColorAsState(
+        targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
+        animationSpec = tween(300),
+        label = "ColorFade"
+    )
+
+    // 3. Width Morph: Wide Button -> Small Icon
+    val width by animateDpAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        label = "Width"
+    )
+
+    // 4. Success Expansion: Scale up from 0 to fill screen
+    val expandScale by animateFloatAsState(
+        targetValue = if (vm.isLoginSuccess) 50f else 0f,
+        animationSpec = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
+        label = "Expand"
+    )
+
+    // 5. Content Fade: Hide form fields
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
+        animationSpec = tween(400)
     )
 
     Box(
@@ -129,7 +130,7 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(24.dp)
-                .alpha(contentAlpha) // Hides during load/success
+                .alpha(contentAlpha)
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
@@ -140,120 +141,87 @@ fun LoginScreen(vm: MainViewModel) {
                 tint = MaterialTheme.colorScheme.primary
             )
             Spacer(Modifier.height(32.dp))
-            Text(
-                "Welcome Back",
-                style = MaterialTheme.typography.displaySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                "Sign in to your account",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Welcome Back", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
+            Text("Sign in to your account", style = MaterialTheme.typography.bodyLarge)
             Spacer(Modifier.height(56.dp))
 
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.widthIn(max = 400.dp)
-            ) {
+            // Inputs
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
+                    value = email, onValueChange = { email = it },
                     label = { Text("Email") },
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
                     shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedBorderColor = Color.Transparent
-                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next),
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) })
                 )
                 OutlinedTextField(
-                    value = pass,
-                    onValueChange = { pass = it },
+                    value = pass, onValueChange = { pass = it },
                     label = { Text("Password") },
                     leadingIcon = { Icon(Icons.Default.Lock, null) },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null)
-                        }
-                    },
+                    trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) } },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                        unfocusedBorderColor = Color.Transparent
-                    ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(email, pass) })
                 )
             }
             if (vm.errorMsg != null) {
                 Spacer(Modifier.height(20.dp))
-                Text(vm.errorMsg!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelLarge)
-            }
-            Spacer(Modifier.height(48.dp))
-            
-            // --- LOGIN BUTTON (Visible only when NOT loading/success to avoid double drawing) ---
-            if (!vm.isLoading && !vm.isLoginSuccess) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp)
-                        .padding(horizontal = 0.dp) // Reset padding
-                ) {
-                   // This space is reserved; the actual morphing box is below
-                }
+                Text(vm.errorMsg!!, color = MaterialTheme.colorScheme.error)
             }
             Spacer(Modifier.weight(1f))
         }
 
-        // --- MORPHING BUTTON / LOADING INDICATOR / SUCCESS EXPANSION ---
-        // This Box sits on top to handle the transitions smoothly
+        // --- INTERACTIVE ELEMENT (Button / Loader / Reveal) ---
+        // We use a Box with alignment bias to handle the "Zoom to Center" movement
         Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 64.dp)
-                // 1. Success Expansion
-                .scale(if (vm.isLoginSuccess) expandScale + 1f else 1f) // expandScale starts at 0, we need it to grow
-                // 2. Morph Size
-                .size(width = buttonWidth, height = 64.dp)
-                // 3. Morph Shape
-                .clip(RoundedCornerShape(percent = buttonCornerPercent))
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) {
-                    vm.login(email, pass)
-                }
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment(0f, verticalBias) // Animate vertical position
         ) {
-             AnimatedContent(
-                targetState = vm.isLoading || vm.isLoginSuccess,
-                label = "BtnContent"
-            ) { loading ->
-                if (loading) {
-                    // Just the icon, no container
-                    LoadingIndicator(
-                        modifier = Modifier.size(32.dp),
-                        color = MaterialTheme.colorScheme.onPrimary
-                    )
-                } else {
-                    Text(
-                        "Sign In",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                        maxLines = 1
-                    )
+            // 1. Success Expansion Layer (Behind everything)
+            if (vm.isLoginSuccess) {
+                Box(
+                    modifier = Modifier
+                        .size(64.dp)
+                        .scale(expandScale)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+            }
+
+            // 2. Button / Loader Layer
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .size(width = width, height = 64.dp)
+                    .clip(RoundedCornerShape(50)) // Always rounded
+                    .background(containerColor) // Becomes transparent during load
+                    .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
+            ) {
+                AnimatedContent(
+                    targetState = vm.isLoading || vm.isLoginSuccess,
+                    label = "ContentMorph"
+                ) { isActivating ->
+                    if (isActivating) {
+                        // LOADING STATE: Just the indicator, no container
+                        // Tint matches primary because background is transparent
+                        LoadingIndicator(
+                            modifier = Modifier.size(32.dp),
+                            color = MaterialTheme.colorScheme.primary 
+                        )
+                    } else {
+                        // BUTTON STATE: Text on solid background
+                        Text(
+                            "Sign In",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
@@ -276,29 +244,33 @@ fun ExpressiveShapesBackground() {
         val w = size.width
         val h = size.height
 
-        // 1. Rotating Starburst (Top Left)
+        // 1. "Very Sunny" (Top Left) - Rotating
         rotate(rotation, pivot = Offset(0f, 0f)) {
             drawPath(
-                path = createPathFromShape(ExpressiveShapes.Starburst, Size(500f, 500f)),
+                path = createPathFromShape(ExpressiveShapes.VerySunny, Size(500f, 500f)),
                 color = primary,
                 style = Fill
             )
         }
 
-        // 2. Giant Circle (Bottom Right)
-        drawCircle(
-            color = secondary,
-            radius = 400f,
-            center = Offset(w, h * 0.9f)
-        )
-
-        // 3. Floating Clover (Center Right)
-        rotate(-rotation * 0.8f, pivot = Offset(w, h * 0.4f)) {
-            translate(left = w - 300f, top = h * 0.3f) {
+        // 2. "Pill" (Bottom Right) - Floating
+        rotate(-15f, pivot = Offset(w, h)) {
+            translate(left = w - 300f, top = h - 200f) {
                 drawPath(
-                     path = createPathFromShape(ExpressiveShapes.Clover, Size(300f, 300f)),
-                     color = tertiary,
-                     style = Fill
+                    path = createPathFromShape(ExpressiveShapes.Pill, Size(400f, 200f)),
+                    color = secondary,
+                    style = Fill
+                )
+            }
+        }
+
+        // 3. "Square" (Center Left) - Rotating opposite
+        rotate(-rotation * 0.5f, pivot = Offset(0f, h / 2)) {
+            translate(left = -100f, top = h / 2 - 150f) {
+                drawPath(
+                    path = createPathFromShape(ExpressiveShapes.Square, Size(300f, 300f)),
+                    color = tertiary,
+                    style = Fill
                 )
             }
         }
@@ -306,12 +278,15 @@ fun ExpressiveShapesBackground() {
 }
 
 // Helper to convert GenericShape to Path for Canvas
-fun createPathFromShape(shape: GenericShape, size: androidx.compose.ui.geometry.Size): Path {
+fun createPathFromShape(shape: androidx.compose.ui.graphics.Shape, size: Size): Path {
     val p = Path()
-    // GenericShape closure
     val s = shape.createOutline(size, LayoutDirection.Ltr, androidx.compose.ui.unit.Density(1f))
-    if (s is androidx.compose.ui.graphics.Outline.Generic) {
-        return s.path
+    
+    // Handle simple Outlines (Rect/Rounded) and Generic Paths
+    when(s) {
+        is androidx.compose.ui.graphics.Outline.Generic -> return s.path
+        is androidx.compose.ui.graphics.Outline.Rectangle -> p.addRect(s.rect)
+        is androidx.compose.ui.graphics.Outline.Rounded -> p.addRoundRect(s.roundRect)
     }
     return p
 }
