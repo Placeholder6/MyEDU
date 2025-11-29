@@ -39,7 +39,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Edge-to-Edge for Android 16+
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -83,7 +82,18 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
 
 @Composable
 fun AppContent(vm: MainViewModel) {
-    AnimatedContent(targetState = vm.appState, label = "Root") { state ->
+    // UPDATED: Smooth Fade-In for App Content
+    AnimatedContent(
+        targetState = vm.appState, 
+        label = "Root",
+        transitionSpec = {
+            if (targetState == "APP") {
+                fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
+            } else {
+                fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
+            }
+        }
+    ) { state ->
         when (state) {
             "LOGIN" -> LoginScreen(vm)
             "APP" -> MainAppStructure(vm)
@@ -120,7 +130,6 @@ fun MainAppStructure(vm: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
-                // Remove Ripple to fix "Double Animation" and show strict state bounce
                 CompositionLocalProvider(LocalRippleConfiguration provides null) {
                     ShortNavigationBar {
                         navItems.forEach { item ->
@@ -130,7 +139,6 @@ fun MainAppStructure(vm: MainViewModel) {
                                 selected = isSelected,
                                 onClick = { vm.currentTab = item.index },
                                 icon = {
-                                    // Smooth morph between Filled/Outlined
                                     Crossfade(
                                         targetState = isSelected, 
                                         label = "IconFade",
@@ -150,7 +158,6 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         ) { padding ->
             Box(Modifier.padding(padding)) {
-                // Fade Through Transition for Top-Level Screens
                 AnimatedContent(
                     targetState = vm.currentTab,
                     label = "TabTransition",
@@ -169,7 +176,6 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
 
-        // Overlay Screens
         AnimatedVisibility(
             visible = vm.showTranscriptScreen, 
             enter = slideInHorizontally { it }, 
