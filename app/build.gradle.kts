@@ -87,6 +87,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.graphics:graphics-shapes:1.0.1")
+    implementation("androidx.graphics:graphics-path:1.0.1")
     
     // ...but we FORCE the alpha version of Material 3 to get Expressive features (LoadingIndicator, etc.)
     implementation("androidx.compose.material3:material3:1.5.0-alpha09")
