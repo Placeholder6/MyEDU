@@ -1,6 +1,7 @@
 package kg.oshsu.myedu.ui.screens
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateColorAsState // [FIX] Added missing import
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment // [FIX] Added for custom alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -45,13 +47,13 @@ import kotlin.math.sin
  * Material 3 Expressive Shapes (Simulated)
  */
 object ExpressiveShapes {
-    // "Very Sunny" - A multi-pointed starburst (often 8+ points in M3)
+    // "Very Sunny" - A multi-pointed starburst
     val VerySunny = GenericShape { size, _ ->
         val centerX = size.width / 2f
         val centerY = size.height / 2f
         val outerRadius = minOf(size.width, size.height) / 2f
-        val innerRadius = outerRadius * 0.75f // Shallower cut for "Sunny" look
-        val points = 20 // "Very" sunny implies more rays
+        val innerRadius = outerRadius * 0.75f
+        val points = 20
 
         moveTo(centerX + outerRadius * cos(0f), centerY + outerRadius * sin(0f))
         for (i in 1 until points * 2) {
@@ -65,7 +67,7 @@ object ExpressiveShapes {
     // "Pill" - Standard Stadium shape
     val Pill = RoundedCornerShape(100) 
 
-    // "Square" - Small rounded corners, mostly square
+    // "Square" - Small rounded corners
     val Square = RoundedCornerShape(16.dp) 
 }
 
@@ -80,9 +82,9 @@ fun LoginScreen(vm: MainViewModel) {
     // --- ANIMATIONS ---
 
     // 1. Vertical Position: Button (Bottom) -> Loader (Center)
-    // We animate the Bias from 1.0 (Bottom) to 0.0 (Center)
+    // We animate the Bias from 0.9 (Bottom) to 0.0 (Center)
     val verticalBias by animateFloatAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.9f, // 0.9f pushes it to bottom area
+        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.9f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessLow
@@ -179,7 +181,7 @@ fun LoginScreen(vm: MainViewModel) {
         // We use a Box with alignment bias to handle the "Zoom to Center" movement
         Box(
             modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment(0f, verticalBias) // Animate vertical position
+            contentAlignment = BiasAlignment(0f, verticalBias) // [FIX] Used BiasAlignment instead of Alignment constructor
         ) {
             // 1. Success Expansion Layer (Behind everything)
             if (vm.isLoginSuccess) {
