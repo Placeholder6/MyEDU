@@ -30,7 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.scale // [FIX] Added missing import
+import androidx.compose.ui.graphics.drawscope.scale 
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -45,35 +45,35 @@ import kg.oshsu.myedu.ui.components.OshSuLogo
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
-    // 1. "Very Sunny": A 12-pointed star with sharp inner cuts and rounded tips
-    fun verySunny(numVertices: Int = 12): RoundedPolygon {
+    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts (standard M3 "Burst" shape)
+    fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
-            numVerticesPerRadius = numVertices,
-            innerRadius = 0.65f,
-            rounding = CornerRounding(radius = 0.15f), // Softens the spikes
-            innerRounding = CornerRounding(radius = 0f) // Keeps inner cuts sharp
+            numVerticesPerRadius = 8,
+            innerRadius = 0.78f,
+            rounding = CornerRounding(radius = 0.15f), 
+            innerRounding = CornerRounding(radius = 0f) 
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": A 4-lobed scalloped shape (Clover-like)
+    // 2. "4 Sided Cookie": A 4-lobed shape (Flower/Clover)
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
             innerRadius = 0.5f,
-            rounding = CornerRounding(radius = 0.3f), 
-            innerRounding = CornerRounding(radius = 0.3f) 
+            rounding = CornerRounding(radius = 0.4f), 
+            innerRounding = CornerRounding(radius = 0.4f) 
         ).normalized()
     }
 
-    // 3. "Pill": The standard stadium shape 
+    // 3. "Pill": Standard stadium shape (Rect with full rounding)
     fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
-            rounding = CornerRounding(radius = 1.0f) // Max rounding makes it a circle/pill
+            rounding = CornerRounding(radius = 1.0f) 
         ).normalized()
     }
 
-    // 4. "Square": A rectangle with standard Material 3 rounding (Squircle-ish)
+    // 4. "Square": Standard rounded square (Squircle)
     fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -81,7 +81,6 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // Helper to keep shapes consistent
     private fun RoundedPolygon.normalized(): RoundedPolygon {
         return this
     }
@@ -143,7 +142,6 @@ fun LoginScreen(vm: MainViewModel) {
             OshSuLogo(modifier = Modifier.width(160.dp).height(80.dp))
             Spacer(Modifier.height(32.dp))
             
-            // Text Contrast Fix: Ensure text color is explicit
             Text(
                 "Welcome Back", 
                 style = MaterialTheme.typography.displaySmall, 
@@ -161,6 +159,7 @@ fun LoginScreen(vm: MainViewModel) {
             // Inputs Container
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 
+                // Input 1: Email
                 OutlinedTextField(
                     value = email, 
                     onValueChange = { email = it },
@@ -179,6 +178,7 @@ fun LoginScreen(vm: MainViewModel) {
                     singleLine = true
                 )
 
+                // Input 2: Password
                 OutlinedTextField(
                     value = pass, 
                     onValueChange = { pass = it },
@@ -206,7 +206,6 @@ fun LoginScreen(vm: MainViewModel) {
 
             if (vm.errorMsg != null) {
                 Spacer(Modifier.height(24.dp))
-                // Error Container for better visibility
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = RoundedCornerShape(12.dp)
@@ -250,10 +249,10 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary, 
-                            strokeWidth = 3.dp
+                        // Expressive Loading Indicator (Restored)
+                        LoadingIndicator(
+                            modifier = Modifier.size(32.dp),
+                            color = MaterialTheme.colorScheme.primary 
                         )
                     } else {
                         Text(
@@ -271,12 +270,11 @@ fun LoginScreen(vm: MainViewModel) {
 
 @Composable
 fun ExpressiveShapesBackground() {
+    // Capture colors outside the Canvas scope
     val primary = MaterialTheme.colorScheme.primaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
-    
-    // [FIX] Capture SurfaceVariant color OUTSIDE Canvas because Canvas is not @Composable scope
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant 
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
     val rotation by infiniteTransition.animateFloat(
@@ -295,7 +293,6 @@ fun ExpressiveShapesBackground() {
         // 1. "Very Sunny" (Top Left)
         rotate(rotation, pivot = Offset(0f, 0f)) {
             translate(left = -50f, top = -50f) {
-                // Scale up the normalized polygon to 400x400
                 scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
                     val path = M3ExpressiveShapes.verySunny().toPath().asComposePath()
                     drawPath(path, primary, style = Fill)
@@ -313,10 +310,9 @@ fun ExpressiveShapesBackground() {
             }
         }
 
-        // 3. "Pill" (Center Left) - Stretched to look like a capsule
+        // 3. "Pill" (Center Left) - Stretched
         rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
             translate(left = -100f, top = h/2 - 100f) {
-                // Scale X more than Y to make it a long "Pill"
                 scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
                     val path = M3ExpressiveShapes.pill().toPath().asComposePath()
                     drawPath(path, tertiary, style = Fill)
@@ -329,7 +325,6 @@ fun ExpressiveShapesBackground() {
             rotate(-rotation, pivot = Offset(75f, 75f)) {
                  scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
                      val path = M3ExpressiveShapes.square().toPath().asComposePath()
-                     // [FIX] Use captured color, not MaterialTheme access
                      drawPath(path, surfaceVariant, style = Fill)
                  }
             }
