@@ -114,7 +114,7 @@ fun LoginScreen(vm: MainViewModel) {
     )
 
     val expandScale by animateFloatAsState(
-        targetValue = if (vm.isLoginSuccess) 50f else 0f,
+        targetValue = if (vm.isLoginSuccess) 50f else 1f,
         animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
         label = "Expand"
     )
@@ -226,20 +226,11 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = BiasAlignment(0f, verticalBias)
         ) {
-            if (vm.isLoginSuccess) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .scale(expandScale)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary)
-                )
-            }
-
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
+                    .scale(expandScale)
                     .clip(RoundedCornerShape(100))
                     .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
