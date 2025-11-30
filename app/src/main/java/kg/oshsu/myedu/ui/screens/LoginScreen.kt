@@ -71,7 +71,6 @@ object M3ExpressiveShapes {
     }
 
     // 3. "12 Sided Cookie": 12-lobed shape for Login Success
-    // Inner Radius is 0.8f, so the shape dips in by 20%
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -139,21 +138,14 @@ fun LoginScreen(vm: MainViewModel) {
         
         // Calculate dynamic scale factor to cover the screen
         val calculatedScale = remember(screenWidth, screenHeight) {
-            // 1. Calculate the distance from center to the farthest corner (Diagonal / 2)
-            // Using Pythagore: a^2 + b^2 = c^2
             val widthVal = screenWidth.value
             val heightVal = screenHeight.value
             val screenDiagonal = sqrt((widthVal * widthVal) + (heightVal * heightVal))
-            
-            // 2. Button Size is 64dp. Radius is 32dp.
-            // The "12 Sided Cookie" has an innerRadius of 0.8f.
-            // We must ensure the *inner* part of the cookie covers the corner, not just the outer tip.
             val buttonRadius = 32f
             val innerRadiusFactor = 0.8f 
             val effectiveRadius = buttonRadius * innerRadiusFactor
 
-            // 3. Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
-            // Multiply by 1.1f just for a tiny safety buffer
+            // Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
             ((screenDiagonal / 2f) / effectiveRadius) * 1.1f
         }
 
@@ -176,16 +168,16 @@ fun LoginScreen(vm: MainViewModel) {
             label = "Width"
         )
 
-        // UPDATED: Use the calculated scale instead of 50f
+        // UPDATED: Easing changed to FastOutSlowIn for smoother feel
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
+            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
-        // Rotation: 180 degrees over 2s
+        // UPDATED: Rotation set to 360f (Fast Spin)
         val rotation by animateFloatAsState(
-            targetValue = if (vm.isLoginSuccess) 180f else 0f,
+            targetValue = if (vm.isLoginSuccess) 360f else 0f,
             animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
             label = "CookieRotation"
         )
