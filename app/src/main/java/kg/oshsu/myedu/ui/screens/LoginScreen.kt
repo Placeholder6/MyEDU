@@ -21,6 +21,7 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
@@ -95,7 +96,6 @@ object M3ExpressiveShapes {
     }
 
     private fun RoundedPolygon.normalized(): RoundedPolygon {
-        // In a real implementation, you might normalize this to a unit square here
         return this
     }
 }
@@ -150,11 +150,18 @@ fun LoginScreen(vm: MainViewModel) {
         label = "Width"
     )
 
-    // Scales the button to cover the screen
+    // UPDATED: Slower Zoom (2000ms)
     val expandScale by animateFloatAsState(
         targetValue = if (vm.isLoginSuccess) 50f else 1f,
-        animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
+        animationSpec = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
         label = "Expand"
+    )
+
+    // NEW: Rotate in place slowly (180 degrees over 2000ms)
+    val rotation by animateFloatAsState(
+        targetValue = if (vm.isLoginSuccess) 180f else 0f,
+        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+        label = "CookieRotation"
     )
 
     val contentAlpha by animateFloatAsState(
@@ -213,7 +220,7 @@ fun LoginScreen(vm: MainViewModel) {
                     label = { Text("Email") },
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(50), // Fully rounded Pill inputs
+                    shape = RoundedCornerShape(50), 
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -238,7 +245,7 @@ fun LoginScreen(vm: MainViewModel) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    shape = RoundedCornerShape(50), // Fully rounded Pill inputs
+                    shape = RoundedCornerShape(50),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -278,7 +285,8 @@ fun LoginScreen(vm: MainViewModel) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
-                    .scale(expandScale) 
+                    .scale(expandScale)
+                    .rotate(rotation) // NEW: Applies rotation
                     .clip(buttonShape) // Applies the 12-sided cookie on success
                     .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
@@ -288,8 +296,7 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
-                        // Only show loader if we are loading but NOT yet successful
-                        // This effectively phases out the loader when isLoginSuccess becomes true
+                        // Phase out loader on success
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
@@ -312,7 +319,6 @@ fun LoginScreen(vm: MainViewModel) {
 
 @Composable
 fun ExpressiveShapesBackground() {
-    // Capture colors outside the Canvas scope
     val primary = MaterialTheme.colorScheme.primaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
@@ -332,7 +338,6 @@ fun ExpressiveShapesBackground() {
         val w = size.width
         val h = size.height
 
-        // 1. "Very Sunny" (Top Left)
         rotate(rotation, pivot = Offset(0f, 0f)) {
             translate(left = -50f, top = -50f) {
                 scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
@@ -342,7 +347,6 @@ fun ExpressiveShapesBackground() {
             }
         }
 
-        // 2. "4 Sided Cookie" (Bottom Right)
         rotate(-15f, pivot = Offset(w, h)) {
             translate(left = w - 300f, top = h - 250f + floatY) {
                 scale(scaleX = 300f, scaleY = 300f, pivot = Offset.Zero) {
@@ -352,7 +356,6 @@ fun ExpressiveShapesBackground() {
             }
         }
 
-        // 3. "Pill" (Center Left) - Stretched
         rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
             translate(left = -100f, top = h/2 - 100f) {
                 scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
@@ -362,7 +365,6 @@ fun ExpressiveShapesBackground() {
             }
         }
         
-        // 4. "Square" (Top Right)
         translate(left = w - 150f, top = 100f) {
             rotate(-rotation, pivot = Offset(75f, 75f)) {
                  scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
