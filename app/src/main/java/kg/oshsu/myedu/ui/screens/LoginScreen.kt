@@ -46,10 +46,11 @@ import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
+import kotlin.math.sqrt
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
-    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts (standard M3 "Burst" shape)
+    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
     fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 8,
@@ -59,7 +60,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": A 4-lobed shape (Flower/Clover)
+    // 2. "4 Sided Cookie": A 4-lobed shape
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -69,7 +70,8 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 3. "12 Sided Cookie": A 12-lobed shape for the Login Success State
+    // 3. "12 Sided Cookie": 12-lobed shape for Login Success
+    // Inner Radius is 0.8f, so the shape dips in by 20%
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -79,7 +81,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 4. "Pill": Standard stadium shape (Rect with full rounding)
+    // 4. "Pill": Standard stadium shape
     fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -87,7 +89,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 5. "Square": Standard rounded square (Squircle)
+    // 5. "Square": Standard rounded square
     fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -104,17 +106,15 @@ object M3ExpressiveShapes {
 class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
         val p = android.graphics.Path()
-        polygon.toPath(p) // Convert to Android Path
+        polygon.toPath(p) 
         
         val matrix = android.graphics.Matrix()
         val bounds = android.graphics.RectF()
         p.computeBounds(bounds, true)
         
-        // Calculate scale to fit the container size
         val scaleX = size.width / bounds.width()
         val scaleY = size.height / bounds.height()
         
-        // Translate to 0,0 and then Scale
         matrix.postTranslate(-bounds.left, -bounds.top)
         matrix.postScale(scaleX, scaleY)
         p.transform(matrix)
@@ -131,54 +131,74 @@ fun LoginScreen(vm: MainViewModel) {
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // --- ANIMATIONS ---
-    val verticalBias by animateFloatAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
-        label = "VerticalBias"
-    )
+    // WRAP IN BOX WITH CONSTRAINTS to calculate precise scale
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // --- SCALE CALCULATION ---
+        val screenWidth = maxWidth
+        val screenHeight = maxHeight
+        
+        // Calculate dynamic scale factor to cover the screen
+        val calculatedScale = remember(screenWidth, screenHeight) {
+            // 1. Calculate the distance from center to the farthest corner (Diagonal / 2)
+            // Using Pythagore: a^2 + b^2 = c^2
+            val widthVal = screenWidth.value
+            val heightVal = screenHeight.value
+            val screenDiagonal = sqrt((widthVal * widthVal) + (heightVal * heightVal))
+            
+            // 2. Button Size is 64dp. Radius is 32dp.
+            // The "12 Sided Cookie" has an innerRadius of 0.8f.
+            // We must ensure the *inner* part of the cookie covers the corner, not just the outer tip.
+            val buttonRadius = 32f
+            val innerRadiusFactor = 0.8f 
+            val effectiveRadius = buttonRadius * innerRadiusFactor
 
-    val containerColor by animateColorAsState(
-        targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
-        animationSpec = tween(300),
-        label = "ColorFade"
-    )
-
-    val width by animateDpAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
-        label = "Width"
-    )
-
-    // UPDATED: Slower Zoom (2000ms)
-    val expandScale by animateFloatAsState(
-        targetValue = if (vm.isLoginSuccess) 50f else 1f,
-        animationSpec = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
-        label = "Expand"
-    )
-
-    // NEW: Rotate in place slowly (180 degrees over 2000ms)
-    val rotation by animateFloatAsState(
-        targetValue = if (vm.isLoginSuccess) 180f else 0f,
-        animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
-        label = "CookieRotation"
-    )
-
-    val contentAlpha by animateFloatAsState(
-        targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
-        animationSpec = tween(400)
-    )
-
-    // Dynamic Shape: Circle (Pill) -> 12 Sided Cookie on Success
-    val buttonShape = remember(vm.isLoginSuccess) {
-        if (vm.isLoginSuccess) {
-            PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
-        } else {
-            RoundedCornerShape(100) 
+            // 3. Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
+            // Multiply by 1.1f just for a tiny safety buffer
+            ((screenDiagonal / 2f) / effectiveRadius) * 1.1f
         }
-    }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // --- ANIMATIONS ---
+        val verticalBias by animateFloatAsState(
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
+            label = "VerticalBias"
+        )
+
+        val containerColor by animateColorAsState(
+            targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
+            animationSpec = tween(300),
+            label = "ColorFade"
+        )
+
+        val width by animateDpAsState(
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+            label = "Width"
+        )
+
+        // UPDATED: Use the calculated scale instead of 50f
+        val expandScale by animateFloatAsState(
+            targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
+            animationSpec = tween(durationMillis = 2000, easing = LinearOutSlowInEasing),
+            label = "Expand"
+        )
+
+        // Rotation: 180 degrees over 2s
+        val rotation by animateFloatAsState(
+            targetValue = if (vm.isLoginSuccess) 180f else 0f,
+            animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+            label = "CookieRotation"
+        )
+
+        val contentAlpha by animateFloatAsState(
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
+            animationSpec = tween(400)
+        )
+
+        val buttonShape = remember(vm.isLoginSuccess) {
+            if (vm.isLoginSuccess) PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) else RoundedCornerShape(100)
+        }
+
         // --- BACKGROUND SHAPES ---
         ExpressiveShapesBackground()
 
@@ -212,7 +232,6 @@ fun LoginScreen(vm: MainViewModel) {
 
             // Inputs Container
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
-                
                 // Input 1: Email
                 OutlinedTextField(
                     value = email, 
@@ -280,14 +299,13 @@ fun LoginScreen(vm: MainViewModel) {
             modifier = Modifier.fillMaxSize(),
             contentAlignment = BiasAlignment(0f, verticalBias)
         ) {
-            // SINGLE CONTAINER
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
                     .scale(expandScale)
-                    .rotate(rotation) // NEW: Applies rotation
-                    .clip(buttonShape) // Applies the 12-sided cookie on success
+                    .rotate(rotation)
+                    .clip(buttonShape)
                     .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
             ) {
@@ -317,6 +335,7 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
+// ... [ExpressiveShapesBackground remains unchanged] ...
 @Composable
 fun ExpressiveShapesBackground() {
     val primary = MaterialTheme.colorScheme.primaryContainer
