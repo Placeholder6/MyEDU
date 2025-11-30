@@ -379,165 +379,120 @@ fun ExpressiveShapesBackground() {
     val errorContainer = MaterialTheme.colorScheme.errorContainer
     val inversePrimary = MaterialTheme.colorScheme.inversePrimary
     
-    // --- DENSELY PACKED & BIGGER ICONS ---
+    // --- SPACED OUT & RESIZED (No Overlaps) ---
     val items = remember {
         listOf(
-            // --- CORNERS & EDGES (Large Shapes) ---
+            // --- TOP REGION (0.0 to -1.0 Y) ---
+            // Top Left
             BgItem(
                 element = BgElement.Shape(M3ExpressiveShapes.verySunny()),
-                align = BiasAlignment(-1.2f, -1.2f),
-                size = 400.dp,
+                align = BiasAlignment(-0.9f, -0.9f),
+                size = 160.dp,
                 color = primary,
                 alpha = 0.4f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
+            // Top Center-ish
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.School),
+                align = BiasAlignment(-0.2f, -0.8f),
+                size = 70.dp,
+                color = secondary,
+                alpha = 0.5f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // Top Right
             BgItem(
                 element = BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
-                align = BiasAlignment(1.3f, 1.3f),
-                size = 350.dp,
-                color = secondary,
+                align = BiasAlignment(0.9f, -0.85f),
+                size = 150.dp,
+                color = tertiary,
                 alpha = 0.4f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
+            // Top Right Icon
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.Science),
+                align = BiasAlignment(0.5f, -0.5f),
+                size = 60.dp,
+                color = surfaceVariant,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+
+            // --- MIDDLE REGION (-0.4 to 0.4 Y) ---
+            // Mid Left Edge
             BgItem(
                 element = BgElement.Shape(M3ExpressiveShapes.pill()),
-                align = BiasAlignment(-1.2f, 0.4f),
-                size = 300.dp,
-                color = tertiary,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.square()),
-                align = BiasAlignment(1.2f, -0.8f),
-                size = 220.dp,
-                color = surfaceVariant,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            
-            // --- MID-FIELD (Medium Shapes) ---
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.triangle()),
-                align = BiasAlignment(-0.8f, 0.9f),
-                size = 250.dp,
+                align = BiasAlignment(-1.1f, -0.1f),
+                size = 140.dp,
                 color = errorContainer,
                 alpha = 0.3f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
+            // Mid Right Edge
             BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.scallop()),
-                align = BiasAlignment(0.8f, 0.4f),
-                size = 200.dp,
+                element = BgElement.Shape(M3ExpressiveShapes.flower()),
+                align = BiasAlignment(1.1f, 0.1f),
+                size = 140.dp,
                 color = inversePrimary,
                 alpha = 0.3f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
-             BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.flower()),
-                align = BiasAlignment(0f, -1.2f),
-                size = 280.dp,
+            // Mid Right Icon
+            BgItem(
+                element = BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook),
+                align = BiasAlignment(0.6f, -0.1f),
+                size = 65.dp,
+                color = primary,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+
+            // --- BOTTOM REGION (0.4 to 1.0 Y) ---
+            // Bottom Left
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.Lightbulb),
+                align = BiasAlignment(-0.8f, 0.5f),
+                size = 65.dp,
+                color = secondary,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // Bottom Left Corner Shape
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.scallop()),
+                align = BiasAlignment(-0.9f, 0.9f),
+                size = 150.dp,
+                color = tertiary,
+                alpha = 0.3f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+             // Bottom Center
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.triangle()),
+                align = BiasAlignment(0.1f, 0.8f),
+                size = 130.dp,
                 color = surfaceVariant,
                 alpha = 0.3f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
-             BgItem(
+            // Bottom Right Corner
+            BgItem(
                 element = BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
-                align = BiasAlignment(0.5f, 0.9f),
-                size = 180.dp,
-                color = primary,
+                align = BiasAlignment(0.9f, 0.9f),
+                size = 160.dp,
+                color = errorContainer,
                 alpha = 0.2f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             ),
-
-            // --- ICONS (Densely Packed & Larger) ---
-            // 1. Top Left Cluster
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.School),
-                align = BiasAlignment(-0.7f, -0.6f),
-                size = 120.dp,
-                color = primary,
-                alpha = 0.5f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.AutoStories),
-                align = BiasAlignment(-0.3f, -0.85f),
-                size = 90.dp,
-                color = secondary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-
-            // 2. Top Right Cluster
+            // Bottom Right Icon
             BgItem(
                 element = BgElement.Icon(Icons.Rounded.Edit),
-                align = BiasAlignment(0.8f, -0.4f),
-                size = 100.dp,
-                color = tertiary,
-                alpha = 0.5f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.Lightbulb),
-                align = BiasAlignment(0.4f, -0.7f),
-                size = 80.dp,
-                color = errorContainer,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-
-            // 3. Mid Left Cluster
-            BgItem(
-                element = BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook),
-                align = BiasAlignment(-0.9f, 0f),
-                size = 110.dp,
-                color = surfaceVariant,
-                alpha = 0.5f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.HistoryEdu),
-                align = BiasAlignment(-0.5f, 0.3f),
-                size = 85.dp,
-                color = inversePrimary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-
-            // 4. Bottom Right Cluster
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.Psychology),
-                align = BiasAlignment(0.7f, 0.7f),
-                size = 130.dp,
-                color = secondary,
-                alpha = 0.5f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.Calculate),
-                align = BiasAlignment(0.9f, 0.1f),
-                size = 95.dp,
+                align = BiasAlignment(0.6f, 0.6f),
+                size = 60.dp,
                 color = primary,
                 alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-
-            // 5. Bottom Center / Fillers
-             BgItem(
-                element = BgElement.Icon(Icons.Rounded.Science),
-                align = BiasAlignment(-0.2f, 0.8f),
-                size = 100.dp,
-                color = tertiary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-             BgItem(
-                element = BgElement.Icon(Icons.Rounded.Star),
-                align = BiasAlignment(0.2f, 0.5f),
-                size = 70.dp,
-                color = surfaceVariant,
-                alpha = 0.3f,
                 direction = if (Random.nextBoolean()) 1f else -1f
             )
         )
@@ -565,8 +520,6 @@ fun ExpressiveShapesBackground() {
                 when (val type = item.element) {
                     is BgElement.Shape -> {
                         Canvas(Modifier.fillMaxSize()) {
-                            // Scale shape to fit Box
-                            // Using Matrix logic ensures it scales correctly even if normalized
                             val path = android.graphics.Path()
                             type.polygon.toPath(path)
                             
@@ -579,9 +532,9 @@ fun ExpressiveShapesBackground() {
                             val scale = minOf(scaleX, scaleY)
                             
                             matrix.reset()
-                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY()) // Center to 0,0
-                            matrix.postScale(scale, scale) // Scale up
-                            matrix.postTranslate(size.width / 2f, size.height / 2f) // Move to Canvas center
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY())
+                            matrix.postScale(scale, scale)
+                            matrix.postTranslate(size.width / 2f, size.height / 2f)
                             
                             path.transform(matrix)
                             
