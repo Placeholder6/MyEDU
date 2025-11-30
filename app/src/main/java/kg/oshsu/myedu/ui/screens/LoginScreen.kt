@@ -8,7 +8,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,6 +26,8 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.rotate
@@ -35,6 +36,8 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
@@ -65,7 +68,17 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 3. "Pill": Standard stadium shape (Rect with full rounding)
+    // 3. "12 Sided Cookie": A 12-lobed shape for the Login Success State
+    fun twelveSidedCookie(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 12,
+            innerRadius = 0.8f,
+            rounding = CornerRounding(radius = 0.2f),
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    // 4. "Pill": Standard stadium shape (Rect with full rounding)
     fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -73,7 +86,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 4. "Square": Standard rounded square (Squircle)
+    // 5. "Square": Standard rounded square (Squircle)
     fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -82,7 +95,31 @@ object M3ExpressiveShapes {
     }
 
     private fun RoundedPolygon.normalized(): RoundedPolygon {
+        // In a real implementation, you might normalize this to a unit square here
         return this
+    }
+}
+
+// Helper Class to convert RoundedPolygon to a Compose Shape
+class PolygonShape(private val polygon: RoundedPolygon) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val p = android.graphics.Path()
+        polygon.toPath(p) // Convert to Android Path
+        
+        val matrix = android.graphics.Matrix()
+        val bounds = android.graphics.RectF()
+        p.computeBounds(bounds, true)
+        
+        // Calculate scale to fit the container size
+        val scaleX = size.width / bounds.width()
+        val scaleY = size.height / bounds.height()
+        
+        // Translate to 0,0 and then Scale
+        matrix.postTranslate(-bounds.left, -bounds.top)
+        matrix.postScale(scaleX, scaleY)
+        p.transform(matrix)
+        
+        return Outline.Generic(p.asComposePath())
     }
 }
 
@@ -113,7 +150,7 @@ fun LoginScreen(vm: MainViewModel) {
         label = "Width"
     )
 
-    // CHANGED: targetValue logic. 1f (normal) -> 50f (zoom)
+    // Scales the button to cover the screen
     val expandScale by animateFloatAsState(
         targetValue = if (vm.isLoginSuccess) 50f else 1f,
         animationSpec = tween(durationMillis = 1500, easing = LinearOutSlowInEasing),
@@ -124,6 +161,15 @@ fun LoginScreen(vm: MainViewModel) {
         targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 1f,
         animationSpec = tween(400)
     )
+
+    // Dynamic Shape: Circle (Pill) -> 12 Sided Cookie on Success
+    val buttonShape = remember(vm.isLoginSuccess) {
+        if (vm.isLoginSuccess) {
+            PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
+        } else {
+            RoundedCornerShape(100) 
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         // --- BACKGROUND SHAPES ---
@@ -232,8 +278,8 @@ fun LoginScreen(vm: MainViewModel) {
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(width = width, height = 64.dp)
-                    .scale(expandScale) // Scale applied directly to this container
-                    .clip(RoundedCornerShape(100))
+                    .scale(expandScale) 
+                    .clip(buttonShape) // Applies the 12-sided cookie on success
                     .background(containerColor)
                     .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
             ) {
@@ -242,17 +288,14 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
-                        // Switch color to be visible on Primary background during zoom
-                        val indicatorColor by animateColorAsState(
-                            targetValue = if (vm.isLoginSuccess) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary,
-                            label = "LoaderColor"
-                        )
-
-                        // Expressive Loading Indicator
-                        LoadingIndicator(
-                            modifier = Modifier.size(32.dp),
-                            color = indicatorColor
-                        )
+                        // Only show loader if we are loading but NOT yet successful
+                        // This effectively phases out the loader when isLoginSuccess becomes true
+                        if (!vm.isLoginSuccess) {
+                            LoadingIndicator(
+                                modifier = Modifier.size(32.dp),
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                        }
                     } else {
                         Text(
                             "Sign In",
@@ -330,4 +373,3 @@ fun ExpressiveShapesBackground() {
         }
     }
 }
-
