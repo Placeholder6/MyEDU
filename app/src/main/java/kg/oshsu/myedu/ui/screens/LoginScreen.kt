@@ -46,6 +46,7 @@ import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
+import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -160,16 +161,14 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// Data class to hold properties for each background item
+// Updated Data class: Uses relative coordinates (0f-1f) instead of grid row/col
 private data class BackgroundShapeItem(
     val polygon: RoundedPolygon,
-    val row: Int,
-    val col: Int,
-    val offsetX: Float, // -0.2 to 0.2 jitter within cell
-    val offsetY: Float, // -0.2 to 0.2 jitter within cell
-    val scale: Float,   // 0.4 to 0.8 of cell size
-    val colorIndex: Int,// 0 to 3
-    val rotationSpeed: Float, // Multiplier for rotation
+    val xRatio: Float, // 0.0 to 1.0 relative to screen width
+    val yRatio: Float, // 0.0 to 1.0 relative to screen height
+    val scaleRatio: Float, // Scale relative to average screen dimension
+    val colorIndex: Int,
+    val rotationSpeed: Float, 
     val startRotation: Float
 )
 
@@ -187,7 +186,6 @@ fun LoginScreen(vm: MainViewModel) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         
-        // Calculate dynamic scale factor to cover the screen
         val calculatedScale = remember(screenWidth, screenHeight) {
             val widthVal = screenWidth.value
             val heightVal = screenHeight.value
@@ -221,13 +219,13 @@ fun LoginScreen(vm: MainViewModel) {
 
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
-            animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+            animationSpec = tween(durationMillis = 1500, easing = LinearEasing),
             label = "CookieRotation"
         )
 
@@ -241,7 +239,9 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES ---
-        ExpressiveShapesBackground()
+        // We pass screen aspect ratio estimation to help random generator distribute better
+        val aspectRatio = if(screenHeight > 0.dp && screenWidth > 0.dp) screenHeight / screenWidth else 2f
+        ExpressiveShapesBackground(aspectRatio)
 
         // --- FORM CONTENT ---
         Column(
@@ -377,8 +377,7 @@ fun LoginScreen(vm: MainViewModel) {
 }
 
 @Composable
-fun ExpressiveShapesBackground() {
-    // 1. Define Palette
+fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
     val colors = listOf(
         MaterialTheme.colorScheme.primaryContainer,
         MaterialTheme.colorScheme.secondaryContainer,
@@ -386,7 +385,6 @@ fun ExpressiveShapesBackground() {
         MaterialTheme.colorScheme.surfaceVariant
     )
 
-    // 2. Setup Animation
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
     val baseRotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
@@ -394,32 +392,58 @@ fun ExpressiveShapesBackground() {
         label = "base_rot"
     )
 
-    // 3. Deterministic Random Generation
-    // We use 'remember' to generate the layout once.
-    // Fixed seed ensures the pattern is random but consistent (no flickering on recompose).
+    // Random non-overlapping generation
     val shapeItems = remember {
         val items = mutableListOf<BackgroundShapeItem>()
-        val rng = Random(seed = 12345) // Fixed seed
-        val rows = 8  // Grid Rows
-        val cols = 5  // Grid Cols
-
-        for (r in 0 until rows) {
-            for (c in 0 until cols) {
-                // Select a random symmetric shape
-                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
+        val rng = Random(seed = 42) // Fixed seed for consistency
+        
+        // We will try to place ~35 shapes
+        val targetCount = 35
+        var attempts = 0
+        val maxAttempts = 1000
+        
+        while (items.size < targetCount && attempts < maxAttempts) {
+            attempts++
+            
+            // 1. Random Position (0..1)
+            val x = rng.nextFloat()
+            val y = rng.nextFloat()
+            
+            // 2. Random Size (Scale relative to screen width, e.g., 0.10 to 0.25)
+            // "Variable sizes"
+            val s = 0.10f + (rng.nextFloat() * 0.15f)
+            
+            // 3. Collision Check
+            // We approximate the shape as a circle for collision
+            // Distance required = radius1 + radius2 + padding
+            // We work in normalized coordinates, so we must adjust Y by aspect ratio 
+            // to treat distance uniformly.
+            
+            var valid = true
+            for (existing in items) {
+                val dx = x - existing.xRatio
+                val dy = (y - existing.yRatio) * aspectRatio // Adjust Y distance by screen aspect ratio
+                val dist = sqrt(dx*dx + dy*dy)
                 
+                // Scale is roughly diameter relative to width. Radius ~ scale/2.
+                // We add a small padding factor (0.02)
+                val requiredDist = (s / 2f) + (existing.scaleRatio / 2f) + 0.02f
+                
+                if (dist < requiredDist) {
+                    valid = false
+                    break
+                }
+            }
+            
+            if (valid) {
+                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
                 items.add(
                     BackgroundShapeItem(
                         polygon = shapeGen(),
-                        row = r,
-                        col = c,
-                        // Offset: Jitter position within cell (-0.2 to 0.2 of cell size)
-                        offsetX = (rng.nextFloat() - 0.5f) * 0.4f,
-                        offsetY = (rng.nextFloat() - 0.5f) * 0.4f,
-                        // Scale: 40% to 70% of cell size to prevent overlap
-                        scale = 0.4f + (rng.nextFloat() * 0.3f),
+                        xRatio = x,
+                        yRatio = y,
+                        scaleRatio = s,
                         colorIndex = rng.nextInt(colors.size),
-                        // Random rotation speed (0.5x to 1.5x) and direction
                         rotationSpeed = (0.5f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f),
                         startRotation = rng.nextFloat() * 360f
                     )
@@ -429,31 +453,20 @@ fun ExpressiveShapesBackground() {
         items
     }
 
-    // 4. Draw Canvas
     Canvas(modifier = Modifier.fillMaxSize().alpha(0.25f)) { 
-        val cellW = size.width / 5f // Based on cols=5
-        val cellH = size.height / 8f // Based on rows=8
+        val w = size.width
+        val h = size.height
 
         shapeItems.forEach { item ->
-            // Calculate center of the cell
-            val centerX = (item.col * cellW) + (cellW / 2f)
-            val centerY = (item.row * cellH) + (cellH / 2f)
+            val drawX = item.xRatio * w
+            val drawY = item.yRatio * h
             
-            // Apply jitter offset
-            val drawX = centerX + (item.offsetX * cellW)
-            val drawY = centerY + (item.offsetY * cellH)
-            
-            // Draw
+            // Actual size in pixels
+            val shapeSize = w * item.scaleRatio
+
             translate(left = drawX, top = drawY) {
-                // Apply rotation
                 rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
-                    // Apply Scale
-                    // Base size is the smaller of cell dimensions
-                    val baseSize = minOf(cellW, cellH) * item.scale
-                    
-                    scale(scaleX = baseSize, scaleY = baseSize) {
-                        // The shape library returns normalized shapes (approx radius 1.0)
-                        // We scale the context, so we draw a path of size ~1.0 px which gets scaled up
+                    scale(scaleX = shapeSize, scaleY = shapeSize) {
                         val path = item.polygon.toPath().asComposePath()
                         drawPath(path, colors[item.colorIndex], style = Fill)
                     }
