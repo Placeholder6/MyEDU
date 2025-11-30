@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,13 +32,14 @@ import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale 
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.CornerRounding
@@ -47,6 +49,7 @@ import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
@@ -217,7 +220,7 @@ fun LoginScreen(vm: MainViewModel) {
             if (vm.isLoginSuccess) PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) else RoundedCornerShape(100)
         }
 
-        // --- BACKGROUND SHAPES ---
+        // --- BACKGROUND SHAPES & ICONS ---
         ExpressiveShapesBackground()
 
         // --- FORM CONTENT ---
@@ -354,6 +357,22 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
+// --- BACKGROUND COMPONENTS ---
+
+sealed class BgElement {
+    data class Shape(val polygon: RoundedPolygon) : BgElement()
+    data class Icon(val imageVector: ImageVector) : BgElement()
+}
+
+data class BgItem(
+    val element: BgElement,
+    val align: Alignment,
+    val size: Dp,
+    val color: Color,
+    val alpha: Float,
+    val direction: Float = 1f // 1f for Clockwise, -1f for Anti-Clockwise
+)
+
 @Composable
 fun ExpressiveShapesBackground() {
     val primary = MaterialTheme.colorScheme.primaryContainer
@@ -363,89 +382,160 @@ fun ExpressiveShapesBackground() {
     val errorContainer = MaterialTheme.colorScheme.errorContainer
     val inversePrimary = MaterialTheme.colorScheme.inversePrimary
 
-    val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
+    // --- RANDOMIZED CONFIGURATION ---
+    // We use 'remember' so the random values are stable across recompositions
+    val items = remember {
+        listOf(
+            // 1. Top Left: Very Sunny (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.verySunny()),
+                align = BiasAlignment(-1.2f, -1.2f),
+                size = 400.dp,
+                color = primary,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 2. Bottom Right: 4-Sided Cookie (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
+                align = BiasAlignment(1.3f, 1.3f),
+                size = 350.dp,
+                color = secondary,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 3. Mid Left: Pill (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.pill()),
+                align = BiasAlignment(-1.1f, 0.2f),
+                size = 300.dp,
+                color = tertiary,
+                alpha = 0.3f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 4. Top Right: Square (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.square()),
+                align = BiasAlignment(1.1f, -0.8f),
+                size = 200.dp,
+                color = surfaceVariant,
+                alpha = 0.3f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 5. Bottom Left: Triangle (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.triangle()),
+                align = BiasAlignment(-0.9f, 0.9f),
+                size = 250.dp,
+                color = errorContainer,
+                alpha = 0.3f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 6. Mid Right: Scallop (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.scallop()),
+                align = BiasAlignment(1.2f, 0.5f),
+                size = 220.dp,
+                color = inversePrimary,
+                alpha = 0.4f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 7. Top Center: Flower (Shape)
+            BgItem(
+                element = BgElement.Shape(M3ExpressiveShapes.flower()),
+                align = BiasAlignment(0f, -1.1f),
+                size = 280.dp,
+                color = surfaceVariant,
+                alpha = 0.3f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+
+            // --- STUDY ICONS ---
+            // 8. Near Top Left: School Cap
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.School),
+                align = BiasAlignment(-0.6f, -0.7f),
+                size = 64.dp,
+                color = primary,
+                alpha = 0.6f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 9. Near Bottom Right: Book
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.MenuBook),
+                align = BiasAlignment(0.7f, 0.8f),
+                size = 56.dp,
+                color = secondary,
+                alpha = 0.6f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 10. Mid Left Area: Lightbulb
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.Lightbulb),
+                align = BiasAlignment(-0.8f, 0f),
+                size = 48.dp,
+                color = tertiary,
+                alpha = 0.5f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            ),
+            // 11. Top Right Area: Pencil/Edit
+            BgItem(
+                element = BgElement.Icon(Icons.Rounded.Edit),
+                align = BiasAlignment(0.8f, -0.5f),
+                size = 52.dp,
+                color = surfaceVariant,
+                alpha = 0.5f,
+                direction = if (Random.nextBoolean()) 1f else -1f
+            )
+        )
+    }
+
+    // Single Master Rotation Clock
+    val infiniteTransition = rememberInfiniteTransition(label = "master_rot")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(80000, easing = LinearEasing)), label = "rot"
-    )
-    val floatY by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 40f,
-        animationSpec = infiniteRepeatable(tween(5000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float"
+        animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing)), 
+        label = "rot"
     )
 
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.4f)) { 
-        val w = size.width
-        val h = size.height
-
-        // 1. TOP-LEFT: Very Sunny (Primary)
-        rotate(rotation, pivot = Offset(0f, 0f)) {
-            translate(left = -50f, top = -50f) {
-                scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.verySunny().toPath().asComposePath()
-                    drawPath(path, primary, style = Fill)
-                }
-            }
-        }
-
-        // 2. BOTTOM-RIGHT: 4-Sided Cookie (Secondary)
-        rotate(-15f, pivot = Offset(w, h)) {
-            translate(left = w - 300f, top = h - 250f + floatY) {
-                scale(scaleX = 300f, scaleY = 300f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.fourSidedCookie().toPath().asComposePath()
-                    drawPath(path, secondary, style = Fill)
-                }
-            }
-        }
-
-        // 3. MID-LEFT: Pill (Tertiary)
-        rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
-            translate(left = -100f, top = h/2 - 100f) {
-                scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.pill().toPath().asComposePath()
-                    drawPath(path, tertiary, style = Fill)
-                }
-            }
-        }
-        
-        // 4. TOP-RIGHT: Square (Surface Variant)
-        translate(left = w - 150f, top = 100f) {
-            rotate(-rotation, pivot = Offset(75f, 75f)) {
-                 scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
-                     val path = M3ExpressiveShapes.square().toPath().asComposePath()
-                     drawPath(path, surfaceVariant, style = Fill)
-                 }
-            }
-        }
-
-        // 5. BOTTOM-LEFT: Triangle (Error Container - Soft Red)
-        // Added to fill empty space near bottom left
-        rotate(-rotation * 0.7f, pivot = Offset(100f, h - 100f)) {
-            translate(left = -50f, top = h - 250f) {
-                scale(scaleX = 200f, scaleY = 200f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.triangle().toPath().asComposePath()
-                    drawPath(path, errorContainer, style = Fill)
-                }
-            }
-        }
-
-        // 6. MID-RIGHT: Scallop (Inverse Primary)
-        // Added to balance the right side
-        rotate(rotation * 0.3f, pivot = Offset(w, h/2)) {
-            translate(left = w - 120f, top = h/2 - 100f + floatY) {
-                scale(scaleX = 220f, scaleY = 220f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.scallop().toPath().asComposePath()
-                    drawPath(path, inversePrimary, style = Fill)
-                }
-            }
-        }
-        
-        // 7. TOP-CENTER: Flower (Surface Variant / Low Alpha)
-        // Sitting behind the logo area
-        rotate(rotation * 0.2f, pivot = Offset(w/2, 0f)) {
-            translate(left = w/2 - 100f, top = -80f) {
-                scale(scaleX = 180f, scaleY = 180f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.flower().toPath().asComposePath()
-                    drawPath(path, surfaceVariant.copy(alpha=0.5f), style = Fill)
+    Box(Modifier.fillMaxSize()) {
+        items.forEach { item ->
+            val spin = rotation * item.direction
+            
+            Box(
+                modifier = Modifier
+                    .align(item.align)
+                    .size(item.size)
+                    .rotate(spin) // Rotate in place
+                    .alpha(item.alpha)
+            ) {
+                when (val type = item.element) {
+                    is BgElement.Shape -> {
+                        Canvas(Modifier.fillMaxSize()) {
+                            // Scale shape to fit Box
+                            val scaleX = size.width / 2f
+                            val scaleY = size.height / 2f // Adjust depending on normalized shape size (usually ~1.0 radius)
+                            // Normalized shapes are radius 1 (diameter 2), so we scale up
+                            // Using a safe factor to fit inside the box
+                            val s = size.minDimension
+                            
+                            scale(scaleX = s, scaleY = s, pivot = center) {
+                                val path = type.polygon.toPath().asComposePath()
+                                // Center the path which is usually defined in [-1, 1] range
+                                translate(left = 0.5f, top = 0.5f) {
+                                    drawPath(path, item.color, style = Fill)
+                                }
+                            }
+                        }
+                    }
+                    is BgElement.Icon -> {
+                        Icon(
+                            imageVector = type.imageVector,
+                            contentDescription = null,
+                            tint = item.color,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }
