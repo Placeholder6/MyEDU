@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -159,13 +160,13 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// Data class for background items
+// Updated Data class holding the PRE-CALCULATED Compose Path
 private data class BackgroundShapeItem(
-    val polygon: RoundedPolygon,
+    val path: Path, // Storing the Compose Path directly
     val xRatio: Float, 
     val yRatio: Float, 
     val scaleRatio: Float,
-    val colorIndex: Int,
+    val color: Color,
     val rotationSpeed: Float, 
     val startRotation: Float
 )
@@ -178,7 +179,6 @@ fun LoginScreen(vm: MainViewModel) {
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // WRAP IN BOX WITH CONSTRAINTS to calculate precise scale
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
@@ -215,13 +215,13 @@ fun LoginScreen(vm: MainViewModel) {
 
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
-            animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
+            animationSpec = tween(durationMillis = 1500, easing = LinearEasing),
             label = "CookieRotation"
         )
 
@@ -269,7 +269,6 @@ fun LoginScreen(vm: MainViewModel) {
 
             // Inputs Container
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
-                // Input 1: Email
                 OutlinedTextField(
                     value = email, 
                     onValueChange = { email = it },
@@ -288,7 +287,6 @@ fun LoginScreen(vm: MainViewModel) {
                     singleLine = true
                 )
 
-                // Input 2: Password
                 OutlinedTextField(
                     value = pass, 
                     onValueChange = { pass = it },
@@ -351,7 +349,6 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
-                        // Phase out loader on success
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
@@ -388,14 +385,15 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
         label = "base_rot"
     )
 
-    // Generate random non-overlapping items
+    // Generate random items with PRE-CALCULATED Paths
     val shapeItems = remember {
         val items = mutableListOf<BackgroundShapeItem>()
-        val rng = Random(seed = 42) 
+        val rng = Random(seed = 101) // Changed seed
         
-        val targetCount = 35
+        // Target count of shapes
+        val targetCount = 25
         var attempts = 0
-        val maxAttempts = 1000
+        val maxAttempts = 2000
         
         while (items.size < targetCount && attempts < maxAttempts) {
             attempts++
@@ -404,19 +402,18 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
             val x = rng.nextFloat()
             val y = rng.nextFloat()
             
-            // 2. Random Scale (0.10 to 0.25 of screen width)
-            val s = 0.10f + (rng.nextFloat() * 0.15f)
+            // 2. Random Scale (0.10 to 0.20 of screen width)
+            val s = 0.10f + (rng.nextFloat() * 0.10f)
             
-            // 3. Collision Check
+            // 3. Collision Check (Relaxed: allow 20% overlap)
             var valid = true
             for (existing in items) {
                 val dx = x - existing.xRatio
-                // Adjust Y distance by aspect ratio to prevent overlapping when projected
                 val dy = (y - existing.yRatio) * aspectRatio 
                 val dist = sqrt(dx*dx + dy*dy)
                 
-                // Required distance: sum of radii + padding
-                val requiredDist = (s / 2f) + (existing.scaleRatio / 2f) + 0.02f
+                // Allow overlapping by checking 0.8 * sum of radii
+                val requiredDist = ((s + existing.scaleRatio) / 2f) * 0.8f
                 
                 if (dist < requiredDist) {
                     valid = false
@@ -426,13 +423,20 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
             
             if (valid) {
                 val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
+                
+                // --- PRE-CALCULATE PATH ---
+                val polygon = shapeGen()
+                val androidPath = android.graphics.Path()
+                polygon.toPath(androidPath)
+                val composePath = androidPath.asComposePath()
+
                 items.add(
                     BackgroundShapeItem(
-                        polygon = shapeGen(),
+                        path = composePath,
                         xRatio = x,
                         yRatio = y,
                         scaleRatio = s,
-                        colorIndex = rng.nextInt(colors.size),
+                        color = colors[rng.nextInt(colors.size)],
                         rotationSpeed = (0.5f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f),
                         startRotation = rng.nextFloat() * 360f
                     )
@@ -442,25 +446,21 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
         items
     }
 
-    // Increased Alpha to make sure it is visible
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.6f)) { 
+    // Increased Alpha
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.5f)) { 
         val w = size.width
         val h = size.height
 
         shapeItems.forEach { item ->
             val drawX = item.xRatio * w
             val drawY = item.yRatio * h
-            
-            // Actual size in pixels
             val shapeSize = w * item.scaleRatio
 
             translate(left = drawX, top = drawY) {
                 rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
                     scale(scaleX = shapeSize, scaleY = shapeSize) {
-                        // FIXED: Explicit Path creation to ensure drawing works
-                        val p = android.graphics.Path()
-                        item.polygon.toPath(p)
-                        drawPath(p.asComposePath(), colors[item.colorIndex], style = Fill)
+                        // Draw the pre-calculated path
+                        drawPath(item.path, item.color, style = Fill)
                     }
                 }
             }
