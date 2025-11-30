@@ -47,10 +47,11 @@ import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kotlin.math.sqrt
+import kotlin.random.Random
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
-    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
+    // 1. "Very Sunny": A 8-pointed star (2-axis symmetry)
     fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 8,
@@ -60,7 +61,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": A 4-lobed shape
+    // 2. "4 Sided Cookie": A 4-lobed shape (2-axis symmetry)
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -80,7 +81,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 4. "Pill": Standard stadium shape
+    // 4. "Pill": Standard stadium shape (2-axis symmetry)
     fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -88,17 +89,54 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 5. "Square": Standard rounded square
+    // 5. "Square": Standard rounded square (2-axis symmetry)
     fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
             rounding = CornerRounding(radius = 0.2f)
         ).normalized()
     }
+    
+    // 6. "Six Pointed Star": (2-axis symmetry)
+    fun sixPointedStar(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 6,
+            innerRadius = 0.65f,
+            rounding = CornerRounding(radius = 0.15f)
+        ).normalized()
+    }
+
+    // 7. "Octagon": (2-axis symmetry)
+    fun octagon(): RoundedPolygon {
+        return RoundedPolygon(
+            numVertices = 8,
+            rounding = CornerRounding(radius = 0.25f)
+        ).normalized()
+    }
+    
+    // 8. "Scallop": 12 points, shallow cuts (2-axis symmetry)
+    fun scallop(): RoundedPolygon {
+        return RoundedPolygon.star(
+             numVerticesPerRadius = 12,
+             innerRadius = 0.92f,
+             rounding = CornerRounding(radius = 1f)
+        ).normalized()
+    }
 
     private fun RoundedPolygon.normalized(): RoundedPolygon {
         return this
     }
+    
+    // List of shape generators for random selection
+    val randomShapes = listOf(
+        { verySunny() },
+        { fourSidedCookie() },
+        { pill() },
+        { square() },
+        { sixPointedStar() },
+        { octagon() },
+        { scallop() }
+    )
 }
 
 // Helper Class to convert RoundedPolygon to a Compose Shape
@@ -121,6 +159,19 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
         return Outline.Generic(p.asComposePath())
     }
 }
+
+// Data class to hold properties for each background item
+private data class BackgroundShapeItem(
+    val polygon: RoundedPolygon,
+    val row: Int,
+    val col: Int,
+    val offsetX: Float, // -0.2 to 0.2 jitter within cell
+    val offsetY: Float, // -0.2 to 0.2 jitter within cell
+    val scale: Float,   // 0.4 to 0.8 of cell size
+    val colorIndex: Int,// 0 to 3
+    val rotationSpeed: Float, // Multiplier for rotation
+    val startRotation: Float
+)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -308,7 +359,6 @@ fun LoginScreen(vm: MainViewModel) {
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
-                                // CHANGED: Now matches the Box color (Primary)
                                 color = MaterialTheme.colorScheme.primary 
                             )
                         }
@@ -326,61 +376,88 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
-// ... [ExpressiveShapesBackground remains unchanged] ...
 @Composable
 fun ExpressiveShapesBackground() {
-    val primary = MaterialTheme.colorScheme.primaryContainer
-    val secondary = MaterialTheme.colorScheme.secondaryContainer
-    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    // 1. Define Palette
+    val colors = listOf(
+        MaterialTheme.colorScheme.primaryContainer,
+        MaterialTheme.colorScheme.secondaryContainer,
+        MaterialTheme.colorScheme.tertiaryContainer,
+        MaterialTheme.colorScheme.surfaceVariant
+    )
 
+    // 2. Setup Animation
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
-    val rotation by infiniteTransition.animateFloat(
+    val baseRotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(80000, easing = LinearEasing)), label = "rot"
-    )
-    val floatY by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 40f,
-        animationSpec = infiniteRepeatable(tween(5000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float"
+        animationSpec = infiniteRepeatable(tween(120000, easing = LinearEasing)), 
+        label = "base_rot"
     )
 
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.3f)) { 
-        val w = size.width
-        val h = size.height
+    // 3. Deterministic Random Generation
+    // We use 'remember' to generate the layout once.
+    // Fixed seed ensures the pattern is random but consistent (no flickering on recompose).
+    val shapeItems = remember {
+        val items = mutableListOf<BackgroundShapeItem>()
+        val rng = Random(seed = 12345) // Fixed seed
+        val rows = 8  // Grid Rows
+        val cols = 5  // Grid Cols
 
-        rotate(rotation, pivot = Offset(0f, 0f)) {
-            translate(left = -50f, top = -50f) {
-                scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.verySunny().toPath().asComposePath()
-                    drawPath(path, primary, style = Fill)
-                }
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                // Select a random symmetric shape
+                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
+                
+                items.add(
+                    BackgroundShapeItem(
+                        polygon = shapeGen(),
+                        row = r,
+                        col = c,
+                        // Offset: Jitter position within cell (-0.2 to 0.2 of cell size)
+                        offsetX = (rng.nextFloat() - 0.5f) * 0.4f,
+                        offsetY = (rng.nextFloat() - 0.5f) * 0.4f,
+                        // Scale: 40% to 70% of cell size to prevent overlap
+                        scale = 0.4f + (rng.nextFloat() * 0.3f),
+                        colorIndex = rng.nextInt(colors.size),
+                        // Random rotation speed (0.5x to 1.5x) and direction
+                        rotationSpeed = (0.5f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f),
+                        startRotation = rng.nextFloat() * 360f
+                    )
+                )
             }
         }
+        items
+    }
 
-        rotate(-15f, pivot = Offset(w, h)) {
-            translate(left = w - 300f, top = h - 250f + floatY) {
-                scale(scaleX = 300f, scaleY = 300f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.fourSidedCookie().toPath().asComposePath()
-                    drawPath(path, secondary, style = Fill)
-                }
-            }
-        }
+    // 4. Draw Canvas
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.25f)) { 
+        val cellW = size.width / 5f // Based on cols=5
+        val cellH = size.height / 8f // Based on rows=8
 
-        rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
-            translate(left = -100f, top = h/2 - 100f) {
-                scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
-                    val path = M3ExpressiveShapes.pill().toPath().asComposePath()
-                    drawPath(path, tertiary, style = Fill)
+        shapeItems.forEach { item ->
+            // Calculate center of the cell
+            val centerX = (item.col * cellW) + (cellW / 2f)
+            val centerY = (item.row * cellH) + (cellH / 2f)
+            
+            // Apply jitter offset
+            val drawX = centerX + (item.offsetX * cellW)
+            val drawY = centerY + (item.offsetY * cellH)
+            
+            // Draw
+            translate(left = drawX, top = drawY) {
+                // Apply rotation
+                rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
+                    // Apply Scale
+                    // Base size is the smaller of cell dimensions
+                    val baseSize = minOf(cellW, cellH) * item.scale
+                    
+                    scale(scaleX = baseSize, scaleY = baseSize) {
+                        // The shape library returns normalized shapes (approx radius 1.0)
+                        // We scale the context, so we draw a path of size ~1.0 px which gets scaled up
+                        val path = item.polygon.toPath().asComposePath()
+                        drawPath(path, colors[item.colorIndex], style = Fill)
+                    }
                 }
-            }
-        }
-        
-        translate(left = w - 150f, top = 100f) {
-            rotate(-rotation, pivot = Offset(75f, 75f)) {
-                 scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
-                     val path = M3ExpressiveShapes.square().toPath().asComposePath()
-                     drawPath(path, surfaceVariant, style = Fill)
-                 }
             }
         }
     }
