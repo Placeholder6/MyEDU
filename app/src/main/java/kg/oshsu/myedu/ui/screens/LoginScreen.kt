@@ -52,6 +52,8 @@ import kotlin.random.Random
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
+    // All shapes have at least 2-axis symmetry
+    
     // 1. "Very Sunny": 8-pointed star
     fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
@@ -160,9 +162,9 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// Updated Data class holding the PRE-CALCULATED Compose Path
+// Data class for background items with pre-calculated path
 private data class BackgroundShapeItem(
-    val path: Path, // Storing the Compose Path directly
+    val path: Path,
     val xRatio: Float, 
     val yRatio: Float, 
     val scaleRatio: Float,
@@ -183,7 +185,7 @@ fun LoginScreen(vm: MainViewModel) {
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         
-        // Dynamic scale calculation
+        // Dynamic scale calculation for the main button
         val calculatedScale = remember(screenWidth, screenHeight) {
             val widthVal = screenWidth.value
             val heightVal = screenHeight.value
@@ -235,7 +237,6 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES ---
-        // Pass aspect ratio to help distribution
         val aspectRatio = if(screenHeight > 0.dp && screenWidth > 0.dp) screenHeight / screenWidth else 2f
         ExpressiveShapesBackground(aspectRatio)
 
@@ -267,7 +268,7 @@ fun LoginScreen(vm: MainViewModel) {
             
             Spacer(Modifier.height(48.dp))
 
-            // Inputs Container
+            // Inputs
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 OutlinedTextField(
                     value = email, 
@@ -381,39 +382,34 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
     val baseRotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(120000, easing = LinearEasing)), 
+        animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing)), // Faster rotation
         label = "base_rot"
     )
 
-    // Generate random items with PRE-CALCULATED Paths
+    // Generate shapes with fail-safe logic
     val shapeItems = remember {
         val items = mutableListOf<BackgroundShapeItem>()
-        val rng = Random(seed = 101) // Changed seed
+        val rng = Random(seed = 1234) // Consistent seed
         
-        // Target count of shapes
-        val targetCount = 25
+        val targetCount = 30
         var attempts = 0
-        val maxAttempts = 2000
         
-        while (items.size < targetCount && attempts < maxAttempts) {
+        // 1. Try smart non-overlapping placement
+        while (items.size < targetCount && attempts < 2000) {
             attempts++
             
-            // 1. Random Pos
             val x = rng.nextFloat()
             val y = rng.nextFloat()
+            val s = 0.15f + (rng.nextFloat() * 0.15f) // Variable size
             
-            // 2. Random Scale (0.10 to 0.20 of screen width)
-            val s = 0.10f + (rng.nextFloat() * 0.10f)
-            
-            // 3. Collision Check (Relaxed: allow 20% overlap)
             var valid = true
             for (existing in items) {
                 val dx = x - existing.xRatio
-                val dy = (y - existing.yRatio) * aspectRatio 
+                val dy = (y - existing.yRatio) * aspectRatio
                 val dist = sqrt(dx*dx + dy*dy)
                 
-                // Allow overlapping by checking 0.8 * sum of radii
-                val requiredDist = ((s + existing.scaleRatio) / 2f) * 0.8f
+                // Allow a little bit of overlap (0.75 factor) so we actually fill the screen
+                val requiredDist = ((s + existing.scaleRatio) / 2f) * 0.75f 
                 
                 if (dist < requiredDist) {
                     valid = false
@@ -424,7 +420,7 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
             if (valid) {
                 val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
                 
-                // --- PRE-CALCULATE PATH ---
+                // Pre-calculate path to avoid runtime issues
                 val polygon = shapeGen()
                 val androidPath = android.graphics.Path()
                 polygon.toPath(androidPath)
@@ -437,16 +433,35 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
                         yRatio = y,
                         scaleRatio = s,
                         color = colors[rng.nextInt(colors.size)],
-                        rotationSpeed = (0.5f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f),
+                        rotationSpeed = (1f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f), // Faster individual spin
                         startRotation = rng.nextFloat() * 360f
                     )
                 )
             }
         }
+        
+        // 2. Fallback: If we couldn't place enough items, force place random ones without strict checks
+        if (items.size < 5) {
+            repeat(10) {
+                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
+                val androidPath = android.graphics.Path()
+                shapeGen().toPath(androidPath)
+                items.add(BackgroundShapeItem(
+                    path = androidPath.asComposePath(),
+                    xRatio = rng.nextFloat(),
+                    yRatio = rng.nextFloat(),
+                    scaleRatio = 0.2f,
+                    color = colors[rng.nextInt(colors.size)],
+                    rotationSpeed = 1f,
+                    startRotation = 0f
+                ))
+            }
+        }
+        
         items
     }
 
-    // Increased Alpha
+    // Canvas with high visibility
     Canvas(modifier = Modifier.fillMaxSize().alpha(0.5f)) { 
         val w = size.width
         val h = size.height
@@ -459,7 +474,6 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
             translate(left = drawX, top = drawY) {
                 rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
                     scale(scaleX = shapeSize, scaleY = shapeSize) {
-                        // Draw the pre-calculated path
                         drawPath(item.path, item.color, style = Fill)
                     }
                 }
