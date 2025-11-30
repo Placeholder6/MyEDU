@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.drawscope.scale 
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
@@ -49,6 +50,7 @@ import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
+import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -218,7 +220,8 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES & ICONS ---
-        ExpressiveShapesBackground()
+        // Pass screen dimensions to trigger the generation algorithm
+        ExpressiveShapesBackground(screenWidth, screenHeight)
 
         // --- FORM CONTENT ---
         Column(
@@ -354,148 +357,149 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
-// --- BACKGROUND COMPONENTS ---
+// --- BACKGROUND GENERATION ALGORITHM ---
 
 sealed class BgElement {
     data class Shape(val polygon: RoundedPolygon) : BgElement()
     data class Icon(val imageVector: ImageVector) : BgElement()
 }
 
+// Represents the "Imaginary Square"
+private data class SimItem(
+    val id: Int,
+    var x: Float,
+    var y: Float,
+    var size: Float,
+    var speed: Float,
+    var active: Boolean = true
+)
+
 data class BgItem(
     val element: BgElement,
-    val align: Alignment,
+    val xOffset: Dp,
+    val yOffset: Dp,
     val size: Dp,
     val color: Color,
     val alpha: Float,
-    val direction: Float = 1f // 1f for Clockwise, -1f for Anti-Clockwise
+    val direction: Float 
 )
 
 @Composable
-fun ExpressiveShapesBackground() {
+fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
+    val density = LocalDensity.current
+    
+    // --- COLORS ---
     val primary = MaterialTheme.colorScheme.primaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
     val errorContainer = MaterialTheme.colorScheme.errorContainer
     val inversePrimary = MaterialTheme.colorScheme.inversePrimary
-    
-    // --- SPACED OUT & RESIZED (No Overlaps) ---
-    val items = remember {
-        listOf(
-            // --- TOP REGION (0.0 to -1.0 Y) ---
-            // Top Left
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.verySunny()),
-                align = BiasAlignment(-0.9f, -0.9f),
-                size = 160.dp,
-                color = primary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Top Center-ish
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.School),
-                align = BiasAlignment(-0.2f, -0.8f),
-                size = 70.dp,
-                color = secondary,
-                alpha = 0.5f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Top Right
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
-                align = BiasAlignment(0.9f, -0.85f),
-                size = 150.dp,
-                color = tertiary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Top Right Icon
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.Science),
-                align = BiasAlignment(0.5f, -0.5f),
-                size = 60.dp,
-                color = surfaceVariant,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
+    val colors = listOf(primary, secondary, tertiary, surfaceVariant, errorContainer, inversePrimary)
 
-            // --- MIDDLE REGION (-0.4 to 0.4 Y) ---
-            // Mid Left Edge
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.pill()),
-                align = BiasAlignment(-1.1f, -0.1f),
-                size = 140.dp,
-                color = errorContainer,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Mid Right Edge
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.flower()),
-                align = BiasAlignment(1.1f, 0.1f),
-                size = 140.dp,
-                color = inversePrimary,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Mid Right Icon
-            BgItem(
-                element = BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook),
-                align = BiasAlignment(0.6f, -0.1f),
-                size = 65.dp,
-                color = primary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
+    // --- GENERATE PACKED ITEMS ---
+    // We remember the list so it doesn't regenerate on every frame, only on size change
+    val items = remember(maxWidth, maxHeight) {
+        val w = with(density) { maxWidth.toPx() }
+        val h = with(density) { maxHeight.toPx() }
+        
+        // 1. Create imaginary squares (Seeds)
+        val count = 25 
+        val simItems = (0 until count).map { id ->
+            SimItem(
+                id = id,
+                x = Random.nextFloat() * w,
+                y = Random.nextFloat() * h,
+                size = 10f, // Start small
+                speed = Random.nextFloat() * 1.5f + 0.5f, // Random Growth Speed
+                active = true
+            )
+        }
 
-            // --- BOTTOM REGION (0.4 to 1.0 Y) ---
-            // Bottom Left
+        // 2. Simulation Loop (Grow until touch)
+        // Run a fixed number of iterations to simulate "time"
+        val maxIterations = 200
+        for (i in 0 until maxIterations) {
+            var anyGrowing = false
+            for (item in simItems) {
+                if (!item.active) continue
+                anyGrowing = true
+                
+                // Tentative growth
+                val newSize = item.size + item.speed
+                
+                // Check Bounds
+                if (item.x - newSize/2 < 0 || item.x + newSize/2 > w || 
+                    item.y - newSize/2 < 0 || item.y + newSize/2 > h) {
+                    item.active = false
+                    continue
+                }
+
+                // Check Collision with others
+                var collides = false
+                for (other in simItems) {
+                    if (item.id == other.id) continue
+                    // Simple AABB collision for squares: 
+                    // horizontal distance < combined width/2 AND vertical distance < combined height/2
+                    val dx = abs(item.x - other.x)
+                    val dy = abs(item.y - other.y)
+                    val combinedHalfSize = (newSize + other.size) / 2f
+                    
+                    // Add a small padding (10px) so they don't touch perfectly
+                    if (dx < combinedHalfSize + 10f && dy < combinedHalfSize + 10f) {
+                        collides = true
+                        break
+                    }
+                }
+
+                if (collides) {
+                    item.active = false
+                } else {
+                    item.size = newSize
+                }
+            }
+            if (!anyGrowing) break
+        }
+
+        // 3. Replace squares with Shapes/Icons
+        val elements = listOf(
+            BgElement.Shape(M3ExpressiveShapes.verySunny()),
+            BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
+            BgElement.Shape(M3ExpressiveShapes.pill()),
+            BgElement.Shape(M3ExpressiveShapes.square()),
+            BgElement.Shape(M3ExpressiveShapes.triangle()),
+            BgElement.Shape(M3ExpressiveShapes.scallop()),
+            BgElement.Shape(M3ExpressiveShapes.flower()),
+            BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
+            BgElement.Icon(Icons.Rounded.School),
+            BgElement.Icon(Icons.Rounded.AutoStories),
+            BgElement.Icon(Icons.Rounded.Edit),
+            BgElement.Icon(Icons.Rounded.Lightbulb),
+            BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook),
+            BgElement.Icon(Icons.Rounded.HistoryEdu),
+            BgElement.Icon(Icons.Rounded.Psychology),
+            BgElement.Icon(Icons.Rounded.Calculate),
+            BgElement.Icon(Icons.Rounded.Science),
+            BgElement.Icon(Icons.Rounded.Star)
+        )
+
+        simItems.map { sim ->
+            val el = elements.random()
+            // Map 0..width to Dp offsets
+            val xDp = with(density) { (sim.x - sim.size/2).toDp() }
+            val yDp = with(density) { (sim.y - sim.size/2).toDp() }
+            val sizeDp = with(density) { sim.size.toDp() }
+
             BgItem(
-                element = BgElement.Icon(Icons.Rounded.Lightbulb),
-                align = BiasAlignment(-0.8f, 0.5f),
-                size = 65.dp,
-                color = secondary,
-                alpha = 0.4f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Bottom Left Corner Shape
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.scallop()),
-                align = BiasAlignment(-0.9f, 0.9f),
-                size = 150.dp,
-                color = tertiary,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-             // Bottom Center
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.triangle()),
-                align = BiasAlignment(0.1f, 0.8f),
-                size = 130.dp,
-                color = surfaceVariant,
-                alpha = 0.3f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Bottom Right Corner
-            BgItem(
-                element = BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
-                align = BiasAlignment(0.9f, 0.9f),
-                size = 160.dp,
-                color = errorContainer,
-                alpha = 0.2f,
-                direction = if (Random.nextBoolean()) 1f else -1f
-            ),
-            // Bottom Right Icon
-            BgItem(
-                element = BgElement.Icon(Icons.Rounded.Edit),
-                align = BiasAlignment(0.6f, 0.6f),
-                size = 60.dp,
-                color = primary,
-                alpha = 0.4f,
+                element = el,
+                xOffset = xDp,
+                yOffset = yDp,
+                size = sizeDp,
+                color = colors.random(),
+                alpha = Random.nextFloat() * 0.3f + 0.2f, // 0.2 to 0.5 alpha
                 direction = if (Random.nextBoolean()) 1f else -1f
             )
-        )
+        }
     }
 
     // Single Master Rotation Clock
@@ -510,11 +514,12 @@ fun ExpressiveShapesBackground() {
         items.forEach { item ->
             val spin = rotation * item.direction
             
+            // Render at absolute calculated position
             Box(
                 modifier = Modifier
-                    .align(item.align)
+                    .offset(x = item.xOffset, y = item.yOffset)
                     .size(item.size)
-                    .rotate(spin) // Rotate in place
+                    .rotate(spin) 
                     .alpha(item.alpha)
             ) {
                 when (val type = item.element) {
