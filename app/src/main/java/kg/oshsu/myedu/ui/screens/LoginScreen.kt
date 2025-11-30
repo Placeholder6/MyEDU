@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -125,10 +126,6 @@ object M3ExpressiveShapes {
             rounding = CornerRounding(radius = 0.8f),
             innerRounding = CornerRounding(radius = 0.2f)
         ).normalized()
-    }
-
-    private fun RoundedPolygon.normalized(): RoundedPolygon {
-        return this
     }
 }
 
@@ -492,7 +489,7 @@ fun ExpressiveShapesBackground() {
 
             // 3. Mid Left Cluster
             BgItem(
-                element = BgElement.Icon(Icons.Rounded.MenuBook),
+                element = BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook),
                 align = BiasAlignment(-0.9f, 0f),
                 size = 110.dp,
                 color = surfaceVariant,
@@ -569,13 +566,12 @@ fun ExpressiveShapesBackground() {
                     is BgElement.Shape -> {
                         Canvas(Modifier.fillMaxSize()) {
                             // Scale shape to fit Box
-                            // Using the min dimension to ensure it fits well within the square box
-                            val s = size.minDimension
+                            // Using half of the size as radius because normalized shapes are usually [-1, 1]
+                            val fitRadius = size.minDimension / 2f
                             
-                            scale(scaleX = s, scaleY = s, pivot = center) {
-                                val path = type.polygon.toPath().asComposePath()
-                                // Center the path which is usually defined in [-1, 1] range
-                                translate(left = 0.5f, top = 0.5f) {
+                            translate(left = size.width / 2f, top = size.height / 2f) {
+                                scale(scaleX = fitRadius, scaleY = fitRadius) {
+                                    val path = type.polygon.toPath().asComposePath()
                                     drawPath(path, item.color, style = Fill)
                                 }
                             }
