@@ -51,6 +51,7 @@ import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.sqrt
 import kotlin.random.Random
 
@@ -364,7 +365,7 @@ sealed class BgElement {
     data class Icon(val imageVector: ImageVector) : BgElement()
 }
 
-// Represents the "Imaginary Square"
+// Represents the "Imaginary Square" that grows
 private data class SimItem(
     val id: Int,
     var x: Float,
@@ -403,22 +404,49 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
         val w = with(density) { maxWidth.toPx() }
         val h = with(density) { maxHeight.toPx() }
         
-        // 1. Create imaginary squares (Seeds)
-        val count = 25 
-        val simItems = (0 until count).map { id ->
-            SimItem(
-                id = id,
-                x = Random.nextFloat() * w,
-                y = Random.nextFloat() * h,
-                size = 60f, // CHANGED: Start from 60f to prevent too small items
-                speed = Random.nextFloat() * 1.5f + 0.5f, // Random Growth Speed
-                active = true
-            )
+        // 1. Grid Configuration (Stratified Sampling)
+        // Divide screen into cells to ensure coverage
+        val targetCellSize = with(density) { 140.dp.toPx() } // Approximate ideal size
+        val cols = (w / targetCellSize).toInt().coerceAtLeast(3)
+        val rows = (h / targetCellSize).toInt().coerceAtLeast(5)
+        val cellW = w / cols
+        val cellH = h / rows
+        
+        // 2. Initialize Seeds (One per cell with jitter)
+        val simItems = mutableListOf<SimItem>()
+        var idCounter = 0
+        
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                // Center of cell
+                val cx = c * cellW + cellW / 2
+                val cy = r * cellH + cellH / 2
+                
+                // Add Jitter (offset) within 40% of cell bounds
+                val jitterX = (Random.nextFloat() - 0.5f) * cellW * 0.8f
+                val jitterY = (Random.nextFloat() - 0.5f) * cellH * 0.8f
+                
+                simItems.add(
+                    SimItem(
+                        id = idCounter++,
+                        x = cx + jitterX,
+                        y = cy + jitterY,
+                        size = 50f, // Start size (not too small)
+                        speed = Random.nextFloat() * 1.0f + 0.5f,
+                        active = true
+                    )
+                )
+            }
         }
 
-        // 2. Simulation Loop (Grow until touch)
-        // Run a fixed number of iterations to simulate "time"
+        // 3. Simulation Loop (Grow until potential overlap)
         val maxIterations = 200
+        // Diagonal Factor: Since shapes rotate, we must assume their collision bounds
+        // is the circle that circumscribes the square.
+        // Diagonal of square size S is S * sqrt(2) ~= S * 1.414.
+        // We use 1.45 for a bit of extra safety padding.
+        val rotSafeFactor = 1.45f 
+
         for (i in 0 until maxIterations) {
             var anyGrowing = false
             for (item in simItems) {
@@ -428,25 +456,29 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                 // Tentative growth
                 val newSize = item.size + item.speed
                 
-                // Check Bounds
-                if (item.x - newSize/2 < 0 || item.x + newSize/2 > w || 
-                    item.y - newSize/2 < 0 || item.y + newSize/2 > h) {
+                // A. Wall Collision (Keep inside screen)
+                // We add padding (20f) so shapes don't get cut off at edges
+                val halfSize = newSize / 2
+                if (item.x - halfSize < 20f || item.x + halfSize > w - 20f || 
+                    item.y - halfSize < 20f || item.y + halfSize > h - 20f) {
                     item.active = false
                     continue
                 }
 
-                // Check Collision with others
+                // B. Neighbor Collision
                 var collides = false
                 for (other in simItems) {
                     if (item.id == other.id) continue
-                    // Simple AABB collision for squares: 
-                    // horizontal distance < combined width/2 AND vertical distance < combined height/2
+                    
                     val dx = abs(item.x - other.x)
                     val dy = abs(item.y - other.y)
-                    val combinedHalfSize = (newSize + other.size) / 2f
+                    val dist = hypot(dx, dy)
                     
-                    // Add a small padding (10px) so they don't touch perfectly
-                    if (dx < combinedHalfSize + 10f && dy < combinedHalfSize + 10f) {
+                    // Collision Rule: Distance < (RadiusA + RadiusB) * SafeFactor
+                    // Radius = Size / 2
+                    val minSafeDist = (newSize/2 + other.size/2) * rotSafeFactor
+                    
+                    if (dist < minSafeDist) {
                         collides = true
                         break
                     }
@@ -461,7 +493,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
             if (!anyGrowing) break
         }
 
-        // 3. Replace squares with Shapes/Icons
+        // 4. Map to Elements
         val elements = listOf(
             BgElement.Shape(M3ExpressiveShapes.verySunny()),
             BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
@@ -485,7 +517,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
 
         simItems.map { sim ->
             val el = elements.random()
-            // Map 0..width to Dp offsets
             val xDp = with(density) { (sim.x - sim.size/2).toDp() }
             val yDp = with(density) { (sim.y - sim.size/2).toDp() }
             val sizeDp = with(density) { sim.size.toDp() }
@@ -496,7 +527,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                 yOffset = yDp,
                 size = sizeDp,
                 color = colors.random(),
-                alpha = Random.nextFloat() * 0.3f + 0.2f, // 0.2 to 0.5 alpha
+                alpha = Random.nextFloat() * 0.3f + 0.2f, 
                 direction = if (Random.nextBoolean()) 1f else -1f
             )
         }
@@ -514,7 +545,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
         items.forEach { item ->
             val spin = rotation * item.direction
             
-            // Render at absolute calculated position
             Box(
                 modifier = Modifier
                     .offset(x = item.xOffset, y = item.yOffset)
@@ -532,6 +562,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                             val bounds = android.graphics.RectF()
                             path.computeBounds(bounds, true)
                             
+                            // Matrix Scaling: Fit the normalized shape into the Box
                             val scaleX = size.width / bounds.width()
                             val scaleY = size.height / bounds.height()
                             val scale = minOf(scaleX, scaleY)
@@ -542,7 +573,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                             matrix.postTranslate(size.width / 2f, size.height / 2f)
                             
                             path.transform(matrix)
-                            
                             drawPath(path.asComposePath(), item.color, style = Fill)
                         }
                     }
