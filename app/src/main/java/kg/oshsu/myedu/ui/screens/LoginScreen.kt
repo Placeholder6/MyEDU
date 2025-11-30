@@ -28,7 +28,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.drawscope.Fill
@@ -48,13 +47,10 @@ import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kotlin.math.sqrt
-import kotlin.random.Random
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
-    // All shapes have at least 2-axis symmetry
-    
-    // 1. "Very Sunny": 8-pointed star
+    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
     fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 8,
@@ -64,7 +60,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": 4-lobed shape
+    // 2. "4 Sided Cookie": A 4-lobed shape
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -74,7 +70,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 3. "12 Sided Cookie": Login Success Shape
+    // 3. "12 Sided Cookie": 12-lobed shape for Login Success
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -99,46 +95,10 @@ object M3ExpressiveShapes {
             rounding = CornerRounding(radius = 0.2f)
         ).normalized()
     }
-    
-    // 6. "Six Pointed Star"
-    fun sixPointedStar(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 6,
-            innerRadius = 0.65f,
-            rounding = CornerRounding(radius = 0.15f)
-        ).normalized()
-    }
-
-    // 7. "Octagon"
-    fun octagon(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 8,
-            rounding = CornerRounding(radius = 0.25f)
-        ).normalized()
-    }
-    
-    // 8. "Scallop"
-    fun scallop(): RoundedPolygon {
-        return RoundedPolygon.star(
-             numVerticesPerRadius = 12,
-             innerRadius = 0.92f,
-             rounding = CornerRounding(radius = 1f)
-        ).normalized()
-    }
 
     private fun RoundedPolygon.normalized(): RoundedPolygon {
         return this
     }
-    
-    val randomShapes = listOf(
-        { verySunny() },
-        { fourSidedCookie() },
-        { pill() },
-        { square() },
-        { sixPointedStar() },
-        { octagon() },
-        { scallop() }
-    )
 }
 
 // Helper Class to convert RoundedPolygon to a Compose Shape
@@ -162,17 +122,6 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// Data class for background items with pre-calculated path
-private data class BackgroundShapeItem(
-    val path: Path,
-    val xRatio: Float, 
-    val yRatio: Float, 
-    val scaleRatio: Float,
-    val color: Color,
-    val rotationSpeed: Float, 
-    val startRotation: Float
-)
-
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun LoginScreen(vm: MainViewModel) {
@@ -181,11 +130,13 @@ fun LoginScreen(vm: MainViewModel) {
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
+    // WRAP IN BOX WITH CONSTRAINTS to calculate precise scale
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        // --- SCALE CALCULATION ---
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         
-        // Dynamic scale calculation for the main button
+        // Calculate dynamic scale factor to cover the screen
         val calculatedScale = remember(screenWidth, screenHeight) {
             val widthVal = screenWidth.value
             val heightVal = screenHeight.value
@@ -193,6 +144,8 @@ fun LoginScreen(vm: MainViewModel) {
             val buttonRadius = 32f
             val innerRadiusFactor = 0.8f 
             val effectiveRadius = buttonRadius * innerRadiusFactor
+
+            // Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
             ((screenDiagonal / 2f) / effectiveRadius) * 1.1f
         }
 
@@ -217,13 +170,13 @@ fun LoginScreen(vm: MainViewModel) {
 
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
-            animationSpec = tween(durationMillis = 1500, easing = LinearEasing),
+            animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
             label = "CookieRotation"
         )
 
@@ -237,8 +190,7 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES ---
-        val aspectRatio = if(screenHeight > 0.dp && screenWidth > 0.dp) screenHeight / screenWidth else 2f
-        ExpressiveShapesBackground(aspectRatio)
+        ExpressiveShapesBackground()
 
         // --- FORM CONTENT ---
         Column(
@@ -268,8 +220,9 @@ fun LoginScreen(vm: MainViewModel) {
             
             Spacer(Modifier.height(48.dp))
 
-            // Inputs
+            // Inputs Container
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
+                // Input 1: Email
                 OutlinedTextField(
                     value = email, 
                     onValueChange = { email = it },
@@ -288,6 +241,7 @@ fun LoginScreen(vm: MainViewModel) {
                     singleLine = true
                 )
 
+                // Input 2: Password
                 OutlinedTextField(
                     value = pass, 
                     onValueChange = { pass = it },
@@ -350,9 +304,11 @@ fun LoginScreen(vm: MainViewModel) {
                     label = "ContentMorph"
                 ) { isActivating ->
                     if (isActivating) {
+                        // Phase out loader on success
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
+                                // CHANGED: Now matches the Box color (Primary)
                                 color = MaterialTheme.colorScheme.primary 
                             )
                         }
@@ -370,113 +326,61 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
+// ... [ExpressiveShapesBackground remains unchanged] ...
 @Composable
-fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
-    val colors = listOf(
-        MaterialTheme.colorScheme.primaryContainer,
-        MaterialTheme.colorScheme.secondaryContainer,
-        MaterialTheme.colorScheme.tertiaryContainer,
-        MaterialTheme.colorScheme.surfaceVariant
-    )
+fun ExpressiveShapesBackground() {
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
 
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
-    val baseRotation by infiniteTransition.animateFloat(
+    val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing)), // Faster rotation
-        label = "base_rot"
+        animationSpec = infiniteRepeatable(tween(80000, easing = LinearEasing)), label = "rot"
+    )
+    val floatY by infiniteTransition.animateFloat(
+        initialValue = 0f, targetValue = 40f,
+        animationSpec = infiniteRepeatable(tween(5000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float"
     )
 
-    // Generate shapes with fail-safe logic
-    val shapeItems = remember {
-        val items = mutableListOf<BackgroundShapeItem>()
-        val rng = Random(seed = 1234) // Consistent seed
-        
-        val targetCount = 30
-        var attempts = 0
-        
-        // 1. Try smart non-overlapping placement
-        while (items.size < targetCount && attempts < 2000) {
-            attempts++
-            
-            val x = rng.nextFloat()
-            val y = rng.nextFloat()
-            val s = 0.15f + (rng.nextFloat() * 0.15f) // Variable size
-            
-            var valid = true
-            for (existing in items) {
-                val dx = x - existing.xRatio
-                val dy = (y - existing.yRatio) * aspectRatio
-                val dist = sqrt(dx*dx + dy*dy)
-                
-                // Allow a little bit of overlap (0.75 factor) so we actually fill the screen
-                val requiredDist = ((s + existing.scaleRatio) / 2f) * 0.75f 
-                
-                if (dist < requiredDist) {
-                    valid = false
-                    break
-                }
-            }
-            
-            if (valid) {
-                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
-                
-                // Pre-calculate path to avoid runtime issues
-                val polygon = shapeGen()
-                val androidPath = android.graphics.Path()
-                polygon.toPath(androidPath)
-                val composePath = androidPath.asComposePath()
-
-                items.add(
-                    BackgroundShapeItem(
-                        path = composePath,
-                        xRatio = x,
-                        yRatio = y,
-                        scaleRatio = s,
-                        color = colors[rng.nextInt(colors.size)],
-                        rotationSpeed = (1f + rng.nextFloat()) * (if (rng.nextBoolean()) 1f else -1f), // Faster individual spin
-                        startRotation = rng.nextFloat() * 360f
-                    )
-                )
-            }
-        }
-        
-        // 2. Fallback: If we couldn't place enough items, force place random ones without strict checks
-        if (items.size < 5) {
-            repeat(10) {
-                val shapeGen = M3ExpressiveShapes.randomShapes[rng.nextInt(M3ExpressiveShapes.randomShapes.size)]
-                val androidPath = android.graphics.Path()
-                shapeGen().toPath(androidPath)
-                items.add(BackgroundShapeItem(
-                    path = androidPath.asComposePath(),
-                    xRatio = rng.nextFloat(),
-                    yRatio = rng.nextFloat(),
-                    scaleRatio = 0.2f,
-                    color = colors[rng.nextInt(colors.size)],
-                    rotationSpeed = 1f,
-                    startRotation = 0f
-                ))
-            }
-        }
-        
-        items
-    }
-
-    // Canvas with high visibility
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.5f)) { 
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.3f)) { 
         val w = size.width
         val h = size.height
 
-        shapeItems.forEach { item ->
-            val drawX = item.xRatio * w
-            val drawY = item.yRatio * h
-            val shapeSize = w * item.scaleRatio
-
-            translate(left = drawX, top = drawY) {
-                rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
-                    scale(scaleX = shapeSize, scaleY = shapeSize) {
-                        drawPath(item.path, item.color, style = Fill)
-                    }
+        rotate(rotation, pivot = Offset(0f, 0f)) {
+            translate(left = -50f, top = -50f) {
+                scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.verySunny().toPath().asComposePath()
+                    drawPath(path, primary, style = Fill)
                 }
+            }
+        }
+
+        rotate(-15f, pivot = Offset(w, h)) {
+            translate(left = w - 300f, top = h - 250f + floatY) {
+                scale(scaleX = 300f, scaleY = 300f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.fourSidedCookie().toPath().asComposePath()
+                    drawPath(path, secondary, style = Fill)
+                }
+            }
+        }
+
+        rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
+            translate(left = -100f, top = h/2 - 100f) {
+                scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.pill().toPath().asComposePath()
+                    drawPath(path, tertiary, style = Fill)
+                }
+            }
+        }
+        
+        translate(left = w - 150f, top = 100f) {
+            rotate(-rotation, pivot = Offset(75f, 75f)) {
+                 scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
+                     val path = M3ExpressiveShapes.square().toPath().asComposePath()
+                     drawPath(path, surfaceVariant, style = Fill)
+                 }
             }
         }
     }
