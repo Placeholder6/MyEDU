@@ -46,13 +46,12 @@ import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.OshSuLogo
-import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.random.Random
 
 // --- SHAPE LIBRARY IMPLEMENTATION ---
 object M3ExpressiveShapes {
-    // 1. "Very Sunny": A 8-pointed star (2-axis symmetry)
+    // 1. "Very Sunny": 8-pointed star
     fun verySunny(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 8,
@@ -62,7 +61,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 2. "4 Sided Cookie": A 4-lobed shape (2-axis symmetry)
+    // 2. "4 Sided Cookie": 4-lobed shape
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -72,7 +71,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 3. "12 Sided Cookie": 12-lobed shape for Login Success
+    // 3. "12 Sided Cookie": Login Success Shape
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -82,7 +81,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 4. "Pill": Standard stadium shape (2-axis symmetry)
+    // 4. "Pill": Standard stadium shape
     fun pill(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -90,7 +89,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 5. "Square": Standard rounded square (2-axis symmetry)
+    // 5. "Square": Standard rounded square
     fun square(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 4,
@@ -98,7 +97,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
     
-    // 6. "Six Pointed Star": (2-axis symmetry)
+    // 6. "Six Pointed Star"
     fun sixPointedStar(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 6,
@@ -107,7 +106,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // 7. "Octagon": (2-axis symmetry)
+    // 7. "Octagon"
     fun octagon(): RoundedPolygon {
         return RoundedPolygon(
             numVertices = 8,
@@ -115,7 +114,7 @@ object M3ExpressiveShapes {
         ).normalized()
     }
     
-    // 8. "Scallop": 12 points, shallow cuts (2-axis symmetry)
+    // 8. "Scallop"
     fun scallop(): RoundedPolygon {
         return RoundedPolygon.star(
              numVerticesPerRadius = 12,
@@ -128,7 +127,6 @@ object M3ExpressiveShapes {
         return this
     }
     
-    // List of shape generators for random selection
     val randomShapes = listOf(
         { verySunny() },
         { fourSidedCookie() },
@@ -161,12 +159,12 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// Updated Data class: Uses relative coordinates (0f-1f) instead of grid row/col
+// Data class for background items
 private data class BackgroundShapeItem(
     val polygon: RoundedPolygon,
-    val xRatio: Float, // 0.0 to 1.0 relative to screen width
-    val yRatio: Float, // 0.0 to 1.0 relative to screen height
-    val scaleRatio: Float, // Scale relative to average screen dimension
+    val xRatio: Float, 
+    val yRatio: Float, 
+    val scaleRatio: Float,
     val colorIndex: Int,
     val rotationSpeed: Float, 
     val startRotation: Float
@@ -182,10 +180,10 @@ fun LoginScreen(vm: MainViewModel) {
 
     // WRAP IN BOX WITH CONSTRAINTS to calculate precise scale
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        // --- SCALE CALCULATION ---
         val screenWidth = maxWidth
         val screenHeight = maxHeight
         
+        // Dynamic scale calculation
         val calculatedScale = remember(screenWidth, screenHeight) {
             val widthVal = screenWidth.value
             val heightVal = screenHeight.value
@@ -193,8 +191,6 @@ fun LoginScreen(vm: MainViewModel) {
             val buttonRadius = 32f
             val innerRadiusFactor = 0.8f 
             val effectiveRadius = buttonRadius * innerRadiusFactor
-
-            // Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
             ((screenDiagonal / 2f) / effectiveRadius) * 1.1f
         }
 
@@ -219,13 +215,13 @@ fun LoginScreen(vm: MainViewModel) {
 
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 1500, easing = FastOutSlowInEasing),
+            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
-            animationSpec = tween(durationMillis = 1500, easing = LinearEasing),
+            animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
             label = "CookieRotation"
         )
 
@@ -239,7 +235,7 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES ---
-        // We pass screen aspect ratio estimation to help random generator distribute better
+        // Pass aspect ratio to help distribution
         val aspectRatio = if(screenHeight > 0.dp && screenWidth > 0.dp) screenHeight / screenWidth else 2f
         ExpressiveShapesBackground(aspectRatio)
 
@@ -392,12 +388,11 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
         label = "base_rot"
     )
 
-    // Random non-overlapping generation
+    // Generate random non-overlapping items
     val shapeItems = remember {
         val items = mutableListOf<BackgroundShapeItem>()
-        val rng = Random(seed = 42) // Fixed seed for consistency
+        val rng = Random(seed = 42) 
         
-        // We will try to place ~35 shapes
         val targetCount = 35
         var attempts = 0
         val maxAttempts = 1000
@@ -405,28 +400,22 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
         while (items.size < targetCount && attempts < maxAttempts) {
             attempts++
             
-            // 1. Random Position (0..1)
+            // 1. Random Pos
             val x = rng.nextFloat()
             val y = rng.nextFloat()
             
-            // 2. Random Size (Scale relative to screen width, e.g., 0.10 to 0.25)
-            // "Variable sizes"
+            // 2. Random Scale (0.10 to 0.25 of screen width)
             val s = 0.10f + (rng.nextFloat() * 0.15f)
             
             // 3. Collision Check
-            // We approximate the shape as a circle for collision
-            // Distance required = radius1 + radius2 + padding
-            // We work in normalized coordinates, so we must adjust Y by aspect ratio 
-            // to treat distance uniformly.
-            
             var valid = true
             for (existing in items) {
                 val dx = x - existing.xRatio
-                val dy = (y - existing.yRatio) * aspectRatio // Adjust Y distance by screen aspect ratio
+                // Adjust Y distance by aspect ratio to prevent overlapping when projected
+                val dy = (y - existing.yRatio) * aspectRatio 
                 val dist = sqrt(dx*dx + dy*dy)
                 
-                // Scale is roughly diameter relative to width. Radius ~ scale/2.
-                // We add a small padding factor (0.02)
+                // Required distance: sum of radii + padding
                 val requiredDist = (s / 2f) + (existing.scaleRatio / 2f) + 0.02f
                 
                 if (dist < requiredDist) {
@@ -453,7 +442,8 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
         items
     }
 
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.25f)) { 
+    // Increased Alpha to make sure it is visible
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.6f)) { 
         val w = size.width
         val h = size.height
 
@@ -467,8 +457,10 @@ fun ExpressiveShapesBackground(aspectRatio: Float = 2.0f) {
             translate(left = drawX, top = drawY) {
                 rotate(degrees = item.startRotation + (baseRotation * item.rotationSpeed)) {
                     scale(scaleX = shapeSize, scaleY = shapeSize) {
-                        val path = item.polygon.toPath().asComposePath()
-                        drawPath(path, colors[item.colorIndex], style = Fill)
+                        // FIXED: Explicit Path creation to ensure drawing works
+                        val p = android.graphics.Path()
+                        item.polygon.toPath(p)
+                        drawPath(p.asComposePath(), colors[item.colorIndex], style = Fill)
                     }
                 }
             }
