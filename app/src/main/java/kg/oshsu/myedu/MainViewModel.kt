@@ -137,7 +137,7 @@ class MainViewModel : ViewModel() {
                     isLoginSuccess = true
                     
                     // UPDATED: Wait for 1.5s (sync with zoom animation) then immediately switch
-                    delay(1500) 
+                    delay(1000) 
 
                     appState = "APP"
                 } else {
