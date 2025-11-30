@@ -455,7 +455,7 @@ fun ExpressiveShapesBackground() {
             BgItem(
                 element = BgElement.Icon(Icons.Rounded.School),
                 align = BiasAlignment(-0.7f, -0.6f),
-                size = 120.dp, // Increased size
+                size = 120.dp,
                 color = primary,
                 alpha = 0.5f,
                 direction = if (Random.nextBoolean()) 1f else -1f
@@ -566,15 +566,26 @@ fun ExpressiveShapesBackground() {
                     is BgElement.Shape -> {
                         Canvas(Modifier.fillMaxSize()) {
                             // Scale shape to fit Box
-                            // Using half of the size as radius because normalized shapes are usually [-1, 1]
-                            val fitRadius = size.minDimension / 2f
+                            // Using Matrix logic ensures it scales correctly even if normalized
+                            val path = android.graphics.Path()
+                            type.polygon.toPath(path)
                             
-                            translate(left = size.width / 2f, top = size.height / 2f) {
-                                scale(scaleX = fitRadius, scaleY = fitRadius) {
-                                    val path = type.polygon.toPath().asComposePath()
-                                    drawPath(path, item.color, style = Fill)
-                                }
-                            }
+                            val matrix = android.graphics.Matrix()
+                            val bounds = android.graphics.RectF()
+                            path.computeBounds(bounds, true)
+                            
+                            val scaleX = size.width / bounds.width()
+                            val scaleY = size.height / bounds.height()
+                            val scale = minOf(scaleX, scaleY)
+                            
+                            matrix.reset()
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY()) // Center to 0,0
+                            matrix.postScale(scale, scale) // Scale up
+                            matrix.postTranslate(size.width / 2f, size.height / 2f) // Move to Canvas center
+                            
+                            path.transform(matrix)
+                            
+                            drawPath(path.asComposePath(), item.color, style = Fill)
                         }
                     }
                     is BgElement.Icon -> {
