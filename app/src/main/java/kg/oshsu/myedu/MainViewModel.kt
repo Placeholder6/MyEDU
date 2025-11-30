@@ -118,6 +118,7 @@ class MainViewModel : ViewModel() {
             NetworkClient.interceptor.authToken = null
 
             try {
+                // 1. Perform Login
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
                 val token = resp.authorisation?.token
                 if (token != null) {
@@ -125,18 +126,18 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // 1. Load Data FIRST (Spinner continues to spin)
-                    // We catch exceptions so login proceeds even if some data fails
+                    // 2. Load ALL Data (Loader is still visible)
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
 
-                    // 2. Trigger Expansion Animation (Zoom)
+                    // 3. Trigger Expansion Animation (Zoom)
                     isLoginSuccess = true
-                    // Wait for the slow zoom animation (2000ms) to complete before switching state
-                    delay(2000) 
+                    
+                    // UPDATED: Wait for 1.5s (sync with zoom animation) then immediately switch
+                    delay(1500) 
 
                     appState = "APP"
                 } else {
