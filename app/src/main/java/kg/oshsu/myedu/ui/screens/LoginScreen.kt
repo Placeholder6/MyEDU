@@ -410,7 +410,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                 id = id,
                 x = Random.nextFloat() * w,
                 y = Random.nextFloat() * h,
-                size = 10f, // Start small
+                size = 60f, // CHANGED: Start from 60f to prevent too small items
                 speed = Random.nextFloat() * 1.5f + 0.5f, // Random Growth Speed
                 active = true
             )
