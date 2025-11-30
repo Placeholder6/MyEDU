@@ -168,14 +168,12 @@ fun LoginScreen(vm: MainViewModel) {
             label = "Width"
         )
 
-        // UPDATED: Easing changed to FastOutSlowIn for smoother feel
         val expandScale by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
             animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
-        // UPDATED: Rotation set to 360f (Fast Spin)
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
             animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
@@ -310,7 +308,8 @@ fun LoginScreen(vm: MainViewModel) {
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
-                                color = MaterialTheme.colorScheme.onPrimary
+                                // CHANGED: Now matches the Box color (Primary)
+                                color = MaterialTheme.colorScheme.primary 
                             )
                         }
                     } else {
