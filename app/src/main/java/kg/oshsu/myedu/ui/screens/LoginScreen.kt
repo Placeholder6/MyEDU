@@ -96,6 +96,34 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
+    // 6. "Triangle": Rounded 3-sided shape
+    fun triangle(): RoundedPolygon {
+        return RoundedPolygon(
+            numVertices = 3,
+            rounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    // 7. "Scallop": Wavy 10-sided shape
+    fun scallop(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 10,
+            innerRadius = 0.9f,
+            rounding = CornerRounding(radius = 0.5f),
+            innerRounding = CornerRounding(radius = 0.5f)
+        ).normalized()
+    }
+    
+    // 8. "Flower": 6-sided flower
+    fun flower(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 6,
+            innerRadius = 0.6f,
+            rounding = CornerRounding(radius = 0.8f),
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
     private fun RoundedPolygon.normalized(): RoundedPolygon {
         return this
     }
@@ -326,13 +354,14 @@ fun LoginScreen(vm: MainViewModel) {
     }
 }
 
-// ... [ExpressiveShapesBackground remains unchanged] ...
 @Composable
 fun ExpressiveShapesBackground() {
     val primary = MaterialTheme.colorScheme.primaryContainer
     val secondary = MaterialTheme.colorScheme.secondaryContainer
     val tertiary = MaterialTheme.colorScheme.tertiaryContainer
     val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val errorContainer = MaterialTheme.colorScheme.errorContainer
+    val inversePrimary = MaterialTheme.colorScheme.inversePrimary
 
     val infiniteTransition = rememberInfiniteTransition(label = "bg_anim")
     val rotation by infiniteTransition.animateFloat(
@@ -344,10 +373,11 @@ fun ExpressiveShapesBackground() {
         animationSpec = infiniteRepeatable(tween(5000, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "float"
     )
 
-    Canvas(modifier = Modifier.fillMaxSize().alpha(0.3f)) { 
+    Canvas(modifier = Modifier.fillMaxSize().alpha(0.4f)) { 
         val w = size.width
         val h = size.height
 
+        // 1. TOP-LEFT: Very Sunny (Primary)
         rotate(rotation, pivot = Offset(0f, 0f)) {
             translate(left = -50f, top = -50f) {
                 scale(scaleX = 400f, scaleY = 400f, pivot = Offset.Zero) {
@@ -357,6 +387,7 @@ fun ExpressiveShapesBackground() {
             }
         }
 
+        // 2. BOTTOM-RIGHT: 4-Sided Cookie (Secondary)
         rotate(-15f, pivot = Offset(w, h)) {
             translate(left = w - 300f, top = h - 250f + floatY) {
                 scale(scaleX = 300f, scaleY = 300f, pivot = Offset.Zero) {
@@ -366,6 +397,7 @@ fun ExpressiveShapesBackground() {
             }
         }
 
+        // 3. MID-LEFT: Pill (Tertiary)
         rotate(rotation * 0.5f, pivot = Offset(0f, h/2)) {
             translate(left = -100f, top = h/2 - 100f) {
                 scale(scaleX = 300f, scaleY = 150f, pivot = Offset.Zero) {
@@ -375,12 +407,46 @@ fun ExpressiveShapesBackground() {
             }
         }
         
+        // 4. TOP-RIGHT: Square (Surface Variant)
         translate(left = w - 150f, top = 100f) {
             rotate(-rotation, pivot = Offset(75f, 75f)) {
                  scale(scaleX = 150f, scaleY = 150f, pivot = Offset.Zero) {
                      val path = M3ExpressiveShapes.square().toPath().asComposePath()
                      drawPath(path, surfaceVariant, style = Fill)
                  }
+            }
+        }
+
+        // 5. BOTTOM-LEFT: Triangle (Error Container - Soft Red)
+        // Added to fill empty space near bottom left
+        rotate(-rotation * 0.7f, pivot = Offset(100f, h - 100f)) {
+            translate(left = -50f, top = h - 250f) {
+                scale(scaleX = 200f, scaleY = 200f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.triangle().toPath().asComposePath()
+                    drawPath(path, errorContainer, style = Fill)
+                }
+            }
+        }
+
+        // 6. MID-RIGHT: Scallop (Inverse Primary)
+        // Added to balance the right side
+        rotate(rotation * 0.3f, pivot = Offset(w, h/2)) {
+            translate(left = w - 120f, top = h/2 - 100f + floatY) {
+                scale(scaleX = 220f, scaleY = 220f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.scallop().toPath().asComposePath()
+                    drawPath(path, inversePrimary, style = Fill)
+                }
+            }
+        }
+        
+        // 7. TOP-CENTER: Flower (Surface Variant / Low Alpha)
+        // Sitting behind the logo area
+        rotate(rotation * 0.2f, pivot = Offset(w/2, 0f)) {
+            translate(left = w/2 - 100f, top = -80f) {
+                scale(scaleX = 180f, scaleY = 180f, pivot = Offset.Zero) {
+                    val path = M3ExpressiveShapes.flower().toPath().asComposePath()
+                    drawPath(path, surfaceVariant.copy(alpha=0.5f), style = Fill)
+                }
             }
         }
     }
