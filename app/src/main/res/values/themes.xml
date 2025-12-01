@@ -2,9 +2,17 @@
 <resources>
     <!-- Base application theme. -->
     <style name="Theme.MyEDU" parent="android:Theme.Material.Light.NoActionBar">
-        <!-- Status bar color. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
-        <!-- Customize your theme here. -->
         <item name="android:windowBackground">@color/white</item>
+    </style>
+
+    <!-- Splash Screen Theme -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Set the splash screen background color (using your app's brand blue) -->
+        <item name="windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <!-- Use the existing white foreground icon -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <!-- Set the theme to apply after the splash screen finishes -->
+        <item name="postSplashScreenTheme">@style/Theme.MyEDU</item>
     </style>
 </resources>
