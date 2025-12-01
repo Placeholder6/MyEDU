@@ -9,6 +9,7 @@ import android.view.View
 import android.view.animation.PathInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -39,7 +40,6 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.screens.*
 
 class MainActivity : ComponentActivity() {
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     
     private val vm by viewModels<MainViewModel>()
 
@@ -54,21 +54,18 @@ class MainActivity : ComponentActivity() {
             vm.appState == "STARTUP"
         }
 
-        // --- MATERIAL EXPRESSIVE EXIT ANIMATION ---
+        // --- EXPRESSIVE EXIT ANIMATION ---
         splashScreen.setOnExitAnimationListener { splashScreenView ->
             val iconView = splashScreenView.iconView
             val splashView = splashScreenView.view
 
-            // 1. Icon Animation: "Spring Up and Out"
-            // Using an expressive cubic-bezier that mimics a spring snap
-            // (EaseOutBack-ish but smoother)
             val expressiveInterpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
             
             val iconSlideUp = ObjectAnimator.ofFloat(
                 iconView,
                 View.TRANSLATION_Y,
                 0f,
-                -iconView.height.toFloat() * 1.5f // Move up significantly
+                -iconView.height.toFloat() * 1.5f 
             ).apply {
                 interpolator = expressiveInterpolator
                 duration = 500L
@@ -84,7 +81,6 @@ class MainActivity : ComponentActivity() {
                 duration = 300L
             }
 
-            // 2. Background Animation: Reveal the app
             val bgAlpha = ObjectAnimator.ofFloat(
                 splashView,
                 View.ALPHA,
@@ -95,7 +91,6 @@ class MainActivity : ComponentActivity() {
                 duration = 500L
             }
 
-            // Start animations
             iconSlideUp.start()
             iconAlpha.start()
             bgAlpha.doOnEnd { splashScreenView.remove() }
@@ -104,20 +99,36 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-
+        // NOTE: Permission Request moved to Compose to prevent crash on first launch
+        
         setContent { 
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
+            
+            // Handle Permissions in Compose
+            PermissionHandler()
 
             MyEduTheme { AppContent(vm) } 
+        }
+    }
+}
+
+@Composable
+fun PermissionHandler() {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { }
+    )
+    
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
         }
     }
 }
@@ -145,7 +156,6 @@ fun AppContent(vm: MainViewModel) {
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
-            // Smooth crossfade to match the native splash fade-out
             fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
         }
     ) { state ->
@@ -261,5 +271,3 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 }
-
-
