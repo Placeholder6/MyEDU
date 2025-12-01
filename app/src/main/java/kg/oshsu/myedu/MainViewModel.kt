@@ -77,21 +77,26 @@ class MainViewModel : ViewModel() {
 
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
-        if (prefs == null) {
-            prefs = PrefsManager(context)
-        }
-        val token = prefs?.getToken()
-        if (token != null) {
-            NetworkClient.interceptor.authToken = token
-            NetworkClient.cookieJar.injectSessionCookies(token)
-            loadOfflineData()
-            appState = "APP"
-            // Trigger background refresh silently
-            viewModelScope.launch(Dispatchers.IO) {
-                try { fetchAllDataSuspend() } catch (_: Exception) {}
+        viewModelScope.launch {
+            if (prefs == null) {
+                prefs = PrefsManager(context)
             }
-        } else {
-            appState = "LOGIN"
+            val token = prefs?.getToken()
+            
+            // DELAY REMOVED: Checks token and proceeds immediately
+            
+            if (token != null) {
+                NetworkClient.interceptor.authToken = token
+                NetworkClient.cookieJar.injectSessionCookies(token)
+                loadOfflineData()
+                appState = "APP"
+                // Trigger background refresh silently
+                launch(Dispatchers.IO) {
+                    try { fetchAllDataSuspend() } catch (_: Exception) {}
+                }
+            } else {
+                appState = "LOGIN"
+            }
         }
     }
 
@@ -136,7 +141,7 @@ class MainViewModel : ViewModel() {
                     // 3. Trigger Expansion Animation (Zoom)
                     isLoginSuccess = true
                     
-                    // UPDATED: Wait for 1.5s (sync with zoom animation) then immediately switch
+                    // Wait for 1.0s (sync with zoom animation) then switch
                     delay(1000) 
 
                     appState = "APP"

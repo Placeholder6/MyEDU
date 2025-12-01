@@ -6,11 +6,14 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -24,37 +27,43 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.screens.*
 
 class MainActivity : ComponentActivity() {
-    private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    
+    private val vm by viewModels<MainViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Install Splash Screen (Must be first)
+        // This handles the transition from the Splash Theme to the App Theme.
+        val splashScreen = installSplashScreen()
+        
         super.onCreate(savedInstanceState)
         
+        // 2. Enable Edge-to-Edge (Mandatory for Android 15+)
         enableEdgeToEdge()
+        
+        // 3. Init Data
+        vm.initSession(applicationContext)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+        // 4. Keep Splash Screen until App State isn't STARTUP
+        // This prevents the "white flash" by holding the splash screen 
+        // until we know if the user is logged in or not.
+        splashScreen.setKeepOnScreenCondition {
+            vm.appState == "STARTUP"
         }
 
         setContent { 
-            val vm: MainViewModel = viewModel()
-            val context = LocalContext.current
-            
-            LaunchedEffect(Unit) { vm.initSession(context) }
+            // Alarm Manager (Background Logic)
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
-                    ScheduleAlarmManager(context).scheduleNotifications(vm.fullSchedule, vm.timeMap)
+                    ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
 
@@ -82,22 +91,18 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
 
 @Composable
 fun AppContent(vm: MainViewModel) {
-    // UPDATED: Smooth Fade-In for App Content
     AnimatedContent(
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
-            if (targetState == "APP") {
-                fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
-            } else {
-                fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-            }
+            // Smooth crossfade to match native splash exit
+            fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
         }
     ) { state ->
         when (state) {
             "LOGIN" -> LoginScreen(vm)
             "APP" -> MainAppStructure(vm)
-            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
         }
     }
 }
@@ -112,6 +117,9 @@ data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
+    // --- PERMISSION REQUEST (Only runs in APP state) ---
+    NotificationPermissionRequest()
+
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
@@ -202,6 +210,24 @@ fun MainAppStructure(vm: MainViewModel) {
                 dragHandle = { BottomSheetDefaults.DragHandle() }
             ) {
                 vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationPermissionRequest() {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { }
+    )
+    
+    // LaunchedEffect ensures this runs once when the composable enters the composition
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
