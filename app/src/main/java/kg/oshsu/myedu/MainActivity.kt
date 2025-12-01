@@ -1,7 +1,6 @@
 package kg.oshsu.myedu
 
 import android.Manifest
-import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -34,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.screens.*
@@ -44,68 +42,58 @@ class MainActivity : ComponentActivity() {
     private val vm by viewModels<MainViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Install Splash Screen (Must be first)
         val splashScreen = installSplashScreen()
-        super.onCreate(savedInstanceState)
         
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        
+        // 2. Init Data
         vm.initSession(applicationContext)
 
-        // Keep Splash Screen visible until App State moves past STARTUP
+        // 3. Keep Splash Screen until App State isn't STARTUP
         splashScreen.setKeepOnScreenCondition {
             vm.appState == "STARTUP"
         }
 
-        // --- EXPRESSIVE EXIT ANIMATION ---
+        // 4. Safe & Expressive Exit Animation
         splashScreen.setOnExitAnimationListener { splashScreenView ->
             val iconView = splashScreenView.iconView
             val splashView = splashScreenView.view
 
-            // Custom "Spring" Interpolator for expressive motion
-            val expressiveInterpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
-            
-            // 1. Icon shoots up and fades out
-            val iconSlideUp = ObjectAnimator.ofFloat(
-                iconView,
-                View.TRANSLATION_Y,
-                0f,
-                -iconView.height.toFloat() * 1.5f 
-            ).apply {
-                interpolator = expressiveInterpolator
-                duration = 500L
+            // CRITICAL SAFETY CHECK: 
+            // If the view hasn't been measured yet (height=0), skip animation to prevent crash.
+            if (splashView.height == 0 || iconView.height == 0) {
+                splashScreenView.remove()
+                return@setOnExitAnimationListener
             }
 
-            val iconAlpha = ObjectAnimator.ofFloat(
-                iconView,
-                View.ALPHA,
-                1f,
-                0f
-            ).apply {
-                interpolator = expressiveInterpolator
-                duration = 300L
-            }
+            // Material Expressive Interpolator (Spring-like)
+            val expressiveInterp = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
+            val duration = 500L
 
-            // 2. Background fades out to reveal app
-            val bgAlpha = ObjectAnimator.ofFloat(
-                splashView,
-                View.ALPHA,
-                1f,
-                0f
-            ).apply {
-                interpolator = expressiveInterpolator
-                duration = 500L
-            }
+            // Animate Icon: Slide Up + Fade Out
+            iconView.animate()
+                .translationY(-iconView.height.toFloat() * 1.5f)
+                .alpha(0f)
+                .setInterpolator(expressiveInterp)
+                .setDuration(duration)
+                .start()
 
-            iconSlideUp.start()
-            iconAlpha.start()
-            
-            // Remove the splash view only after the background fade ends
-            bgAlpha.doOnEnd { splashScreenView.remove() }
-            bgAlpha.start()
+            // Animate Background: Fade Out
+            splashView.animate()
+                .alpha(0f)
+                .setInterpolator(expressiveInterp)
+                .setDuration(duration)
+                .withEndAction { 
+                    // Safely remove the view when animation completes
+                    splashScreenView.remove() 
+                }
+                .start()
         }
 
-        enableEdgeToEdge()
-
         setContent { 
-            // Initialize Alarm Manager for notifications
+            // Alarm Manager (Background Logic)
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
@@ -140,7 +128,7 @@ fun AppContent(vm: MainViewModel) {
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
-            // Smooth crossfade to match the native splash fade-out
+            // Smooth crossfade to match native splash exit
             fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
         }
     ) { state ->
@@ -162,7 +150,8 @@ data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
-    // REQUEST PERMISSIONS HERE - Only runs when user is safely inside the app
+    // --- PERMISSION REQUEST (Only runs in APP state) ---
+    // This prevents the permission dialog from conflicting with Splash Screen on startup
     NotificationPermissionRequest()
 
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -265,9 +254,10 @@ fun NotificationPermissionRequest() {
     val context = LocalContext.current
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
-        onResult = { } // Logic is handled, no action needed on result
+        onResult = { }
     )
     
+    // LaunchedEffect ensures this runs once when the composable enters the composition
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
