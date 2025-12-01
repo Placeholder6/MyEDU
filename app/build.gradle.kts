@@ -60,7 +60,6 @@ android {
 }
 
 // --- KOTLIN COMPILER OPTIONS ---
-// Moved outside the 'android' block for Kotlin 2.0+ compatibility
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -74,12 +73,13 @@ kotlin {
 dependencies {
     // --- ANDROID CORE (API 36 Support) ---
     implementation("androidx.core:core-ktx:1.15.0")
+    // Added Splash Screen API
+    implementation("androidx.core:core-splashscreen:1.0.1") 
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.12.0")
     
     // --- COMPOSE & MATERIAL 3 EXPRESSIVE ---
-    // We use the BOM for general compatibility...
     val composeBom = platform("androidx.compose:compose-bom:2025.11.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)
@@ -90,7 +90,6 @@ dependencies {
     implementation("androidx.graphics:graphics-shapes:1.0.1")
     implementation("androidx.graphics:graphics-path:1.0.1")
     
-    // ...but we FORCE the alpha version of Material 3 to get Expressive features (LoadingIndicator, etc.)
     implementation("androidx.compose.material3:material3:1.5.0-alpha09")
     implementation("androidx.compose.material:material-icons-extended")
     
