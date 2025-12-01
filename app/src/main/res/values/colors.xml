@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- BASE COLORS -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
     <color name="purple_700">#FF3700B3</color>
@@ -10,10 +9,6 @@
     <color name="white">#FFFFFFFF</color>
     <color name="ic_launcher_background">#2196f3</color>
 
-    <!-- SPLASH DEFAULTS (Android 11 and below - Fallback) -->
-    <!-- Used on older phones where Monet dynamic colors don't exist -->
     <color name="splash_bg">#FFFFFF</color>
     <color name="splash_icon_color">#2196f3</color>
 </resources>
-
-
