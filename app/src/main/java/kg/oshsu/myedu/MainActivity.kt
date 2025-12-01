@@ -41,7 +41,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 1. Install Splash Screen (Must be first)
-        // This handles the transition from the Splash Theme to the App Theme automatically.
+        // This handles the transition from the Splash Theme to the App Theme.
         val splashScreen = installSplashScreen()
         
         super.onCreate(savedInstanceState)
@@ -53,7 +53,8 @@ class MainActivity : ComponentActivity() {
         vm.initSession(applicationContext)
 
         // 4. Keep Splash Screen until App State isn't STARTUP
-        // This holds the splash screen until we determine if the user is logged in or not.
+        // This prevents the "white flash" by holding the splash screen 
+        // until we know if the user is logged in or not.
         splashScreen.setKeepOnScreenCondition {
             vm.appState == "STARTUP"
         }
@@ -116,6 +117,7 @@ data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
+    // --- PERMISSION REQUEST (Only runs in APP state) ---
     NotificationPermissionRequest()
 
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -221,6 +223,7 @@ fun NotificationPermissionRequest() {
         onResult = { }
     )
     
+    // LaunchedEffect ensures this runs once when the composable enters the composition
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
