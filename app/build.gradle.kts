@@ -20,7 +20,6 @@ android {
     // --- SIGNING CONFIGURATION ---
     signingConfigs {
         create("release") {
-            // Read from Environment Variables (CI)
             val keystorePath = System.getenv("RELEASE_STORE_FILE")
             val storePass = System.getenv("RELEASE_STORE_PASSWORD")
             val keyAlias = System.getenv("RELEASE_KEY_ALIAS")
@@ -39,8 +38,6 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            
-            // Only sign if config was successfully created
             if (System.getenv("RELEASE_STORE_FILE") != null) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -73,8 +70,10 @@ kotlin {
 dependencies {
     // --- ANDROID CORE (API 36 Support) ---
     implementation("androidx.core:core-ktx:1.15.0")
-    // Added Splash Screen API
+    
+    // SPLASH SCREEN API (Required for Android 12+)
     implementation("androidx.core:core-splashscreen:1.0.1") 
+    
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.10.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
     implementation("androidx.activity:activity-compose:1.12.0")
