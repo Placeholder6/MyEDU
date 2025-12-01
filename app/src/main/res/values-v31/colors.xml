@@ -1,6 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="splash_bg">@android:color/system_accent1_100</color>
-    
-    <color name="splash_icon_color">@color/ic_launcher_background</color>
 </resources>
