@@ -8,9 +8,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
@@ -30,15 +32,29 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.screens.*
 
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    
+    // Initialize ViewModel here so we can check state before setContent
+    private val vm by viewModels<MainViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Install Splash Screen (Must be before super.onCreate)
+        val splashScreen = installSplashScreen()
+        
         super.onCreate(savedInstanceState)
         
+        // 2. Start initialization immediately
+        vm.initSession(applicationContext)
+
+        // 3. Keep Splash Screen on screen until we are ready (not in STARTUP)
+        splashScreen.setKeepOnScreenCondition {
+            vm.appState == "STARTUP"
+        }
+
         enableEdgeToEdge()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -48,13 +64,9 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent { 
-            val vm: MainViewModel = viewModel()
-            val context = LocalContext.current
-            
-            LaunchedEffect(Unit) { vm.initSession(context) }
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
-                    ScheduleAlarmManager(context).scheduleNotifications(vm.fullSchedule, vm.timeMap)
+                    ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
 
@@ -82,22 +94,19 @@ fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable 
 
 @Composable
 fun AppContent(vm: MainViewModel) {
-    // UPDATED: Smooth Fade-In for App Content
     AnimatedContent(
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
-            if (targetState == "APP") {
-                fadeIn(animationSpec = tween(1000)) togetherWith fadeOut(animationSpec = tween(1000))
-            } else {
-                fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300))
-            }
+            // Slower fade for smooth entry from splash
+            fadeIn(animationSpec = tween(500)) togetherWith fadeOut(animationSpec = tween(500))
         }
     ) { state ->
         when (state) {
             "LOGIN" -> LoginScreen(vm)
             "APP" -> MainAppStructure(vm)
-            else -> SplashScreen()
+            // Fallback (rarely seen due to splash screen logic)
+            else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
         }
     }
 }
