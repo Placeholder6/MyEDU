@@ -77,16 +77,14 @@ class MainViewModel : ViewModel() {
 
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
-        // FIX: Run in a coroutine to add a small delay
         viewModelScope.launch {
-            // Delay for 800ms. This keeps the Splash Screen visible
-            // long enough for the App/Login screen to initialize its UI.
-            delay(800)
-
             if (prefs == null) {
                 prefs = PrefsManager(context)
             }
             val token = prefs?.getToken()
+            
+            // DELAY REMOVED: Checks token and proceeds immediately
+            
             if (token != null) {
                 NetworkClient.interceptor.authToken = token
                 NetworkClient.cookieJar.injectSessionCookies(token)
