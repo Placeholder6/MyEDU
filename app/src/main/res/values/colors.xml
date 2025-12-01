@@ -8,6 +8,9 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     
-    <color name="ic_launcher_background">#2196f3</color> <color name="splash_icon_static_light">#64B5F6</color> <color name="splash_bg">#FFFFFF</color>
-    <color name="splash_icon_color">@color/ic_launcher_background</color>
+    <color name="ic_launcher_background">#2196f3</color>
+
+    <color name="splash_bg">#FFFFFF</color>
+    
+    <color name="splash_icon_color">#2196f3</color>
 </resources>
