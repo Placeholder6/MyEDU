@@ -59,8 +59,10 @@ class MainActivity : ComponentActivity() {
             val iconView = splashScreenView.iconView
             val splashView = splashScreenView.view
 
+            // Custom "Spring" Interpolator for expressive motion
             val expressiveInterpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
             
+            // 1. Icon shoots up and fades out
             val iconSlideUp = ObjectAnimator.ofFloat(
                 iconView,
                 View.TRANSLATION_Y,
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
                 duration = 300L
             }
 
+            // 2. Background fades out to reveal app
             val bgAlpha = ObjectAnimator.ofFloat(
                 splashView,
                 View.ALPHA,
@@ -93,42 +96,23 @@ class MainActivity : ComponentActivity() {
 
             iconSlideUp.start()
             iconAlpha.start()
+            
+            // Remove the splash view only after the background fade ends
             bgAlpha.doOnEnd { splashScreenView.remove() }
             bgAlpha.start()
         }
 
         enableEdgeToEdge()
 
-        // NOTE: Permission Request moved to Compose to prevent crash on first launch
-        
         setContent { 
+            // Initialize Alarm Manager for notifications
             LaunchedEffect(vm.fullSchedule, vm.timeMap) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
-            
-            // Handle Permissions in Compose
-            PermissionHandler()
 
             MyEduTheme { AppContent(vm) } 
-        }
-    }
-}
-
-@Composable
-fun PermissionHandler() {
-    val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { }
-    )
-    
-    LaunchedEffect(Unit) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
         }
     }
 }
@@ -156,6 +140,7 @@ fun AppContent(vm: MainViewModel) {
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
+            // Smooth crossfade to match the native splash fade-out
             fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
         }
     ) { state ->
@@ -177,6 +162,9 @@ data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
+    // REQUEST PERMISSIONS HERE - Only runs when user is safely inside the app
+    NotificationPermissionRequest()
+
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
@@ -267,6 +255,23 @@ fun MainAppStructure(vm: MainViewModel) {
                 dragHandle = { BottomSheetDefaults.DragHandle() }
             ) {
                 vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationPermissionRequest() {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+        onResult = { } // Logic is handled, no action needed on result
+    )
+    
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
