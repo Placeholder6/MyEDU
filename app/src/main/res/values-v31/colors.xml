@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- MONET OVERRIDES (Android 12+) -->
-    <!-- The system automatically injects the user's wallpaper colors here -->
+    <!-- MONET DYNAMIC COLORS (Android 12+) -->
+    <!-- These pull directly from the user's wallpaper palette -->
     
-    <!-- Light Mode Background: Neutral System Surface -->
-    <color name="splash_bg">@android:color/system_neutral1_50</color>
+    <!-- Background: System Accent 1, Level 100 (Subtle tint of the wallpaper) -->
+    <color name="splash_bg">@android:color/system_accent1_100</color>
     
-    <!-- Light Mode Icon: High Contrast Accent Color -->
+    <!-- Icon: System Accent 1, Level 600 (Vibrant, high-contrast version of the wallpaper color) -->
     <color name="splash_icon_color">@android:color/system_accent1_600</color>
 </resources>
+
+
