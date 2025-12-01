@@ -4,15 +4,9 @@
     android:viewportWidth="600"
     android:viewportHeight="600">
     
-    <!-- 
-      FIXED ALIGNMENT:
-      - scale: 0.75 (Large enough to be expressive, small enough to fit in the circle)
-      - pivotY: 100 (Matches original geometry origin)
-      - translateY: 200 (Crucial! Shifts the logo from top to center)
-    -->
     <group
-        android:scaleX="0.75"
-        android:scaleY="0.75"
+        android:scaleX="0.60"
+        android:scaleY="0.60"
         android:pivotX="300"
         android:pivotY="100"
         android:translateY="200">
@@ -26,5 +20,3 @@
             android:fillColor="@color/splash_icon_color" />
     </group>
 </vector>
-
-
