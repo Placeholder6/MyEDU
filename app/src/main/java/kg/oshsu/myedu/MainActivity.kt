@@ -1,9 +1,12 @@
 package kg.oshsu.myedu
 
 import android.Manifest
+import android.animation.ObjectAnimator
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.View
+import android.view.animation.PathInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -26,11 +29,11 @@ import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.screens.*
@@ -38,21 +41,65 @@ import kg.oshsu.myedu.ui.screens.*
 class MainActivity : ComponentActivity() {
     private val requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     
-    // Initialize ViewModel here so we can check state before setContent
     private val vm by viewModels<MainViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. Install Splash Screen (Must be before super.onCreate)
         val splashScreen = installSplashScreen()
-        
         super.onCreate(savedInstanceState)
         
-        // 2. Start initialization immediately
         vm.initSession(applicationContext)
 
-        // 3. Keep Splash Screen on screen until we are ready (not in STARTUP)
+        // Keep Splash Screen visible until App State moves past STARTUP
         splashScreen.setKeepOnScreenCondition {
             vm.appState == "STARTUP"
+        }
+
+        // --- MATERIAL EXPRESSIVE EXIT ANIMATION ---
+        splashScreen.setOnExitAnimationListener { splashScreenView ->
+            val iconView = splashScreenView.iconView
+            val splashView = splashScreenView.view
+
+            // 1. Icon Animation: "Spring Up and Out"
+            // Using an expressive cubic-bezier that mimics a spring snap
+            // (EaseOutBack-ish but smoother)
+            val expressiveInterpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
+            
+            val iconSlideUp = ObjectAnimator.ofFloat(
+                iconView,
+                View.TRANSLATION_Y,
+                0f,
+                -iconView.height.toFloat() * 1.5f // Move up significantly
+            ).apply {
+                interpolator = expressiveInterpolator
+                duration = 500L
+            }
+
+            val iconAlpha = ObjectAnimator.ofFloat(
+                iconView,
+                View.ALPHA,
+                1f,
+                0f
+            ).apply {
+                interpolator = expressiveInterpolator
+                duration = 300L
+            }
+
+            // 2. Background Animation: Reveal the app
+            val bgAlpha = ObjectAnimator.ofFloat(
+                splashView,
+                View.ALPHA,
+                1f,
+                0f
+            ).apply {
+                interpolator = expressiveInterpolator
+                duration = 500L
+            }
+
+            // Start animations
+            iconSlideUp.start()
+            iconAlpha.start()
+            bgAlpha.doOnEnd { splashScreenView.remove() }
+            bgAlpha.start()
         }
 
         enableEdgeToEdge()
@@ -98,14 +145,13 @@ fun AppContent(vm: MainViewModel) {
         targetState = vm.appState, 
         label = "Root",
         transitionSpec = {
-            // Slower fade for smooth entry from splash
-            fadeIn(animationSpec = tween(500)) togetherWith fadeOut(animationSpec = tween(500))
+            // Smooth crossfade to match the native splash fade-out
+            fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
         }
     ) { state ->
         when (state) {
             "LOGIN" -> LoginScreen(vm)
             "APP" -> MainAppStructure(vm)
-            // Fallback (rarely seen due to splash screen logic)
             else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
         }
     }
@@ -215,3 +261,5 @@ fun MainAppStructure(vm: MainViewModel) {
         }
     }
 }
+
+
