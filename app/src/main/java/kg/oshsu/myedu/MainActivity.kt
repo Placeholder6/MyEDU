@@ -61,6 +61,13 @@ class MainActivity : ComponentActivity() {
             val iconView = splashScreenView.iconView
             val splashView = splashScreenView.view
 
+            // FIX: Explicit null checks to prevent NPE on some devices
+            // iconView can be null if the system fails to resolve the icon or on specific ROMs
+            if (iconView == null || splashView == null) {
+                splashScreenView.remove()
+                return@setOnExitAnimationListener
+            }
+
             // CRITICAL SAFETY CHECK: 
             // If the view hasn't been measured yet (height=0), skip animation to prevent crash.
             if (splashView.height == 0 || iconView.height == 0) {
