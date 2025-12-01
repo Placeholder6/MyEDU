@@ -4,8 +4,6 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.view.View
-import android.view.animation.PathInterpolator
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,60 +41,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 1. Install Splash Screen (Must be first)
+        // This handles the transition from the Splash Theme to the App Theme automatically.
         val splashScreen = installSplashScreen()
         
         super.onCreate(savedInstanceState)
+        
+        // 2. Enable Edge-to-Edge (Mandatory for Android 15+)
         enableEdgeToEdge()
         
-        // 2. Init Data
+        // 3. Init Data
         vm.initSession(applicationContext)
 
-        // 3. Keep Splash Screen until App State isn't STARTUP
+        // 4. Keep Splash Screen until App State isn't STARTUP
+        // This holds the splash screen until we determine if the user is logged in or not.
         splashScreen.setKeepOnScreenCondition {
             vm.appState == "STARTUP"
-        }
-
-        // 4. Safe & Expressive Exit Animation
-        splashScreen.setOnExitAnimationListener { splashScreenView ->
-            val iconView = splashScreenView.iconView
-            val splashView = splashScreenView.view
-
-            // FIX: Explicit null checks to prevent NPE on some devices
-            // iconView can be null if the system fails to resolve the icon or on specific ROMs
-            if (iconView == null || splashView == null) {
-                splashScreenView.remove()
-                return@setOnExitAnimationListener
-            }
-
-            // CRITICAL SAFETY CHECK: 
-            // If the view hasn't been measured yet (height=0), skip animation to prevent crash.
-            if (splashView.height == 0 || iconView.height == 0) {
-                splashScreenView.remove()
-                return@setOnExitAnimationListener
-            }
-
-            // Material Expressive Interpolator (Spring-like)
-            val expressiveInterp = PathInterpolator(0.05f, 0.7f, 0.1f, 1.0f)
-            val duration = 500L
-
-            // Animate Icon: Slide Up + Fade Out
-            iconView.animate()
-                .translationY(-iconView.height.toFloat() * 1.5f)
-                .alpha(0f)
-                .setInterpolator(expressiveInterp)
-                .setDuration(duration)
-                .start()
-
-            // Animate Background: Fade Out
-            splashView.animate()
-                .alpha(0f)
-                .setInterpolator(expressiveInterp)
-                .setDuration(duration)
-                .withEndAction { 
-                    // Safely remove the view when animation completes
-                    splashScreenView.remove() 
-                }
-                .start()
         }
 
         setContent { 
@@ -157,8 +116,6 @@ data class NavItem(
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
-    // --- PERMISSION REQUEST (Only runs in APP state) ---
-    // This prevents the permission dialog from conflicting with Splash Screen on startup
     NotificationPermissionRequest()
 
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -264,7 +221,6 @@ fun NotificationPermissionRequest() {
         onResult = { }
     )
     
-    // LaunchedEffect ensures this runs once when the composable enters the composition
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
