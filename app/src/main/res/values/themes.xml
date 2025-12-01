@@ -8,12 +8,16 @@
 
     <!-- Splash Screen Theme -->
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <!-- These point to the dynamic colors defined in the various values folders -->
+        <!-- Background fills the window -->
         <item name="windowSplashScreenBackground">@color/splash_bg</item>
+        
+        <!-- The vector drawable that will be animated/displayed -->
         <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
         
+        <!-- Icon background is usually not needed for a full-bleed vector, but good for safety -->
+        <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+
+        <!-- Theme to switch to after splash -->
         <item name="postSplashScreenTheme">@style/Theme.MyEDU</item>
     </style>
 </resources>
-
-
