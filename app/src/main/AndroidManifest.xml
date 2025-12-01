@@ -23,18 +23,19 @@
         android:theme="@style/Theme.MyEDU"
         tools:targetApi="31">
         
+        <!-- Updated Theme to Starting Theme -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.MyEDU">
+            android:theme="@style/Theme.App.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- REGISTER THE RECEIVER HERE -->
         <receiver android:name=".NotificationReceiver" android:enabled="true" android:exported="false" />
         
     </application>
 </manifest>
+
