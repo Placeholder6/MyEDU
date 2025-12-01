@@ -97,7 +97,7 @@ fun AppContent(vm: MainViewModel) {
         when (state) {
             "LOGIN" -> LoginScreen(vm)
             "APP" -> MainAppStructure(vm)
-            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            else -> SplashScreen()
         }
     }
 }
