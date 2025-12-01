@@ -262,9 +262,10 @@ fun LoginScreen(vm: MainViewModel) {
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(50), 
+                    // FIXED: Reverted to Opaque Surface Color for readability
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                     ),
@@ -287,9 +288,10 @@ fun LoginScreen(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     shape = RoundedCornerShape(50),
+                    // FIXED: Reverted to Opaque Surface Color for readability
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                     ),
@@ -545,6 +547,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
         items.forEach { item ->
             val spin = rotation * item.direction
             
+            // Render at absolute calculated position
             Box(
                 modifier = Modifier
                     .offset(x = item.xOffset, y = item.yOffset)
