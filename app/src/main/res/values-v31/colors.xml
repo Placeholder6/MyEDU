@@ -1,13 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- MONET DYNAMIC COLORS (Android 12+) -->
-    <!-- These pull directly from the user's wallpaper palette -->
-    
-    <!-- Background: System Accent 1, Level 100 (Subtle tint of the wallpaper) -->
     <color name="splash_bg">@android:color/system_accent1_100</color>
     
-    <!-- Icon: System Accent 1, Level 600 (Vibrant, high-contrast version of the wallpaper color) -->
-    <color name="splash_icon_color">@android:color/system_accent1_600</color>
+    <color name="splash_icon_color">@color/ic_launcher_background</color>
 </resources>
-
-
