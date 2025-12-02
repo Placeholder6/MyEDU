@@ -135,8 +135,7 @@ fun MainAppStructure(vm: MainViewModel) {
     Box(modifier = Modifier.fillMaxSize()) {
         Scaffold(
             bottomBar = {
-                // ... (Navigation bar remains same)
-                 NavigationBar {
+                NavigationBar {
                     navItems.forEach { item ->
                         val isSelected = vm.currentTab == item.index
                         NavigationBarItem(
@@ -170,7 +169,6 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
         
-        // ... (Transcript/Ref overlays remain same)
         AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
         AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
         if (vm.selectedClass != null) {
