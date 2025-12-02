@@ -6,6 +6,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 class PrefsManager(context: Context) {
+    // @PublishedApi makes these accessible to the inline function below
     @PublishedApi
     internal val prefs: SharedPreferences = context.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
     
