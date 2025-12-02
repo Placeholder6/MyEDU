@@ -6,7 +6,6 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 class PrefsManager(context: Context) {
-    // @PublishedApi makes these accessible to the inline function below
     @PublishedApi
     internal val prefs: SharedPreferences = context.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
     
@@ -21,6 +20,29 @@ class PrefsManager(context: Context) {
     fun getToken(): String? {
         return prefs.getString("auth_token", null)
     }
+
+    // --- ONBOARDING & SETTINGS ---
+    fun setOnboardingComplete(done: Boolean) {
+        prefs.edit().putBoolean("onboarding_complete", done).apply()
+    }
+
+    fun isOnboardingComplete(): Boolean {
+        return prefs.getBoolean("onboarding_complete", false)
+    }
+
+    fun saveSettings(name: String?, photoUri: String?, theme: String, notifications: Boolean) {
+        prefs.edit()
+            .putString("custom_name", name)
+            .putString("custom_photo", photoUri)
+            .putString("app_theme", theme)
+            .putBoolean("notifications_enabled", notifications)
+            .apply()
+    }
+
+    fun getCustomName(): String? = prefs.getString("custom_name", null)
+    fun getCustomPhoto(): String? = prefs.getString("custom_photo", null)
+    fun getAppTheme(): String = prefs.getString("app_theme", "system") ?: "system"
+    fun areNotificationsEnabled(): Boolean = prefs.getBoolean("notifications_enabled", true)
 
     fun clearAll() {
         prefs.edit().clear().apply()
