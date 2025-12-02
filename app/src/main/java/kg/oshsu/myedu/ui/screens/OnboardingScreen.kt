@@ -39,6 +39,8 @@ import kg.oshsu.myedu.MainViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(vm: MainViewModel) {
+    val context = LocalContext.current // FIXED: Get context here instead of from ViewModel
+
     // State to hold temporary values before saving
     var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
     var photoUri by remember { mutableStateOf(vm.customPhotoUri) }
@@ -50,7 +52,8 @@ fun OnboardingScreen(vm: MainViewModel) {
     ) { uri ->
         if (uri != null) {
             val flag = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            vm.getApplication<android.app.Application>().contentResolver.takePersistableUriPermission(uri, flag)
+            // FIXED: Use local context contentResolver
+            context.contentResolver.takePersistableUriPermission(uri, flag)
             photoUri = uri.toString()
         }
     }
