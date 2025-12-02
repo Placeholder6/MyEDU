@@ -62,11 +62,8 @@ fun OnboardingScreen(vm: MainViewModel) {
         label = "ShapeMorph"
     )
 
-    // Using the PolygonShape from LoginScreen (Assuming it's accessible or copy logic here)
-    // We will stick to standard shapes for simplicity if PolygonShape isn't public, 
-    // but here we simulate the "Expressive" feel with standard RoundedCornerShape morphing
+    // Morph from 30% rounded (Squircle-ish) to 50% rounded (Circle)
     val containerShape = remember(shapeMorphProgress) {
-        // Morph from 30% rounded (Squircle-ish) to 50% rounded (Circle)
         RoundedCornerShape((30 + (20 * shapeMorphProgress)).toInt())
     }
 
@@ -246,7 +243,6 @@ fun ThemeOption(
         if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
         label = "ThemeContent"
     )
-    val borderStroke = if (selected) 2.dp else 0.dp // Simpler border logic
 
     Card(
         onClick = onClick,
