@@ -316,10 +316,8 @@ class MainViewModel : ViewModel() {
             cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
         }
     }
-    
-    // ... [PDF Generation methods remain unchanged but use API data] ...
+
     fun generateTranscriptPdf(context: Context, language: String) {
-        // ... (Logic uses userData and profileData directly, ignoring uiName/uiPhoto) ...
         if (isPdfGenerating) return
         val studentId = userData?.id ?: return
         
@@ -336,12 +334,15 @@ class MainViewModel : ViewModel() {
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
-                // ... (API Calls) ...
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                // ...
+                // Important: Use API data for PDF generation, not UI overrides
+                val infoJson = JSONObject(infoRaw)
+                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                infoJson.put("fullName", fullName)
+
                 val movId = profileData?.studentMovement?.id ?: 0L
                 val transcriptRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptDataRaw(studentId, movId).string() }
-                // ...
+
                 val keyRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string() }
                 val keyObj = JSONObject(keyRaw)
                 val linkId = keyObj.optLong("id")
@@ -349,9 +350,8 @@ class MainViewModel : ViewModel() {
                 
                 pdfStatusMessage = "Generating PDF..."
                 val generator = WebPdfGenerator(context)
-                // Passing raw infoRaw/transcriptRaw ensures we use API data
                 val bytes = generator.generatePdf(
-                    infoRaw, transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
+                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
@@ -372,8 +372,7 @@ class MainViewModel : ViewModel() {
     }
 
     fun generateReferencePdf(context: Context, language: String) {
-         // ... (Logic uses userData directly) ...
-         if (isPdfGenerating) return
+        if (isPdfGenerating) return
         val studentId = userData?.id ?: return
 
         viewModelScope.launch {
@@ -381,6 +380,7 @@ class MainViewModel : ViewModel() {
             pdfStatusMessage = "Preparing Reference ($language)..."
             try {
                 fetchDictionaryIfNeeded()
+
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
                     pdfStatusMessage = "Fetching Scripts..."
@@ -389,28 +389,30 @@ class MainViewModel : ViewModel() {
                 }
                 
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                // ...
-                val licenseRaw = withContext(Dispatchers.IO) { 
-                    // ... (API Calls)
-                    val infoJson = JSONObject(infoRaw)
-                    var specId = infoJson.optJSONObject("speciality")?.optInt("id") ?: 0
-                    if (specId == 0) specId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
-                    var eduFormId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
-                    if (eduFormId == 0) eduFormId = infoJson.optJSONObject("edu_form")?.optInt("id") ?: 0
-                    NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() 
-                }
+                val infoJson = JSONObject(infoRaw)
+                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                infoJson.put("fullName", fullName)
+
+                var specId = infoJson.optJSONObject("speciality")?.optInt("id") ?: 0
+                if (specId == 0) specId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
+                var eduFormId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
+                if (eduFormId == 0) eduFormId = infoJson.optJSONObject("edu_form")?.optInt("id") ?: 0
+
+                val licenseRaw = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
                 val univRaw = withContext(Dispatchers.IO) { NetworkClient.api.getUniversityInfo().string() }
+                
                 val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string() }
                 val linkObj = JSONObject(linkRaw)
                 val linkId = linkObj.optLong("id")
                 val qrUrl = linkObj.optString("url")
                 val key = linkObj.optString("key")
+
                 val token = prefs?.getToken() ?: ""
 
                 pdfStatusMessage = "Generating PDF..."
                 val generator = ReferencePdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoRaw, licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
+                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
