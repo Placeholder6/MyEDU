@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.screens
 
 import androidx.compose.animation.AnimatedContent
@@ -49,109 +50,15 @@ import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.OshSuLogo
+import kg.oshsu.myedu.ui.components.PolygonShape
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.sqrt
 import kotlin.random.Random
 
-// --- SHAPE LIBRARY IMPLEMENTATION ---
-object M3ExpressiveShapes {
-    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
-    fun verySunny(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 8,
-            innerRadius = 0.78f,
-            rounding = CornerRounding(radius = 0.15f), 
-            innerRounding = CornerRounding(radius = 0f) 
-        ).normalized()
-    }
-
-    // 2. "4 Sided Cookie": A 4-lobed shape
-    fun fourSidedCookie(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 4,
-            innerRadius = 0.5f,
-            rounding = CornerRounding(radius = 0.4f), 
-            innerRounding = CornerRounding(radius = 0.4f) 
-        ).normalized()
-    }
-
-    // 3. "12 Sided Cookie": 12-lobed shape for Login Success
-    fun twelveSidedCookie(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 12,
-            innerRadius = 0.8f,
-            rounding = CornerRounding(radius = 0.2f),
-            innerRounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-
-    // 4. "Pill": Standard stadium shape
-    fun pill(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 4,
-            rounding = CornerRounding(radius = 1.0f) 
-        ).normalized()
-    }
-
-    // 5. "Square": Standard rounded square
-    fun square(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 4,
-            rounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-
-    // 6. "Triangle": Rounded 3-sided shape
-    fun triangle(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 3,
-            rounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-
-    // 7. "Scallop": Wavy 10-sided shape
-    fun scallop(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 10,
-            innerRadius = 0.9f,
-            rounding = CornerRounding(radius = 0.5f),
-            innerRounding = CornerRounding(radius = 0.5f)
-        ).normalized()
-    }
-    
-    // 8. "Flower": 6-sided flower
-    fun flower(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 6,
-            innerRadius = 0.6f,
-            rounding = CornerRounding(radius = 0.8f),
-            innerRounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-}
-
-// Helper Class to convert RoundedPolygon to a Compose Shape
-class PolygonShape(private val polygon: RoundedPolygon) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val p = android.graphics.Path()
-        polygon.toPath(p) 
-        
-        val matrix = android.graphics.Matrix()
-        val bounds = android.graphics.RectF()
-        p.computeBounds(bounds, true)
-        
-        val scaleX = size.width / bounds.width()
-        val scaleY = size.height / bounds.height()
-        
-        matrix.postTranslate(-bounds.left, -bounds.top)
-        matrix.postScale(scaleX, scaleY)
-        p.transform(matrix)
-        
-        return Outline.Generic(p.asComposePath())
-    }
-}
+// --- SHAPE LIBRARY REMOVED (Moved to CommonUi.kt) ---
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -161,24 +68,10 @@ fun LoginScreen(vm: MainViewModel) {
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // WRAP IN BOX WITH CONSTRAINTS to calculate precise scale
+    // WRAP IN BOX WITH CONSTRAINTS
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        // --- SCALE CALCULATION ---
         val screenWidth = maxWidth
         val screenHeight = maxHeight
-        
-        // Calculate dynamic scale factor to cover the screen
-        val calculatedScale = remember(screenWidth, screenHeight) {
-            val widthVal = screenWidth.value
-            val heightVal = screenHeight.value
-            val screenDiagonal = sqrt((widthVal * widthVal) + (heightVal * heightVal))
-            val buttonRadius = 32f
-            val innerRadiusFactor = 0.8f 
-            val effectiveRadius = buttonRadius * innerRadiusFactor
-
-            // Required Scale = (ScreenDiagonal / 2) / EffectiveRadius
-            ((screenDiagonal / 2f) / effectiveRadius) * 1.1f
-        }
 
         // --- ANIMATIONS ---
         val verticalBias by animateFloatAsState(
@@ -199,9 +92,10 @@ fun LoginScreen(vm: MainViewModel) {
             label = "Width"
         )
 
+        // DISABLED ZOOM IN: kept scale at 1.0 (or slight pulse) to morph into photo on next screen
         val expandScale by animateFloatAsState(
-            targetValue = if (vm.isLoginSuccess) calculatedScale else 1f,
-            animationSpec = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+            targetValue = if (vm.isLoginSuccess) 1.2f else 1f,
+            animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
             label = "Expand"
         )
 
@@ -221,7 +115,6 @@ fun LoginScreen(vm: MainViewModel) {
         }
 
         // --- BACKGROUND SHAPES & ICONS ---
-        // Pass screen dimensions to trigger the generation algorithm
         ExpressiveShapesBackground(screenWidth, screenHeight)
 
         // --- FORM CONTENT ---
@@ -262,7 +155,6 @@ fun LoginScreen(vm: MainViewModel) {
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(50), 
-                    // FIXED: Reverted to Opaque Surface Color for readability
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -288,7 +180,6 @@ fun LoginScreen(vm: MainViewModel) {
                     modifier = Modifier.fillMaxWidth(),
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     shape = RoundedCornerShape(50),
-                    // FIXED: Reverted to Opaque Surface Color for readability
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedContainerColor = MaterialTheme.colorScheme.surface,
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
@@ -342,7 +233,6 @@ fun LoginScreen(vm: MainViewModel) {
                         if (!vm.isLoginSuccess) {
                             LoadingIndicator(
                                 modifier = Modifier.size(32.dp),
-                                // CHANGED: Now matches the Box color (Primary)
                                 color = MaterialTheme.colorScheme.primary 
                             )
                         }
@@ -496,6 +386,7 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
         }
 
         // 4. Map to Elements
+        // USES SHARED SHAPES NOW
         val elements = listOf(
             BgElement.Shape(M3ExpressiveShapes.verySunny()),
             BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()),
