@@ -15,6 +15,9 @@ class JsResourceFetcher {
     private val client = OkHttpClient()
     private val baseUrl = "https://myedu.oshsu.kg"
 
+    // Base64 transparent 1x1 pixel to prevent "Invalid image" crashes if signature fails
+    private val placeholderImage = "\"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=\""
+
     suspend fun fetchResources(logger: (String) -> Unit, language: String, dictionary: Map<String, String> = emptyMap()): PdfResources = withContext(Dispatchers.IO) {
         try {
             logger("Fetching index.html...")
@@ -34,7 +37,9 @@ class JsResourceFetcher {
             suspend fun linkModule(importRegex: Regex, exportRegex: Regex, finalVarName: String, fallbackValue: String) {
                 var success = false
                 try {
+                    // Try finding import in Transcript.js first, then Main.js
                     val fileNameMatch = importRegex.find(transcriptContent) ?: importRegex.find(mainJsContent)
+                    
                     if (fileNameMatch != null) {
                         val fileName = fileNameMatch.groupValues[1]
                         logger("Linking $finalVarName from $fileName")
@@ -44,27 +49,44 @@ class JsResourceFetcher {
                              fileContent = applyDictionary(fileContent, dictionary)
                         }
 
+                        // Extract the exported variable
                         val internalVarMatch = exportRegex.find(fileContent)
                         if (internalVarMatch != null) {
                             val internalVar = internalVarMatch.groupValues[1]
+                            // Remove export statements to avoid syntax errors in combined script
                             val cleanContent = fileContent.replace(Regex("""export\s*\{.*?\}"""), "")
                             dependencies.append("const $finalVarName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                             success = true
+                        } else {
+                            logger("WARN: Export match failed for $fileName")
                         }
+                    } else {
+                        logger("WARN: Module match failed for regex: ${importRegex.pattern}")
                     }
-                } catch (e: Exception) { logger("Link Error ($finalVarName): ${e.message}") }
+                } catch (e: Exception) { 
+                    logger("Link Error ($finalVarName): ${e.message}") 
+                }
 
-                if (!success) dependencies.append("const $finalVarName = $fallbackValue;\n")
+                if (!success) {
+                    logger("Using Fallback for $finalVarName")
+                    dependencies.append("const $finalVarName = $fallbackValue;\n")
+                }
             }
 
+            // Updated Regexes to be more permissive with whitespace and quotes
             linkModule(Regex("""from\s*["']\./(PdfStyle\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "J", "{}")
             linkModule(Regex("""from\s*["']\./(PdfFooter4\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+P\s*\}"""), "U", "()=>({})")
             linkModule(Regex("""from\s*["']\./(KeysValue\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+k\s*\}"""), "K", "(n)=>n")
-            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", "\"\"")
+            
+            // SPECIFIC FIX: Fallback to placeholder image if Signed module fails
+            linkModule(Regex("""from\s*["']\./(Signed\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+S\s*\}"""), "mt", placeholderImage)
+            
             linkModule(Regex("""from\s*["']\./(helpers\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*.*?(\w+)\s+as\s+e"""), "ct", "(...a)=>a.join(' ')")
             linkModule(Regex("""from\s*["']\./(ru\.[^"']+\.js)["']"""), Regex("""export\s*\{\s*(\w+)\s+as\s+r\s*\}"""), "T", "{}")
 
+            // --- Mock Missing Variables ---
             val varsToMock = mutableSetOf<String>()
+            // Find all imports in Transcript.js to identify variables that need mocking
             val importRegex = Regex("""import\s*\{(.*?)\}\s*from\s*['"].*?['"];?""")
             importRegex.findAll(transcriptContent).forEach { match ->
                 match.groupValues[1].split(",").forEach { item ->
@@ -73,10 +95,11 @@ class JsResourceFetcher {
                     if (varName.isNotBlank()) varsToMock.add(varName.trim())
                 }
             }
+            // Remove variables we explicitly linked above
             varsToMock.removeAll(setOf("J", "U", "K", "mt", "ct", "T", "$"))
 
             val dummyScript = StringBuilder()
-            // UPDATED: Robust UniversalDummy to fix "Cannot convert object to primitive value"
+            // FIXED: Robust UniversalDummy that handles primitive conversion (Fixes TypeError)
             dummyScript.append("""
                 const UniversalDummy = new Proxy(function(){}, {
                     get: function(target, prop) {
@@ -103,8 +126,9 @@ class JsResourceFetcher {
                 dummyScript.append(";\n")
             }
 
+            // Prepare Transcript Content
             var cleanTranscript = transcriptContent
-                .replace(importRegex, "") 
+                .replace(importRegex, "") // Remove imports
                 .replace(Regex("""export\s+default"""), "const TranscriptModule =")
                 .replace(Regex("""export\s*\{.*?\}"""), "")
 
@@ -113,6 +137,8 @@ class JsResourceFetcher {
                 cleanTranscript = applyDictionary(cleanTranscript, dictionary)
             }
 
+            // Expose the generator function
+            // Matches: const X = (C,a,c,d) => { ... }
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) "\nwindow.PDFGenerator = $funcNameMatch;" else ""
 
@@ -128,7 +154,6 @@ class JsResourceFetcher {
 
     private fun applyDictionary(script: String, dictionary: Map<String, String>): String {
         var s = script
-        // Iterate dictionary and replace matches
         dictionary.forEach { (ru, en) -> 
             if (ru.length > 1) { 
                 s = s.replace(ru, en) 
