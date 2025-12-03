@@ -80,7 +80,7 @@ class WebPdfGenerator(private val context: Context) {
                 const lang = "$language";
                 const dictionary = $dictionaryJson;
                 
-                // NOTE: 'const $' is REMOVED here because JsResourceFetcher now injects it dynamically
+                // NOTE: 'const $' is managed dynamically by JsResourceFetcher now.
             </script>
 
             <script>
@@ -140,6 +140,7 @@ class WebPdfGenerator(private val context: Context) {
                         AndroidBridge.log("JS: Driver started (" + lang + ")...");
                         translateData();
 
+                        // Robust GPA Logic
                         let totalCredits = 0, yearlyGpas = [];
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
@@ -148,9 +149,9 @@ class WebPdfGenerator(private val context: Context) {
                                     year.semesters.forEach(sem => {
                                         if (sem && sem.subjects) {
                                             sem.subjects.forEach(sub => {
-                                                totalCredits += (Number(sub.credit) || 0);
+                                                totalCredits += (parseFloat(sub.credit) || 0);
                                                 if (sub.exam_rule && sub.exam_rule.digital) {
-                                                    sub.exam_rule.digital = Math.ceil(Number(sub.exam_rule.digital) * 100) / 100;
+                                                    sub.exam_rule.digital = Math.ceil(parseFloat(sub.exam_rule.digital) * 100) / 100;
                                                 }
                                             });
                                         }
@@ -159,11 +160,11 @@ class WebPdfGenerator(private val context: Context) {
                                             r && r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
                                         ) : [];
 
-                                        const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
+                                        const examCredits = exams.reduce((acc, curr) => acc + (parseFloat(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
                                             const weightedSum = exams.reduce((acc, curr) => {
-                                                const dig = Number(curr.exam_rule.digital) || 0;
-                                                const cred = Number(curr.credit) || 0;
+                                                const dig = parseFloat(curr.exam_rule.digital) || 0;
+                                                const cred = parseFloat(curr.credit) || 0;
                                                 return acc + (dig * cred);
                                             }, 0);
                                             sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
