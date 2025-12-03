@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.screens
 
 import android.net.Uri
@@ -30,7 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -64,7 +64,8 @@ fun OnboardingScreen(
 
     val containerShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
     
-    val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
+    // Continuous rotation for the border ONLY
+    val infiniteTransition = rememberInfiniteTransition(label = "border_rot")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
         animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing)), 
@@ -99,30 +100,51 @@ fun OnboardingScreen(
 
             Spacer(Modifier.height(48.dp))
 
-            // 1. Photo Picker with CONTAINER TRANSFORM (Shared Element)
+            // 1. SHARED ELEMENT CONTAINER
             with(sharedTransitionScope) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        // CONTAINER TRANSFORM: Define this as the shared element (Destination)
                         .sharedElement(
-                            sharedContentState = rememberSharedContentState(key = "cookie_transform"), // FIX: Renamed 'state' to 'sharedContentState'
+                            sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
                         .size(120.dp)
-                        .rotate(rotation)
-                        .clip(containerShape)
-                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                        .border(2.dp, MaterialTheme.colorScheme.primary, containerShape)
                 ) {
-                    if (photoUri != null) {
-                        AsyncImage(model = photoUri, contentDescription = "Profile Photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
-                    } else {
-                        Icon(Icons.Default.Add, contentDescription = "Add Photo", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                    // LAYER 1: STATIC CONTENT (Image)
+                    // We clip to Circle to ensure it fits safely inside the rotating cookie frame.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(4.dp) // Slight padding to show the border clearly
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        if (photoUri != null) {
+                            AsyncImage(
+                                model = photoUri, 
+                                contentDescription = "Profile Photo", 
+                                contentScale = ContentScale.Crop, 
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Icon(Icons.Default.Add, contentDescription = "Add Photo", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
+
+                    // LAYER 2: ROTATING BORDER
+                    // This is an overlay that spins. It has no fill, only the border.
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .rotate(rotation) // Only this spins!
+                            .border(3.dp, MaterialTheme.colorScheme.primary, containerShape)
+                    )
                 }
             }
+            
             TextButton(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
                 Text(if (photoUri == null) "Add Photo" else "Change Photo")
             }
