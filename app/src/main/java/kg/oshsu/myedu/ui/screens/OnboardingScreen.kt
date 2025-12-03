@@ -51,7 +51,6 @@ fun OnboardingScreen(
 ) {
     val context = LocalContext.current
     var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
-    // Use API photo if available
     var photoUri by remember { mutableStateOf(vm.customPhotoUri ?: vm.uiPhoto?.toString()) }
     var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
@@ -65,7 +64,6 @@ fun OnboardingScreen(
 
     val containerShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
     
-    // Rotating effect for the profile picture to match the "morph"
     val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
@@ -108,11 +106,11 @@ fun OnboardingScreen(
                     modifier = Modifier
                         // CONTAINER TRANSFORM: Define this as the shared element (Destination)
                         .sharedElement(
-                            state = rememberSharedContentState(key = "cookie_transform"),
+                            sharedContentState = rememberSharedContentState(key = "cookie_transform"), // FIX: Renamed 'state' to 'sharedContentState'
                             animatedVisibilityScope = animatedContentScope
                         )
                         .size(120.dp)
-                        .rotate(rotation) // Rotating cookie shaped profile picture
+                        .rotate(rotation)
                         .clip(containerShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                         .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
