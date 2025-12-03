@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.components
 
 import androidx.compose.foundation.background
@@ -33,86 +34,27 @@ import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import kg.oshsu.myedu.ScheduleItem
 
-// --- SHARED SHAPE LIBRARY ---
 object M3ExpressiveShapes {
-    // 12 Sided Cookie for Container Transform
+    // FIXED: Adjusted parameters to avoid geometric crash
+    // innerRadius 0.85f provides enough gap for 0.05f rounding
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
             radius = 1f,
-            innerRadius = 0.8f,
-            rounding = CornerRounding(radius = 0.1f),      // Reduced from 0.2f
-            innerRounding = CornerRounding(radius = 0.1f)  // Reduced from 0.2f
+            innerRadius = 0.85f,
+            rounding = CornerRounding(radius = 0.05f),
+            innerRounding = CornerRounding(radius = 0.05f)
         ).normalized()
     }
 
-    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
-    fun verySunny(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 8,
-            radius = 1f,
-            innerRadius = 0.78f,
-            rounding = CornerRounding(radius = 0.15f), 
-            innerRounding = CornerRounding(radius = 0f) 
-        ).normalized()
-    }
-
-    // 2. "4 Sided Cookie": A 4-lobed shape
-    fun fourSidedCookie(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 4,
-            radius = 1f,
-            innerRadius = 0.5f,
-            rounding = CornerRounding(radius = 0.2f),      // Reduced from 0.4f
-            innerRounding = CornerRounding(radius = 0.2f)  // Reduced from 0.4f
-        ).normalized()
-    }
-
-    // 3. "Pill": Standard stadium shape (Created manually as star logic doesn't apply well to standard rects)
-    fun pill(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 4,
-            rounding = CornerRounding(radius = 1.0f) 
-        ).normalized()
-    }
-
-    // 4. "Square": Standard rounded square
-    fun square(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 4,
-            rounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-
-    // 5. "Triangle": Rounded 3-sided shape
-    fun triangle(): RoundedPolygon {
-        return RoundedPolygon(
-            numVertices = 3,
-            rounding = CornerRounding(radius = 0.2f)
-        ).normalized()
-    }
-
-    // 6. "Scallop": Wavy 10-sided shape
-    fun scallop(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 10,
-            radius = 1f,
-            innerRadius = 0.9f,
-            rounding = CornerRounding(radius = 0.1f),      // Reduced from 0.5f
-            innerRounding = CornerRounding(radius = 0.1f)  // Reduced from 0.5f
-        ).normalized()
-    }
-    
-    // 7. "Flower": 6-sided flower
-    fun flower(): RoundedPolygon {
-        return RoundedPolygon.star(
-            numVerticesPerRadius = 6,
-            radius = 1f,
-            innerRadius = 0.6f,
-            rounding = CornerRounding(radius = 0.2f),      // Reduced from 0.8f
-            innerRounding = CornerRounding(radius = 0.1f)  // Reduced from 0.2f
-        ).normalized()
-    }
+    // Other shapes with safe parameters
+    fun verySunny() = RoundedPolygon.star(8, 1f, 0.78f, rounding = CornerRounding(0.1f)).normalized()
+    fun fourSidedCookie() = RoundedPolygon.star(4, 1f, 0.5f, rounding = CornerRounding(0.2f), innerRounding = CornerRounding(0.2f)).normalized()
+    fun pill() = RoundedPolygon(4, rounding = CornerRounding(1.0f)).normalized()
+    fun square() = RoundedPolygon(4, rounding = CornerRounding(0.2f)).normalized()
+    fun triangle() = RoundedPolygon(3, rounding = CornerRounding(0.2f)).normalized()
+    fun scallop() = RoundedPolygon.star(10, 1f, 0.9f, rounding = CornerRounding(0.05f), innerRounding = CornerRounding(0.05f)).normalized()
+    fun flower() = RoundedPolygon.star(6, 1f, 0.6f, rounding = CornerRounding(0.1f), innerRounding = CornerRounding(0.1f)).normalized()
 }
 
 class PolygonShape(private val polygon: RoundedPolygon) : Shape {
@@ -131,6 +73,7 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
+// ... [Keep existing Composable functions: OshSuLogo, StatCard, ClassItem, InfoSection, DetailCard, ScoreColumn] ...
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
