@@ -79,14 +79,12 @@ class WebPdfGenerator(private val context: Context) {
                 const qrCodeUrl = "$qrUrl";
                 const lang = "$language";
                 const dictionary = $dictionaryJson;
-                
-                // Note: 'const $' is removed here because JsResourceFetcher links the real moment.js dynamically
             </script>
 
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts linked successfully.");
+                    AndroidBridge.log("JS: Scripts linked.");
                 } catch(e) { AndroidBridge.returnError("Script Init Error: " + e.message); }
             </script>
 
