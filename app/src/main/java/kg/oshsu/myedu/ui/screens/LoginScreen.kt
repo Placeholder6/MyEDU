@@ -163,7 +163,7 @@ fun LoginScreen(
                     modifier = Modifier
                         // CONTAINER TRANSFORM: Define this as the shared element
                         .sharedElement(
-                            state = rememberSharedContentState(key = "cookie_transform"),
+                            sharedContentState = rememberSharedContentState(key = "cookie_transform"), // FIX: Renamed 'state' to 'sharedContentState'
                             animatedVisibilityScope = animatedContentScope
                         )
                         .size(width = width, height = 64.dp)
