@@ -5,6 +5,7 @@ import okhttp3.Request
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// Data class needed by other files
 data class PdfResources(
     val combinedScript: String
 )
@@ -43,7 +44,8 @@ class JsResourceFetcher {
                 fallbackValue: String
             ) {
                 try {
-                    // Pattern: import { P as J } from "./PdfStyle.123.js"
+                    // Try to find what variable name the script uses for this module
+                    // Matches: import { P as J } from "./PdfStyle.123.js"
                     val regex = Regex("""import\s*\{\s*(\w+)\s+as\s+(\w+)\s*\}\s*from\s*["']\./($keyword\.[^"']+\.js)["']""")
                     val match = regex.find(transcriptContent)
 
@@ -64,7 +66,7 @@ class JsResourceFetcher {
 
                         dependencies.append("var $variableName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                     } else {
-                         // Fallback if file not found but variable is needed
+                         // Fallback if regex doesn't match (maybe different import style)
                          val fallbackRegex = Regex("""import\s*\{\s*$varNameFallback\s+as\s+(\w+)\s*\}""")
                          val fbMatch = fallbackRegex.find(transcriptContent)
                          if(fbMatch != null) {
@@ -76,29 +78,44 @@ class JsResourceFetcher {
                 }
             }
 
-            // 4. Handle Moment.js (The Date Formatter) explicitly
-            // This fixes the missing Date of Birth. We mock it with a real date formatter.
+            // 4. Handle Moment.js (Date Formatter) - THIS FIXES THE BIRTH DATE
+            // We check for 'import X from ...moment...' which is a default import.
             val momentRegex = Regex("""import\s+(\w+)\s+from\s*["']\./(moment\.[^"']+\.js)["']""")
             val momentMatch = momentRegex.find(transcriptContent)
             
             if (momentMatch != null) {
-                val varName = momentMatch.groupValues[1] // Likely "$"
-                logger("Linking Moment.js as '$varName'...")
+                val varName = momentMatch.groupValues[1] // This is likely "$"
+                val fileName = momentMatch.groupValues[2]
                 
-                // We inject a custom formatter that mimics moment.js behavior
-                val locale = if (language == "en") "en-US" else "ru-RU"
-                val momentMock = """
-                    var $varName = function(d) { 
-                        return { 
-                            format: function(f) { 
-                                var date = d ? new Date(d) : new Date();
-                                return date.toLocaleDateString("$locale"); 
-                            },
-                            locale: function() {}
-                        }; 
-                    };
-                """.trimIndent()
-                dependencies.append(momentMock).append("\n")
+                logger("Linking Moment.js as '$varName'...")
+                try {
+                    val fileContent = fetchString("$baseUrl/assets/$fileName")
+                    // Find what is exported as default (e.g., "export default x")
+                    val internalVar = findExportedDefaultName(fileContent) ?: "function(d){return{format:function(){return'';}}}"
+                    val cleanContent = cleanJsContent(fileContent)
+                    
+                    dependencies.append("var $varName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
+                } catch (e: Exception) {
+                    logger("Moment fetch failed. Using Mock.")
+                    // Fallback Mock for Moment if download fails
+                    val mockMoment = """
+                        var $varName = function(d) { 
+                            return { 
+                                format: function(f) { 
+                                    try {
+                                        var date = d ? new Date(d) : new Date();
+                                        var day = ("0" + date.getDate()).slice(-2);
+                                        var month = ("0" + (date.getMonth() + 1)).slice(-2);
+                                        var year = date.getFullYear();
+                                        return day + "." + month + "." + year; 
+                                    } catch(e) { return ""; }
+                                },
+                                locale: function() {}
+                            }; 
+                        };
+                    """.trimIndent()
+                    dependencies.append(mockMoment).append("\n")
+                }
             }
 
             // 5. Link other dependencies
@@ -109,7 +126,7 @@ class JsResourceFetcher {
             linkModule("helpers", "e", "(...a)=>a.join(' ')")
             linkModule("ru", "r", "{}")
 
-            // 6. Mock everything else with UniversalDummy
+            // 6. Mock any remaining missing imports to prevent "is not defined" errors
             val dummyScript = StringBuilder()
             dummyScript.append("""
                 const UniversalDummy = new Proxy(function(){}, {
@@ -124,7 +141,6 @@ class JsResourceFetcher {
                 });
             """.trimIndent())
 
-            // Find all named imports to mock
             val allImports = Regex("""import\s*\{(.*?)\}\s*from""").findAll(transcriptContent)
             allImports.forEach { m ->
                 m.groupValues[1].split(",").forEach { 
@@ -138,7 +154,7 @@ class JsResourceFetcher {
                 }
             }
 
-            // 7. Prepare final script
+            // 7. Assemble Final Script
             var cleanTranscript = cleanJsContent(transcriptContent)
             if (language == "en") {
                 cleanTranscript = applyDictionary(cleanTranscript, dictionary)
@@ -168,14 +184,19 @@ class JsResourceFetcher {
         if (regexDirect.containsMatchIn(content)) return exportName
         return null
     }
+    
+    // NEW: Logic to find default exports (critical for moment.js)
+    private fun findExportedDefaultName(content: String): String? {
+        // Pattern: export default variableName;
+        val regexDefault = Regex("""export\s+default\s+(\w+)""")
+        regexDefault.find(content)?.let { return it.groupValues[1] }
+        return null
+    }
 
     private fun cleanJsContent(content: String): String {
         return content
-            // Remove named imports: import { ... } from ...
             .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?""", RegexOption.DOT_MATCHES_ALL), "")
-            // Remove default imports: import X from ...
             .replace(Regex("""import\s+\w+\s+from\s*['"].*?['"];?"""), "")
-            // Remove exports
             .replace(Regex("""export\s*\{.*?\}""", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("""export\s+default"""), "")
     }
