@@ -76,7 +76,27 @@ class JsResourceFetcher {
             varsToMock.removeAll(setOf("J", "U", "K", "mt", "ct", "T", "$"))
 
             val dummyScript = StringBuilder()
-            dummyScript.append("const UniversalDummy = new Proxy(function(){}, { get: () => UniversalDummy, apply: () => UniversalDummy, construct: () => UniversalDummy });\n")
+            // UPDATED: Robust UniversalDummy to fix "Cannot convert object to primitive value"
+            dummyScript.append("""
+                const UniversalDummy = new Proxy(function(){}, {
+                    get: function(target, prop) {
+                        if (prop === Symbol.toPrimitive) {
+                            return function(hint) {
+                                if (hint === 'number') return 0;
+                                return "";
+                            };
+                        }
+                        if (prop === "toString") return function() { return ""; };
+                        if (prop === "valueOf") return function() { return 0; };
+                        if (prop === "length") return 0; 
+                        return UniversalDummy;
+                    },
+                    apply: function() { return UniversalDummy; },
+                    construct: function() { return UniversalDummy; }
+                });
+            """.trimIndent())
+            dummyScript.append("\n")
+
             if (varsToMock.isNotEmpty()) {
                 dummyScript.append("var ")
                 dummyScript.append(varsToMock.joinToString(",") { "$it = UniversalDummy" })
