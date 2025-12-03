@@ -79,6 +79,7 @@ class WebPdfGenerator(private val context: Context) {
                 const lang = "$language";
                 const dictionary = $dictionaryJson;
 
+                // Mock Date formatter used by Vue/JS
                 const ${'$'} = function(d) { return { format: (f) => (d ? new Date(d) : new Date()).toLocaleDateString("$dateLocale") }; };
                 ${'$'}.locale = function() {};
             </script>
@@ -86,8 +87,8 @@ class WebPdfGenerator(private val context: Context) {
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts linked.");
-                } catch(e) { AndroidBridge.returnError("Script Error: " + e.message); }
+                    AndroidBridge.log("JS: Scripts loaded.");
+                } catch(e) { AndroidBridge.returnError("Script Init Error: " + e.message); }
             </script>
 
             <script>
@@ -105,26 +106,20 @@ class WebPdfGenerator(private val context: Context) {
 
                 function translateData() {
                     if (lang !== "en") return;
+                    // Basic translation logic
+                    if(studentInfo.faculty_ru) studentInfo.faculty_ru = translateString(studentInfo.faculty_ru);
+                    if(studentInfo.speciality_ru) studentInfo.speciality_ru = translateString(studentInfo.speciality_ru);
+                    if(studentInfo.direction_ru) studentInfo.direction_ru = translateString(studentInfo.direction_ru);
                     
-                    ["faculty_ru", "direction_ru", "speciality_ru"].forEach(field => {
-                        if (studentInfo[field]) studentInfo[field] = translateString(studentInfo[field]);
-                    });
-                    
-                    if (studentInfo.lastStudentMovement?.edu_form?.name_ru) {
-                        studentInfo.lastStudentMovement.edu_form.name_ru = translateString(studentInfo.lastStudentMovement.edu_form.name_ru);
-                    }
-
                     if(Array.isArray(transcriptData)) {
                         transcriptData.forEach(year => {
                             if(year.semesters) year.semesters.forEach(sem => {
                                 if (sem.semester) {
                                     const semWord = dictionary["семестр"] || "Semester";
                                     sem.semester = sem.semester.replace(/(\d+)\s*-\s*семестр/g, semWord + " ${'$'}1");
-                                    sem.semester = translateString(sem.semester);
                                 }
                                 if(sem.subjects) sem.subjects.forEach(sub => {
                                     if(sub.exam) sub.exam = translateString(sub.exam);
-                                    if(sub.exam_rule?.word_ru) sub.exam_rule.word_ru = translateString(sub.exam_rule.word_ru);
                                 });
                             });
                         });
@@ -133,9 +128,14 @@ class WebPdfGenerator(private val context: Context) {
 
                 function startGeneration() {
                     try {
+                        if (typeof window.PDFGenerator !== 'function') {
+                             throw "PDFGenerator function not found. The Transcript script likely failed to initialize.";
+                        }
+
                         AndroidBridge.log("JS: Driver started (" + lang + ")...");
                         translateData();
 
+                        // Calculate GPA/Credits (Robust Mode)
                         let totalCredits = 0, yearlyGpas = [];
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
@@ -144,27 +144,28 @@ class WebPdfGenerator(private val context: Context) {
                                     year.semesters.forEach(sem => {
                                         if (sem && sem.subjects) {
                                             sem.subjects.forEach(sub => {
-                                                totalCredits += (Number(sub.credit) || 0);
+                                                totalCredits += (parseFloat(sub.credit) || 0);
                                                 if (sub.exam_rule && sub.exam_rule.digital) {
-                                                    sub.exam_rule.digital = Math.ceil(Number(sub.exam_rule.digital) * 100) / 100;
+                                                    sub.exam_rule.digital = Math.ceil(parseFloat(sub.exam_rule.digital) * 100) / 100;
                                                 }
                                             });
-                                        }
-                                        const keyword = dictionary["Экзамен"] || "Exam";
-                                        const exams = sem.subjects ? sem.subjects.filter(r => 
-                                            r && r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
-                                        ) : [];
 
-                                        const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
-                                        if (exams.length > 0 && examCredits > 0) {
-                                            const weightedSum = exams.reduce((acc, curr) => {
-                                                const dig = Number(curr.exam_rule.digital) || 0;
-                                                const cred = Number(curr.credit) || 0;
-                                                return acc + (dig * cred);
-                                            }, 0);
-                                            sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
-                                            semGpas.push(sem.gpa);
-                                        } else { sem.gpa = 0; }
+                                            const keyword = dictionary["Экзамен"] || "Exam";
+                                            const exams = sem.subjects.filter(r => 
+                                                r && r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
+                                            );
+
+                                            const examCredits = exams.reduce((acc, curr) => acc + (parseFloat(curr.credit)||0), 0);
+                                            if (exams.length > 0 && examCredits > 0) {
+                                                const weightedSum = exams.reduce((acc, curr) => {
+                                                    const dig = parseFloat(curr.exam_rule.digital) || 0;
+                                                    const cred = parseFloat(curr.credit) || 0;
+                                                    return acc + (dig * cred);
+                                                }, 0);
+                                                sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
+                                                semGpas.push(sem.gpa);
+                                            } else { sem.gpa = 0; }
+                                        }
                                     });
                                 }
                                 const validSems = semGpas.filter(g => g > 0);
@@ -180,6 +181,7 @@ class WebPdfGenerator(private val context: Context) {
                         
                         const stats = [totalCredits, cumulativeGpa, new Date().toLocaleDateString("$dateLocale")];
 
+                        // Call the extracted generator function
                         const docDef = window.PDFGenerator(transcriptData, studentInfo, stats, qrCodeUrl);
                         pdfMake.createPdf(docDef).getBase64(b64 => AndroidBridge.returnPdf(b64));
                         
