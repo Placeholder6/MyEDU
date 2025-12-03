@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.screens
 
 import androidx.compose.animation.AnimatedContent
@@ -11,12 +12,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -27,37 +28,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Outline
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.asComposePath
-import androidx.compose.ui.graphics.drawscope.Fill
-import androidx.compose.ui.graphics.drawscope.scale 
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
-import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.star
-import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kg.oshsu.myedu.ui.components.PolygonShape
 import kotlin.math.abs
 import kotlin.math.hypot
-import kotlin.math.sqrt
 import kotlin.random.Random
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class)
@@ -76,26 +61,37 @@ fun LoginScreen(
         val screenWidth = maxWidth
         val screenHeight = maxHeight
 
-        // --- ANIMATIONS ---
+        // 1. Vertical Bias: Center the button when loading/success
         val verticalBias by animateFloatAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
             label = "VerticalBias"
         )
 
-        val containerColor by animateColorAsState(
-            targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
-            animationSpec = tween(300),
-            label = "ColorFade"
-        )
-
+        // 2. Width: Wide Pill -> Small Circle/Cookie
         val width by animateDpAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "Width"
         )
 
-        // Rotation Animation
+        // 3. Shape Morph: Pill -> Circle (Loader) -> Cookie (Success)
+        val buttonShape = remember(vm.isLoginSuccess, vm.isLoading) {
+            when {
+                vm.isLoginSuccess -> PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
+                vm.isLoading -> CircleShape
+                else -> RoundedCornerShape(100)
+            }
+        }
+        
+        // 4. Color Morph: Primary -> Transparent (Loader) -> Primary (Success)
+        val containerColor by animateColorAsState(
+            targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
+            animationSpec = tween(300),
+            label = "ColorFade"
+        )
+
+        // 5. Rotation: Only spin the cookie on success (before transition)
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
             animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
@@ -107,11 +103,6 @@ fun LoginScreen(
             animationSpec = tween(400)
         )
 
-        val buttonShape = remember(vm.isLoginSuccess) {
-            if (vm.isLoginSuccess) PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) else RoundedCornerShape(100)
-        }
-
-        // --- BACKGROUND ---
         ExpressiveShapesBackground(screenWidth, screenHeight)
 
         // --- FORM CONTENT ---
@@ -123,10 +114,8 @@ fun LoginScreen(
             Spacer(Modifier.height(48.dp))
             OshSuLogo(modifier = Modifier.width(160.dp).height(80.dp))
             Spacer(Modifier.height(32.dp))
-            
             Text("Welcome Back", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             Text("Sign in to your account", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            
             Spacer(Modifier.height(48.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
@@ -136,7 +125,6 @@ fun LoginScreen(
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }), singleLine = true
                 )
-
                 OutlinedTextField(
                     value = pass, onValueChange = { pass = it }, label = { Text("Password") }, leadingIcon = { Icon(Icons.Default.Lock, null) },
                     trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) } },
@@ -155,15 +143,14 @@ fun LoginScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // --- LOGIN BUTTON (SOURCE OF MORPH) ---
+        // --- BUTTON / LOADER / COOKIE (Shared Element Source) ---
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = BiasAlignment(0f, verticalBias)) {
             with(sharedTransitionScope) {
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
-                        // CONTAINER TRANSFORM: Define this as the shared element
                         .sharedElement(
-                            sharedContentState = rememberSharedContentState(key = "cookie_transform"), // FIX: Renamed 'state' to 'sharedContentState'
+                            sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
                         .size(width = width, height = 64.dp)
@@ -172,11 +159,18 @@ fun LoginScreen(
                         .background(containerColor)
                         .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
                 ) {
-                    AnimatedContent(targetState = vm.isLoading || vm.isLoginSuccess, label = "ContentMorph") { isActivating ->
-                        if (isActivating) {
-                            if (!vm.isLoginSuccess) LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary)
-                        } else {
-                            Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                    AnimatedContent(
+                        targetState = when {
+                            vm.isLoginSuccess -> 2
+                            vm.isLoading -> 1
+                            else -> 0
+                        }, 
+                        label = "ContentMorph"
+                    ) { state ->
+                        when(state) {
+                            0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                            1 -> CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
+                            2 -> Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
                 }
@@ -185,7 +179,7 @@ fun LoginScreen(
     }
 }
 
-// ... [Keep BgElement, SimItem, BgItem, and ExpressiveShapesBackground] ...
+// ... [Keep Background Logic] ...
 sealed class BgElement {
     data class Shape(val polygon: RoundedPolygon) : BgElement()
     data class Icon(val imageVector: ImageVector) : BgElement()
