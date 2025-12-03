@@ -80,13 +80,13 @@ class WebPdfGenerator(private val context: Context) {
                 const lang = "$language";
                 const dictionary = $dictionaryJson;
                 
-                // NOTE: 'const $' is managed dynamically by JsResourceFetcher now.
+                // Note: 'const $' is removed here because JsResourceFetcher links the real moment.js dynamically
             </script>
 
             <script>
                 try {
                     ${resources.combinedScript}
-                    AndroidBridge.log("JS: Scripts loaded.");
+                    AndroidBridge.log("JS: Scripts linked successfully.");
                 } catch(e) { AndroidBridge.returnError("Script Init Error: " + e.message); }
             </script>
 
@@ -140,7 +140,6 @@ class WebPdfGenerator(private val context: Context) {
                         AndroidBridge.log("JS: Driver started (" + lang + ")...");
                         translateData();
 
-                        // Robust GPA Logic
                         let totalCredits = 0, yearlyGpas = [];
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
