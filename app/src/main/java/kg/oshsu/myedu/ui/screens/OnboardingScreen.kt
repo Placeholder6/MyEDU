@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.screens
 
 import android.net.Uri
@@ -35,40 +36,43 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
+import kg.oshsu.myedu.ui.components.PolygonShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OnboardingScreen(vm: MainViewModel) {
-    val context = LocalContext.current // FIXED: Get context here instead of from ViewModel
+    val context = LocalContext.current
 
     // State to hold temporary values before saving
     var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
-    var photoUri by remember { mutableStateOf(vm.customPhotoUri) }
-    var theme by remember { mutableStateOf(vm.appTheme) } // "system", "light", "dark"
+    // CHANGE: Use API photo as default (via vm.uiPhoto) if custom photo isn't set yet
+    var photoUri by remember { mutableStateOf(vm.customPhotoUri ?: vm.uiPhoto?.toString()) }
+    var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
+
+    // Entry Animation: Scale the photo up from 0.8f to 1f (simulates the morph completion)
+    var isVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { isVisible = true }
+    
+    val photoScale by animateFloatAsState(
+        targetValue = if (isVisible) 1f else 0.5f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "PhotoEntry"
+    )
 
     val photoPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         if (uri != null) {
             val flag = android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-            // FIXED: Use local context contentResolver
             context.contentResolver.takePersistableUriPermission(uri, flag)
             photoUri = uri.toString()
         }
     }
 
-    // Animation: Shape Morphing State (Star -> Circle when photo selected)
-    val shapeMorphProgress by animateFloatAsState(
-        targetValue = if (photoUri != null) 1f else 0f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
-        label = "ShapeMorph"
-    )
-
-    // Morph from 30% rounded (Squircle-ish) to 50% rounded (Circle)
-    val containerShape = remember(shapeMorphProgress) {
-        RoundedCornerShape((30 + (20 * shapeMorphProgress)).toInt())
-    }
+    // CHANGE: Use Shared 12-Sided Cookie Shape
+    val containerShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
 
     Scaffold(
         bottomBar = {
@@ -115,13 +119,13 @@ fun OnboardingScreen(vm: MainViewModel) {
 
             Spacer(Modifier.height(48.dp))
 
-            // 1. Photo Picker with Expressive Animation
+            // 1. Photo Picker with Expressive Morph & Shape
             Box(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .size(120.dp)
-                    .scale(1f + (0.1f * shapeMorphProgress)) // Slight pulse on selection
-                    .clip(containerShape)
+                    .scale(photoScale) // Animates entry to match login exit
+                    .clip(containerShape) // 12 Sided Cookie
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh)
                     .clickable { 
                         photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) 
