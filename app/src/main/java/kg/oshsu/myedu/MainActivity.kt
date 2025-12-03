@@ -50,7 +50,6 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent { 
-            // Alarm Manager: Checks pref before scheduling
             LaunchedEffect(vm.fullSchedule, vm.timeMap, vm.notificationsEnabled) {
                 if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty() && vm.notificationsEnabled) {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
@@ -86,35 +85,34 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = colorScheme, content = content)
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppContent(vm: MainViewModel) {
-    AnimatedContent(
-        targetState = vm.appState, 
-        label = "Root",
-        transitionSpec = {
-            fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
-        }
-    ) { state ->
-        when (state) {
-            "LOGIN" -> LoginScreen(vm)
-            "ONBOARDING" -> OnboardingScreen(vm)
-            "APP" -> MainAppStructure(vm)
-            else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
+    // WRAPPER: Enable Container Transforms
+    SharedTransitionLayout {
+        AnimatedContent(
+            targetState = vm.appState, 
+            label = "Root",
+            transitionSpec = {
+                fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+            }
+        ) { state ->
+            when (state) {
+                // Pass Shared scopes to enable the cookie morph
+                "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                "APP" -> MainAppStructure(vm)
+                else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
+            }
         }
     }
 }
 
-data class NavItem(
-    val label: String, 
-    val selectedIcon: ImageVector, 
-    val unselectedIcon: ImageVector,
-    val index: Int
-)
+data class NavItem(val label: String, val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val index: Int)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
-    // --- PERMISSION REQUEST (Only runs in APP state) ---
     NotificationPermissionRequest()
 
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -141,9 +139,7 @@ fun MainAppStructure(vm: MainViewModel) {
                         NavigationBarItem(
                             selected = isSelected,
                             onClick = { vm.currentTab = item.index },
-                            icon = {
-                                Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label)
-                            },
+                            icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
                             label = { Text(item.label) }
                         )
                     }
@@ -154,10 +150,7 @@ fun MainAppStructure(vm: MainViewModel) {
                 AnimatedContent(
                     targetState = vm.currentTab,
                     label = "TabTransition",
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(300)) togetherWith 
-                        fadeOut(animationSpec = tween(300))
-                    }
+                    transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) }
                 ) { targetTab ->
                     when(targetTab) {
                         0 -> HomeScreen(vm)
@@ -180,11 +173,7 @@ fun MainAppStructure(vm: MainViewModel) {
 @Composable
 fun NotificationPermissionRequest() {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { }
-    )
-    
+    val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.RequestPermission(), onResult = { })
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
