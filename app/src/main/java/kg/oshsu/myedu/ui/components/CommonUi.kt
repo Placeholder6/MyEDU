@@ -1,3 +1,4 @@
+
 package kg.oshsu.myedu.ui.components
 
 import androidx.compose.foundation.background
@@ -10,18 +11,126 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.star
+import androidx.graphics.shapes.toPath
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import kg.oshsu.myedu.ScheduleItem
+
+// --- SHARED SHAPE LIBRARY ---
+object M3ExpressiveShapes {
+    // 1. "Very Sunny": A 8-pointed star with sharp inner cuts
+    fun verySunny(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 8,
+            innerRadius = 0.78f,
+            rounding = CornerRounding(radius = 0.15f), 
+            innerRounding = CornerRounding(radius = 0f) 
+        ).normalized()
+    }
+
+    // 2. "4 Sided Cookie": A 4-lobed shape
+    fun fourSidedCookie(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 4,
+            innerRadius = 0.5f,
+            rounding = CornerRounding(radius = 0.4f), 
+            innerRounding = CornerRounding(radius = 0.4f) 
+        ).normalized()
+    }
+
+    // 3. "12 Sided Cookie": 12-lobed shape for Login Success
+    fun twelveSidedCookie(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 12,
+            innerRadius = 0.8f,
+            rounding = CornerRounding(radius = 0.2f),
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    // 4. "Pill": Standard stadium shape
+    fun pill(): RoundedPolygon {
+        return RoundedPolygon(
+            numVertices = 4,
+            rounding = CornerRounding(radius = 1.0f) 
+        ).normalized()
+    }
+
+    // 5. "Square": Standard rounded square
+    fun square(): RoundedPolygon {
+        return RoundedPolygon(
+            numVertices = 4,
+            rounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    // 6. "Triangle": Rounded 3-sided shape
+    fun triangle(): RoundedPolygon {
+        return RoundedPolygon(
+            numVertices = 3,
+            rounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    // 7. "Scallop": Wavy 10-sided shape
+    fun scallop(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 10,
+            innerRadius = 0.9f,
+            rounding = CornerRounding(radius = 0.5f),
+            innerRounding = CornerRounding(radius = 0.5f)
+        ).normalized()
+    }
+    
+    // 8. "Flower": 6-sided flower
+    fun flower(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 6,
+            innerRadius = 0.6f,
+            rounding = CornerRounding(radius = 0.8f),
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+}
+
+// Helper Class to convert RoundedPolygon to a Compose Shape
+class PolygonShape(private val polygon: RoundedPolygon) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val p = android.graphics.Path()
+        polygon.toPath(p) 
+        
+        val matrix = android.graphics.Matrix()
+        val bounds = android.graphics.RectF()
+        p.computeBounds(bounds, true)
+        
+        val scaleX = size.width / bounds.width()
+        val scaleY = size.height / bounds.height()
+        
+        matrix.postTranslate(-bounds.left, -bounds.top)
+        matrix.postScale(scaleX, scaleY)
+        p.transform(matrix)
+        
+        return Outline.Generic(p.asComposePath())
+    }
+}
 
 // Extracted from MainActivity.kt
 @Composable
