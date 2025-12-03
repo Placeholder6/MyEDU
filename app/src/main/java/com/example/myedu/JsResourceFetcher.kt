@@ -36,17 +36,14 @@ class JsResourceFetcher {
 
             val dependencies = StringBuilder()
 
-            // 3. Dynamic Linking Function
-            // Scans transcriptContent for imports and downloads them
+            // 3. Helper to link specific modules
             suspend fun linkModule(
                 keyword: String, 
                 varNameFallback: String, 
                 fallbackValue: String
             ) {
                 try {
-                    // Try to find what variable name the script uses for this module
-                    // Matches: import { P as J } from "./PdfStyle.123.js"  -> captures "J" and "PdfStyle.123.js"
-                    // Also matches: import { k as X } from "./KeysValue.abc.js"
+                    // Pattern: import { P as J } from "./PdfStyle.123.js"
                     val regex = Regex("""import\s*\{\s*(\w+)\s+as\s+(\w+)\s*\}\s*from\s*["']\./($keyword\.[^"']+\.js)["']""")
                     val match = regex.find(transcriptContent)
 
@@ -59,21 +56,15 @@ class JsResourceFetcher {
                         var fileContent = fetchString("$baseUrl/assets/$fileName")
 
                         if (language == "en") {
-                            fileContent = applyDictionary(fileContent, dictionary)
+                             fileContent = applyDictionary(fileContent, dictionary)
                         }
-
-                        // Find the internal variable inside the file to export
-                        val internalVar = findExportedInternalName(fileContent, internalExportName) ?: "{}"
                         
-                        // Clean the file (remove imports/exports)
+                        val internalVar = findExportedInternalName(fileContent, internalExportName) ?: "{}"
                         val cleanContent = cleanJsContent(fileContent)
 
-                        // Wrap in a closure and assign to the variable expected by Transcript.js
                         dependencies.append("var $variableName = (() => {\n$cleanContent\nreturn $internalVar;\n})();\n")
                     } else {
-                        // If not found, try to find just the variable name to assign a fallback
-                         logger("WARN: $keyword not imported. Using fallback.")
-                         // Use a simpler regex to guess the variable name if the file wasn't found
+                         // Fallback if file not found but variable is needed
                          val fallbackRegex = Regex("""import\s*\{\s*$varNameFallback\s+as\s+(\w+)\s*\}""")
                          val fbMatch = fallbackRegex.find(transcriptContent)
                          if(fbMatch != null) {
@@ -81,23 +72,45 @@ class JsResourceFetcher {
                          }
                     }
                 } catch (e: Exception) {
-                    logger("Link Error ($keyword): ${e.message}")
+                    logger("Link Warn ($keyword): ${e.message}")
                 }
             }
 
-            // 4. Link known modules dynamically
-            // The fetcher will look for the actual filename in Transcript.js
+            // 4. Handle Moment.js (The Date Formatter) explicitly
+            // This fixes the missing Date of Birth. We mock it with a real date formatter.
+            val momentRegex = Regex("""import\s+(\w+)\s+from\s*["']\./(moment\.[^"']+\.js)["']""")
+            val momentMatch = momentRegex.find(transcriptContent)
+            
+            if (momentMatch != null) {
+                val varName = momentMatch.groupValues[1] // Likely "$"
+                logger("Linking Moment.js as '$varName'...")
+                
+                // We inject a custom formatter that mimics moment.js behavior
+                val locale = if (language == "en") "en-US" else "ru-RU"
+                val momentMock = """
+                    var $varName = function(d) { 
+                        return { 
+                            format: function(f) { 
+                                var date = d ? new Date(d) : new Date();
+                                return date.toLocaleDateString("$locale"); 
+                            },
+                            locale: function() {}
+                        }; 
+                    };
+                """.trimIndent()
+                dependencies.append(momentMock).append("\n")
+            }
+
+            // 5. Link other dependencies
             linkModule("PdfStyle", "P", "{}")
             linkModule("PdfFooter4", "P", "()=>({})")
             linkModule("KeysValue", "k", "(n)=>n")
-            linkModule("Signed", "S", placeholderImage) // Fallback to empty image prevents crash
+            linkModule("Signed", "S", placeholderImage)
             linkModule("helpers", "e", "(...a)=>a.join(' ')")
             linkModule("ru", "r", "{}")
 
-            // 5. Mock any remaining missing imports to prevent "is not defined" errors
-            // This handles 'moment.js' (aliased as $) or others automatically
+            // 6. Mock everything else with UniversalDummy
             val dummyScript = StringBuilder()
-            // Robust Proxy that handles numbers and strings safely
             dummyScript.append("""
                 const UniversalDummy = new Proxy(function(){}, {
                     get: function(target, prop) {
@@ -111,14 +124,13 @@ class JsResourceFetcher {
                 });
             """.trimIndent())
 
-            // Find all imports like: import { $ as e, ... } from ...
+            // Find all named imports to mock
             val allImports = Regex("""import\s*\{(.*?)\}\s*from""").findAll(transcriptContent)
             allImports.forEach { m ->
                 m.groupValues[1].split(",").forEach { 
                     val parts = it.trim().split(Regex("""\s+as\s+"""))
                     if (parts.size == 2) {
                         val varName = parts[1].trim()
-                        // Only mock if we haven't already defined it in 'dependencies'
                         if (!dependencies.contains("var $varName =")) {
                             dummyScript.append("\nvar $varName = UniversalDummy;")
                         }
@@ -126,13 +138,12 @@ class JsResourceFetcher {
                 }
             }
 
-            // 6. Prepare final Transcript script
+            // 7. Prepare final script
             var cleanTranscript = cleanJsContent(transcriptContent)
             if (language == "en") {
                 cleanTranscript = applyDictionary(cleanTranscript, dictionary)
             }
 
-            // 7. Expose the Generator function (usually found at the end)
             val funcNameMatch = findMatch(cleanTranscript, """(\w+)\s*=\s*\(C,a,c,d\)""")
             val exposeCode = if (funcNameMatch != null) "\nwindow.PDFGenerator = $funcNameMatch;" else ""
 
@@ -148,32 +159,30 @@ class JsResourceFetcher {
     }
 
     private fun findExportedInternalName(content: String, exportName: String): String? {
-        // Case 1: export { internal as P }
         val regexAs = Regex("""export\s*\{\s*(\w+)\s+as\s+$exportName\s*\}""")
         regexAs.find(content)?.let { return it.groupValues[1] }
         
-        // Case 2: export { P }
         if (content.contains("export { $exportName }") || content.contains("export {$exportName}")) return exportName
         
-        // Case 3: export { ..., P, ... }
         val regexDirect = Regex("""export\s*\{[^}]*\b$exportName\b[^}]*\}""")
         if (regexDirect.containsMatchIn(content)) return exportName
-
         return null
     }
 
     private fun cleanJsContent(content: String): String {
         return content
-            .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?"""), "")
-            .replace(Regex("""export\s*\{.*?\}"""), "")
+            // Remove named imports: import { ... } from ...
+            .replace(Regex("""import\s*\{.*?\}\s*from\s*['"].*?['"];?""", RegexOption.DOT_MATCHES_ALL), "")
+            // Remove default imports: import X from ...
+            .replace(Regex("""import\s+\w+\s+from\s*['"].*?['"];?"""), "")
+            // Remove exports
+            .replace(Regex("""export\s*\{.*?\}""", RegexOption.DOT_MATCHES_ALL), "")
             .replace(Regex("""export\s+default"""), "")
     }
 
     private fun applyDictionary(script: String, dictionary: Map<String, String>): String {
         var s = script
-        dictionary.forEach { (ru, en) -> 
-            if (ru.length > 1) s = s.replace(ru, en) 
-        }
+        dictionary.forEach { (ru, en) -> if (ru.length > 1) s = s.replace(ru, en) }
         return s
     }
 
