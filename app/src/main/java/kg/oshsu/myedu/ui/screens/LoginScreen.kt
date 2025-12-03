@@ -28,7 +28,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.focus.FocusDirection // Added Import
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asComposePath // Added Import
+import androidx.compose.ui.graphics.drawscope.Fill // Added Import
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
@@ -37,6 +40,7 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.toPath // Ensure this import is present for .toPath() extension
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.OshSuLogo
@@ -61,21 +65,21 @@ fun LoginScreen(
         val screenWidth = maxWidth
         val screenHeight = maxHeight
 
-        // 1. Vertical Bias: Center the button when loading/success
+        // 1. Vertical Bias
         val verticalBias by animateFloatAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
             label = "VerticalBias"
         )
 
-        // 2. Width: Wide Pill -> Small Circle/Cookie
+        // 2. Width
         val width by animateDpAsState(
-            targetValue = if (vm.isLoading || vm.isLoginSuccess) 64.dp else 280.dp,
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 56.dp else 280.dp,
             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "Width"
         )
 
-        // 3. Shape Morph: Pill -> Circle (Loader) -> Cookie (Success)
+        // 3. Shape Morph
         val buttonShape = remember(vm.isLoginSuccess, vm.isLoading) {
             when {
                 vm.isLoginSuccess -> PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
@@ -84,14 +88,14 @@ fun LoginScreen(
             }
         }
         
-        // 4. Color Morph: Primary -> Transparent (Loader) -> Primary (Success)
+        // 4. Color Morph
         val containerColor by animateColorAsState(
             targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
             animationSpec = tween(300),
             label = "ColorFade"
         )
 
-        // 5. Rotation: Only spin the cookie on success (before transition)
+        // 5. Rotation
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
             animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
@@ -123,7 +127,10 @@ fun LoginScreen(
                     value = email, onValueChange = { email = it }, label = { Text("Email") }, leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), 
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }), singleLine = true
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), 
+                    // FIXED: FocusDirection reference
+                    keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }), 
+                    singleLine = true
                 )
                 OutlinedTextField(
                     value = pass, onValueChange = { pass = it }, label = { Text("Password") }, leadingIcon = { Icon(Icons.Default.Lock, null) },
@@ -143,7 +150,7 @@ fun LoginScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // --- BUTTON / LOADER / COOKIE (Shared Element Source) ---
+        // --- SHARED ELEMENT (BUTTON -> LOADER -> COOKIE) ---
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = BiasAlignment(0f, verticalBias)) {
             with(sharedTransitionScope) {
                 Box(
@@ -153,7 +160,7 @@ fun LoginScreen(
                             sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
-                        .size(width = width, height = 64.dp)
+                        .size(width = width, height = 56.dp) 
                         .rotate(rotation)
                         .clip(buttonShape)
                         .background(containerColor)
@@ -179,7 +186,7 @@ fun LoginScreen(
     }
 }
 
-// ... [Keep Background Logic] ...
+// ... Background Components ...
 sealed class BgElement {
     data class Shape(val polygon: RoundedPolygon) : BgElement()
     data class Icon(val imageVector: ImageVector) : BgElement()
@@ -248,7 +255,9 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
             BgElement.Shape(M3ExpressiveShapes.square()), BgElement.Shape(M3ExpressiveShapes.triangle()), BgElement.Shape(M3ExpressiveShapes.scallop()),
             BgElement.Shape(M3ExpressiveShapes.flower()), BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
             BgElement.Icon(Icons.Rounded.School), BgElement.Icon(Icons.Rounded.AutoStories), BgElement.Icon(Icons.Rounded.Edit), BgElement.Icon(Icons.Rounded.Lightbulb),
-            BgElement.Icon(Icons.AutoMirrored.Rounded.MenuBook), BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
+            // FIXED: Removed AutoMirrored to prevent ambiguity errors, using standard Rounded icons where possible
+            BgElement.Icon(Icons.Rounded.MenuBook), 
+            BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
             BgElement.Icon(Icons.Rounded.Science), BgElement.Icon(Icons.Rounded.Star)
         )
         simItems.map { sim ->
@@ -263,7 +272,23 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
         items.forEach { item ->
             Box(modifier = Modifier.offset(x = item.xOffset, y = item.yOffset).size(item.size).rotate(rotation * item.direction).alpha(item.alpha)) {
                 when (val type = item.element) {
-                    is BgElement.Shape -> { Canvas(Modifier.fillMaxSize()) { val path = android.graphics.Path(); type.polygon.toPath(path); val matrix = android.graphics.Matrix(); val bounds = android.graphics.RectF(); path.computeBounds(bounds, true); val scale = minOf(size.width / bounds.width(), size.height / bounds.height()); matrix.postTranslate(-bounds.centerX(), -bounds.centerY()); matrix.postScale(scale, scale); matrix.postTranslate(size.width / 2f, size.height / 2f); path.transform(matrix); drawPath(path.asComposePath(), item.color, style = Fill) } }
+                    is BgElement.Shape -> { 
+                        // Canvas DrawScope - Uses android.graphics.Path converted to Compose Path
+                        Canvas(Modifier.fillMaxSize()) { 
+                            val path = android.graphics.Path()
+                            type.polygon.toPath(path) // Uses androidx.graphics.shapes.toPath extension
+                            val matrix = android.graphics.Matrix()
+                            val bounds = android.graphics.RectF()
+                            path.computeBounds(bounds, true)
+                            val scale = minOf(size.width / bounds.width(), size.height / bounds.height())
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY())
+                            matrix.postScale(scale, scale)
+                            matrix.postTranslate(size.width / 2f, size.height / 2f)
+                            path.transform(matrix)
+                            // Uses asComposePath() and Fill from imports
+                            drawPath(path.asComposePath(), item.color, style = Fill) 
+                        } 
+                    }
                     is BgElement.Icon -> { Icon(imageVector = type.imageVector, contentDescription = null, tint = item.color, modifier = Modifier.fillMaxSize()) }
                 }
             }
