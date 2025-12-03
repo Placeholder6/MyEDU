@@ -140,9 +140,9 @@ class WebPdfGenerator(private val context: Context) {
                         if (Array.isArray(transcriptData)) {
                             transcriptData.forEach(year => {
                                 let semGpas = [];
-                                if (year.semesters) {
+                                if (year && year.semesters) {
                                     year.semesters.forEach(sem => {
-                                        if (sem.subjects) {
+                                        if (sem && sem.subjects) {
                                             sem.subjects.forEach(sub => {
                                                 totalCredits += (Number(sub.credit) || 0);
                                                 if (sub.exam_rule && sub.exam_rule.digital) {
@@ -152,12 +152,16 @@ class WebPdfGenerator(private val context: Context) {
                                         }
                                         const keyword = dictionary["Экзамен"] || "Exam";
                                         const exams = sem.subjects ? sem.subjects.filter(r => 
-                                            r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
+                                            r && r.exam_rule && r.mark_list && r.exam && (r.exam.includes("Экзамен") || r.exam.includes(keyword))
                                         ) : [];
 
                                         const examCredits = exams.reduce((acc, curr) => acc + (Number(curr.credit)||0), 0);
                                         if (exams.length > 0 && examCredits > 0) {
-                                            const weightedSum = exams.reduce((acc, curr) => acc + (curr.exam_rule.digital * (Number(curr.credit)||0)), 0);
+                                            const weightedSum = exams.reduce((acc, curr) => {
+                                                const dig = Number(curr.exam_rule.digital) || 0;
+                                                const cred = Number(curr.credit) || 0;
+                                                return acc + (dig * cred);
+                                            }, 0);
                                             sem.gpa = Math.ceil((weightedSum / examCredits) * 100) / 100;
                                             semGpas.push(sem.gpa);
                                         } else { sem.gpa = 0; }
