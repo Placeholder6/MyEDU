@@ -34,18 +34,18 @@ import coil.decode.SvgDecoder
 import kg.oshsu.myedu.ScheduleItem
 
 object M3ExpressiveShapes {
-    // RESTORED: Exact "Cookie" parameters from initial upload (Material 3 Guidelines)
+    // RESTORED: Exact "Cookie" parameters (Material 3 Expressive Guidelines)
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
+            radius = 1f,
             innerRadius = 0.8f,
             rounding = CornerRounding(radius = 0.2f),
             innerRounding = CornerRounding(radius = 0.2f)
         ).normalized()
     }
 
-    // FIXED: Adjusted "4 Sided Cookie" to prevent "innerRadius must be less than radius" crash
-    // Reduced rounding slightly to fit geometric constraints while maintaining the look.
+    // FIXED: Adjusted "4 Sided Cookie" to prevent geometric crash
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -79,7 +79,7 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// ... [CommonUi Composable functions unchanged] ...
+// ... [Keep existing Composable functions: OshSuLogo, StatCard, ClassItem, InfoSection, DetailCard, ScoreColumn] ...
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
