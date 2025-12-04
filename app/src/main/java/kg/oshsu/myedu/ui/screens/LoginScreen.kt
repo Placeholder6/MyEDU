@@ -1,4 +1,3 @@
-
 package kg.oshsu.myedu.ui.screens
 
 import androidx.compose.animation.AnimatedContent
@@ -28,10 +27,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.focus.FocusDirection // Added Import
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asComposePath // Added Import
-import androidx.compose.ui.graphics.drawscope.Fill // Added Import
+import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalDensity
@@ -40,7 +39,7 @@ import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.RoundedPolygon
-import androidx.graphics.shapes.toPath // Ensure this import is present for .toPath() extension
+import androidx.graphics.shapes.toPath
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.OshSuLogo
@@ -65,21 +64,20 @@ fun LoginScreen(
         val screenWidth = maxWidth
         val screenHeight = maxHeight
 
-        // 1. Vertical Bias
         val verticalBias by animateFloatAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
             animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessLow),
             label = "VerticalBias"
         )
 
-        // 2. Width
+        // Width animates to 56dp (Circle/Cookie size) on loading/success
         val width by animateDpAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 56.dp else 280.dp,
             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "Width"
         )
 
-        // 3. Shape Morph
+        // Shape: Pill -> Circle -> Cookie
         val buttonShape = remember(vm.isLoginSuccess, vm.isLoading) {
             when {
                 vm.isLoginSuccess -> PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
@@ -88,14 +86,13 @@ fun LoginScreen(
             }
         }
         
-        // 4. Color Morph
         val containerColor by animateColorAsState(
             targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
             animationSpec = tween(300),
             label = "ColorFade"
         )
 
-        // 5. Rotation
+        // Rotate only when it's a cookie (Success)
         val rotation by animateFloatAsState(
             targetValue = if (vm.isLoginSuccess) 360f else 0f,
             animationSpec = tween(durationMillis = 2000, easing = LinearEasing),
@@ -109,7 +106,6 @@ fun LoginScreen(
 
         ExpressiveShapesBackground(screenWidth, screenHeight)
 
-        // --- FORM CONTENT ---
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp).alpha(contentAlpha).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -128,7 +124,6 @@ fun LoginScreen(
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), 
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), 
-                    // FIXED: FocusDirection reference
                     keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }), 
                     singleLine = true
                 )
@@ -150,7 +145,6 @@ fun LoginScreen(
             Spacer(Modifier.weight(1f))
         }
 
-        // --- SHARED ELEMENT (BUTTON -> LOADER -> COOKIE) ---
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = BiasAlignment(0f, verticalBias)) {
             with(sharedTransitionScope) {
                 Box(
@@ -176,7 +170,7 @@ fun LoginScreen(
                     ) { state ->
                         when(state) {
                             0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                            1 -> CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.primary)
+                            1 -> CircularProgressIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) // Restored 32dp
                             2 -> Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
@@ -186,7 +180,7 @@ fun LoginScreen(
     }
 }
 
-// ... Background Components ...
+// ... [BgElement, SimItem, BgItem, and ExpressiveShapesBackground] ...
 sealed class BgElement {
     data class Shape(val polygon: RoundedPolygon) : BgElement()
     data class Icon(val imageVector: ImageVector) : BgElement()
@@ -255,7 +249,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
             BgElement.Shape(M3ExpressiveShapes.square()), BgElement.Shape(M3ExpressiveShapes.triangle()), BgElement.Shape(M3ExpressiveShapes.scallop()),
             BgElement.Shape(M3ExpressiveShapes.flower()), BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
             BgElement.Icon(Icons.Rounded.School), BgElement.Icon(Icons.Rounded.AutoStories), BgElement.Icon(Icons.Rounded.Edit), BgElement.Icon(Icons.Rounded.Lightbulb),
-            // FIXED: Removed AutoMirrored to prevent ambiguity errors, using standard Rounded icons where possible
             BgElement.Icon(Icons.Rounded.MenuBook), 
             BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
             BgElement.Icon(Icons.Rounded.Science), BgElement.Icon(Icons.Rounded.Star)
@@ -273,10 +266,9 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
             Box(modifier = Modifier.offset(x = item.xOffset, y = item.yOffset).size(item.size).rotate(rotation * item.direction).alpha(item.alpha)) {
                 when (val type = item.element) {
                     is BgElement.Shape -> { 
-                        // Canvas DrawScope - Uses android.graphics.Path converted to Compose Path
                         Canvas(Modifier.fillMaxSize()) { 
                             val path = android.graphics.Path()
-                            type.polygon.toPath(path) // Uses androidx.graphics.shapes.toPath extension
+                            type.polygon.toPath(path)
                             val matrix = android.graphics.Matrix()
                             val bounds = android.graphics.RectF()
                             path.computeBounds(bounds, true)
@@ -285,7 +277,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
                             matrix.postScale(scale, scale)
                             matrix.postTranslate(size.width / 2f, size.height / 2f)
                             path.transform(matrix)
-                            // Uses asComposePath() and Fill from imports
                             drawPath(path.asComposePath(), item.color, style = Fill) 
                         } 
                     }
