@@ -165,7 +165,7 @@ class MainViewModel : ViewModel() {
                     // 3. Trigger Morph Animation
                     isLoginSuccess = true
                     // IMMEDIATE MORPH: Very short delay (50ms) to allow frame update
-                    delay(50) 
+                    delay(200) 
 
                     // Check Onboarding
                     if (prefs?.isOnboardingComplete() == true) {
