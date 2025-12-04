@@ -70,11 +70,18 @@ fun LoginScreen(
             label = "VerticalBias"
         )
 
-        // Width animates: Wide (Sign In) -> Small (Loader/Cookie)
+        // 2. Width: Wide Pill (280dp) -> Exact Loader Size (32dp)
         val width by animateDpAsState(
-            targetValue = if (vm.isLoading || vm.isLoginSuccess) 56.dp else 280.dp,
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 32.dp else 280.dp,
             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "Width"
+        )
+
+        // 3. Height: Standard Pill (56dp) -> Exact Loader Size (32dp)
+        val height by animateDpAsState(
+            targetValue = if (vm.isLoading || vm.isLoginSuccess) 32.dp else 56.dp,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+            label = "Height"
         )
 
         // Shape Morph: Pill -> Circle (Loader) -> Cookie (Success)
@@ -157,7 +164,7 @@ fun LoginScreen(
                             sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
-                        .size(width = width, height = 56.dp) 
+                        .size(width = width, height = height) // Animate both dimensions
                         .rotate(rotation)
                         .clip(buttonShape)
                         .background(containerColor)
@@ -174,7 +181,7 @@ fun LoginScreen(
                         when(state) {
                             0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                             1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) 
-                            // FIXED: Removed Tick Icon. Just an empty Box to show the shape before morphing.
+                            // 2: Empty Box (Cookie Shape) - No Icon, just the shape preparing to morph
                             2 -> Box(Modifier.fillMaxSize()) 
                         }
                     }
