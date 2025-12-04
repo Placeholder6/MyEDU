@@ -70,14 +70,14 @@ fun LoginScreen(
             label = "VerticalBias"
         )
 
-        // Width animates to 56dp (Circle/Cookie size) on loading/success
+        // Width animates: Wide (Sign In) -> Small (Loader/Cookie)
         val width by animateDpAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 56.dp else 280.dp,
             animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
             label = "Width"
         )
 
-        // Shape: Pill -> Circle -> Cookie
+        // Shape Morph: Pill -> Circle (Loader) -> Cookie (Success)
         val buttonShape = remember(vm.isLoginSuccess, vm.isLoading) {
             when {
                 vm.isLoginSuccess -> PolygonShape(M3ExpressiveShapes.twelveSidedCookie())
@@ -86,6 +86,7 @@ fun LoginScreen(
             }
         }
         
+        // Color Morph: Primary -> Transparent (Loader) -> Primary (Success)
         val containerColor by animateColorAsState(
             targetValue = if (vm.isLoading && !vm.isLoginSuccess) Color.Transparent else MaterialTheme.colorScheme.primary,
             animationSpec = tween(300),
@@ -106,6 +107,7 @@ fun LoginScreen(
 
         ExpressiveShapesBackground(screenWidth, screenHeight)
 
+        // --- FORM CONTENT ---
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp).alpha(contentAlpha).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -145,6 +147,7 @@ fun LoginScreen(
             Spacer(Modifier.weight(1f))
         }
 
+        // --- SHARED ELEMENT (BUTTON -> LOADER -> COOKIE) ---
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = BiasAlignment(0f, verticalBias)) {
             with(sharedTransitionScope) {
                 Box(
@@ -170,8 +173,8 @@ fun LoginScreen(
                     ) { state ->
                         when(state) {
                             0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                            1 -> CircularProgressIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) // Restored 32dp
-                            2 -> Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.onPrimary)
+                            1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) // Expressive Loading Indicator
+                            2 -> Box(Modifier.fillMaxSize()) // Empty Cookie (No Tick)
                         }
                     }
                 }
