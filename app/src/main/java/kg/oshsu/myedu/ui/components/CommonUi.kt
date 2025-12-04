@@ -45,7 +45,8 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // FIXED: Adjusted "4 Sided Cookie" to prevent geometric crash
+    // FIXED: Adjusted "4 Sided Cookie" to prevent "innerRadius must be less than radius" crash
+    // Reduced rounding slightly to fit geometric constraints while maintaining the look.
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -79,7 +80,7 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// ... [Keep existing Composable functions: OshSuLogo, StatCard, ClassItem, InfoSection, DetailCard, ScoreColumn] ...
+// ... [CommonUi Composable functions unchanged] ...
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
