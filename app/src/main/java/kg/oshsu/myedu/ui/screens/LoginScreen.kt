@@ -173,8 +173,9 @@ fun LoginScreen(
                     ) { state ->
                         when(state) {
                             0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
-                            1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) // Expressive Loading Indicator
-                            2 -> Box(Modifier.fillMaxSize()) // Empty Cookie (No Tick)
+                            1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) 
+                            // FIXED: Removed Tick Icon. Just an empty Box to show the shape before morphing.
+                            2 -> Box(Modifier.fillMaxSize()) 
                         }
                     }
                 }
