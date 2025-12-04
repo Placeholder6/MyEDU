@@ -1,4 +1,3 @@
-
 package kg.oshsu.myedu.ui.screens
 
 import android.net.Uri
@@ -31,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -64,7 +64,6 @@ fun OnboardingScreen(
 
     val containerShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
     
-    // Continuous rotation for the border ONLY
     val infiniteTransition = rememberInfiniteTransition(label = "border_rot")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 360f,
@@ -72,7 +71,9 @@ fun OnboardingScreen(
         label = "slow_rot"
     )
 
+    // TRANSPARENT BACKGROUND
     Scaffold(
+        containerColor = Color.Transparent, 
         bottomBar = {
             Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
                 Box(Modifier.padding(24.dp)) {
@@ -100,7 +101,7 @@ fun OnboardingScreen(
 
             Spacer(Modifier.height(48.dp))
 
-            // 1. SHARED ELEMENT CONTAINER
+            // SHARED ELEMENT CONTAINER
             with(sharedTransitionScope) {
                 Box(
                     contentAlignment = Alignment.Center,
@@ -112,12 +113,10 @@ fun OnboardingScreen(
                         .size(120.dp)
                         .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                 ) {
-                    // LAYER 1: STATIC CONTENT (Image)
-                    // We clip to Circle to ensure it fits safely inside the rotating cookie frame.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .padding(4.dp) // Slight padding to show the border clearly
+                            .padding(4.dp)
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
@@ -134,12 +133,10 @@ fun OnboardingScreen(
                         }
                     }
 
-                    // LAYER 2: ROTATING BORDER
-                    // This is an overlay that spins. It has no fill, only the border.
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .rotate(rotation) // Only this spins!
+                            .rotate(rotation)
                             .border(3.dp, MaterialTheme.colorScheme.primary, containerShape)
                     )
                 }
