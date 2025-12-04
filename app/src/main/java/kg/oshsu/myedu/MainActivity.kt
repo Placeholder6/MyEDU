@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
 
 class MainActivity : ComponentActivity() {
@@ -88,21 +89,31 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppContent(vm: MainViewModel) {
-    // WRAPPER: Enable Container Transforms
-    SharedTransitionLayout {
-        AnimatedContent(
-            targetState = vm.appState, 
-            label = "Root",
-            transitionSpec = {
-                fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
-            }
-        ) { state ->
-            when (state) {
-                // Pass Shared scopes to enable the cookie morph
-                "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
-                "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
-                "APP" -> MainAppStructure(vm)
-                else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
+    // 1. Root Container to hold persistent background
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        
+        // 2. Persistent Background Layer
+        // Only show if in Login or Onboarding to avoid visual noise in the main app
+        if (vm.appState == "LOGIN" || vm.appState == "ONBOARDING") {
+            ExpressiveShapesBackground(maxWidth, maxHeight)
+        }
+
+        // 3. Shared Transition Layout
+        SharedTransitionLayout {
+            AnimatedContent(
+                targetState = vm.appState, 
+                label = "Root",
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+                }
+            ) { state ->
+                when (state) {
+                    // Pass Shared scopes
+                    "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                    "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                    "APP" -> MainAppStructure(vm)
+                    else -> Box(Modifier.fillMaxSize()) 
+                }
             }
         }
     }
@@ -130,7 +141,7 @@ fun MainAppStructure(vm: MainViewModel) {
         NavItem("Profile", Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
             bottomBar = {
                 NavigationBar {
