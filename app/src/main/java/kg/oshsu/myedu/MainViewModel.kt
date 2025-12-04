@@ -162,9 +162,10 @@ class MainViewModel : ViewModel() {
                         e.printStackTrace()
                     }
 
-                    // 3. Trigger Expansion Animation
+                    // 3. Trigger Morph Animation
                     isLoginSuccess = true
-                    delay(1000) 
+                    // FIXED: Reduced delay to 500ms for immediate morph feeling
+                    delay(500) 
 
                     // Check Onboarding
                     if (prefs?.isOnboardingComplete() == true) {
