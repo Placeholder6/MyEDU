@@ -1,27 +1,36 @@
 package kg.oshsu.myedu.ui.components
 
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.graphics.shapes.CornerRounding
@@ -32,9 +41,11 @@ import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
 import kg.oshsu.myedu.ScheduleItem
+import kotlin.math.abs
+import kotlin.math.hypot
+import kotlin.random.Random
 
 object M3ExpressiveShapes {
-    // RESTORED: Exact "Cookie" parameters (Material 3 Expressive Guidelines)
     fun twelveSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -45,8 +56,6 @@ object M3ExpressiveShapes {
         ).normalized()
     }
 
-    // FIXED: Adjusted "4 Sided Cookie" to prevent "innerRadius must be less than radius" crash
-    // Reduced rounding slightly to fit geometric constraints while maintaining the look.
     fun fourSidedCookie(): RoundedPolygon {
         return RoundedPolygon.star(
             numVerticesPerRadius = 4,
@@ -80,7 +89,114 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// ... [CommonUi Composable functions unchanged] ...
+// --- BACKGROUND COMPONENTS (Moved from LoginScreen) ---
+sealed class BgElement {
+    data class Shape(val polygon: RoundedPolygon) : BgElement()
+    data class Icon(val imageVector: ImageVector) : BgElement()
+}
+private data class SimItem(val id: Int, var x: Float, var y: Float, var size: Float, var speed: Float, var active: Boolean = true)
+data class BgItem(val element: BgElement, val xOffset: Dp, val yOffset: Dp, val size: Dp, val color: Color, val alpha: Float, val direction: Float)
+
+@Composable
+fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
+    val density = LocalDensity.current
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val errorContainer = MaterialTheme.colorScheme.errorContainer
+    val inversePrimary = MaterialTheme.colorScheme.inversePrimary
+    val colors = listOf(primary, secondary, tertiary, surfaceVariant, errorContainer, inversePrimary)
+
+    val items = remember(maxWidth, maxHeight) {
+        val w = with(density) { maxWidth.toPx() }
+        val h = with(density) { maxHeight.toPx() }
+        val targetCellSize = with(density) { 140.dp.toPx() }
+        val cols = (w / targetCellSize).toInt().coerceAtLeast(3)
+        val rows = (h / targetCellSize).toInt().coerceAtLeast(5)
+        val cellW = w / cols
+        val cellH = h / rows
+        val simItems = mutableListOf<SimItem>()
+        var idCounter = 0
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cx = c * cellW + cellW / 2
+                val cy = r * cellH + cellH / 2
+                val jitterX = (Random.nextFloat() - 0.5f) * cellW * 0.8f
+                val jitterY = (Random.nextFloat() - 0.5f) * cellH * 0.8f
+                simItems.add(SimItem(idCounter++, cx + jitterX, cy + jitterY, 50f, Random.nextFloat() * 1.0f + 0.5f, true))
+            }
+        }
+        val maxIterations = 200
+        val rotSafeFactor = 1.45f 
+        for (i in 0 until maxIterations) {
+            var anyGrowing = false
+            for (item in simItems) {
+                if (!item.active) continue
+                anyGrowing = true
+                val newSize = item.size + item.speed
+                val halfSize = newSize / 2
+                if (item.x - halfSize < 20f || item.x + halfSize > w - 20f || item.y - halfSize < 20f || item.y + halfSize > h - 20f) {
+                    item.active = false
+                    continue
+                }
+                var collides = false
+                for (other in simItems) {
+                    if (item.id == other.id) continue
+                    val dx = abs(item.x - other.x)
+                    val dy = abs(item.y - other.y)
+                    val dist = hypot(dx, dy)
+                    val minSafeDist = (newSize/2 + other.size/2) * rotSafeFactor
+                    if (dist < minSafeDist) { collides = true; break }
+                }
+                if (collides) item.active = false else item.size = newSize
+            }
+            if (!anyGrowing) break
+        }
+        val elements = listOf(
+            BgElement.Shape(M3ExpressiveShapes.verySunny()), BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()), BgElement.Shape(M3ExpressiveShapes.pill()),
+            BgElement.Shape(M3ExpressiveShapes.square()), BgElement.Shape(M3ExpressiveShapes.triangle()), BgElement.Shape(M3ExpressiveShapes.scallop()),
+            BgElement.Shape(M3ExpressiveShapes.flower()), BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
+            BgElement.Icon(Icons.Rounded.School), BgElement.Icon(Icons.Rounded.AutoStories), BgElement.Icon(Icons.Rounded.Edit), BgElement.Icon(Icons.Rounded.Lightbulb),
+            BgElement.Icon(Icons.Rounded.MenuBook), 
+            BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
+            BgElement.Icon(Icons.Rounded.Science), BgElement.Icon(Icons.Rounded.Star)
+        )
+        simItems.map { sim ->
+            BgItem(elements.random(), with(density) { (sim.x - sim.size/2).toDp() }, with(density) { (sim.y - sim.size/2).toDp() }, with(density) { sim.size.toDp() }, colors.random(), Random.nextFloat() * 0.3f + 0.2f, if (Random.nextBoolean()) 1f else -1f)
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "master_rot")
+    val rotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing)), label = "rot")
+
+    Box(Modifier.fillMaxSize()) {
+        items.forEach { item ->
+            Box(modifier = Modifier.offset(x = item.xOffset, y = item.yOffset).size(item.size).rotate(rotation * item.direction).alpha(item.alpha)) {
+                when (val type = item.element) {
+                    is BgElement.Shape -> { 
+                        Canvas(Modifier.fillMaxSize()) { 
+                            val path = android.graphics.Path()
+                            type.polygon.toPath(path)
+                            val matrix = android.graphics.Matrix()
+                            val bounds = android.graphics.RectF()
+                            path.computeBounds(bounds, true)
+                            val scale = minOf(size.width / bounds.width(), size.height / bounds.height())
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY())
+                            matrix.postScale(scale, scale)
+                            matrix.postTranslate(size.width / 2f, size.height / 2f)
+                            path.transform(matrix)
+                            drawPath(path.asComposePath(), item.color, style = Fill) 
+                        } 
+                    }
+                    is BgElement.Icon -> { Icon(imageVector = type.imageVector, contentDescription = null, tint = item.color, modifier = Modifier.fillMaxSize()) }
+                }
+            }
+        }
+    }
+}
+
+// ... [Existing CommonUi functions: OshSuLogo, StatCard, ClassItem, etc.] ...
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
