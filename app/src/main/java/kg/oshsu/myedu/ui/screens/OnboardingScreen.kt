@@ -11,10 +11,9 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape // ADDED IMPORT
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -57,7 +56,6 @@ class CustomRotatingShape(
     private val polygon: RoundedPolygon,
     private val rotation: Float
 ) : Shape {
-    // Uses android.graphics.Matrix
     private val matrix = Matrix()
 
     override fun createOutline(
@@ -66,16 +64,16 @@ class CustomRotatingShape(
         density: Density
     ): Outline {
         matrix.reset()
-        // 1. Scale to fit the container size (mapping -1..1 range to width/height)
+        // 1. Scale to fit the container size
         matrix.postScale(size.width / 2f, size.height / 2f)
         
-        // 2. Translate to center (moving 0,0 to center of container)
+        // 2. Translate to center
         matrix.postTranslate(size.width / 2f, size.height / 2f)
         
         // 3. Rotate around the center
         matrix.postRotate(rotation, size.width / 2f, size.height / 2f)
 
-        // FIX: Get the Android Path first, transform it with Android Matrix, THEN convert to Compose Path
+        // Convert Android Path to Compose Path
         val androidPath = polygon.toPath()
         androidPath.transform(matrix)
         
@@ -124,8 +122,6 @@ fun OnboardingScreen(
         label = "rotation"
     )
 
-    // 3. Create the Shape instance driven by the animation value
-    // We recreate the shape object when rotation changes so the Outline updates
     val animatedShape = CustomRotatingShape(cookiePolygon, rotation)
 
     // TRANSPARENT BACKGROUND
@@ -167,18 +163,21 @@ fun OnboardingScreen(
                             sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
-                        .size(160.dp) // Slightly larger to accommodate the shape
-                        .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                        .size(160.dp)
+                        // Removed clickable() from here to avoid the "invisible square" issue
                 ) {
-                    // Profile Photo (Clipped + Bordered with Rotating Shape)
+                    // Profile Photo (Clipped with Rotating Shape)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp)
-                            // Draw the border FIRST so it follows the shape outline
-                            .border(4.dp, MaterialTheme.colorScheme.primary, animatedShape)
-                            // Then Clip the content to the same rotating shape
+                            // Clip the content to the rotating shape
                             .clip(animatedShape)
+                            // Clickable is now applied to the clipped shape.
+                            // While hit-testing in standard Compose is rectangular, 
+                            // the visual ripple will now be clipped to the shape, 
+                            // and the reduced size (due to padding) minimizes the "invisible" area.
+                            .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
                     ) {
@@ -194,13 +193,17 @@ fun OnboardingScreen(
                         }
                     }
                     
-                    // Small "Edit" Badge (Static, overlaid)
+                    // Small "Edit" Badge
+                    // Made clickable independently so it works even if it overhangs or if the user targets it specifically
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
                             .offset(x = (-12).dp, y = (-12).dp)
                             .size(36.dp)
-                            .background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape)
+                            .clip(CircleShape)
+                            .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                            .background(MaterialTheme.colorScheme.tertiaryContainer)
+                            // Re-added border to the badge itself for contrast
                             .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
