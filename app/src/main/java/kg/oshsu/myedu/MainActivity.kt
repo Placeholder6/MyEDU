@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
 
 class MainActivity : ComponentActivity() {
@@ -40,84 +41,89 @@ class MainActivity : ComponentActivity() {
     private val vm by viewModels<MainViewModel>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 1. Install Splash Screen (Must be first)
-        // This handles the transition from the Splash Theme to the App Theme.
         val splashScreen = installSplashScreen()
-        
         super.onCreate(savedInstanceState)
-        
-        // 2. Enable Edge-to-Edge (Mandatory for Android 15+)
         enableEdgeToEdge()
-        
-        // 3. Init Data
         vm.initSession(applicationContext)
 
-        // 4. Keep Splash Screen until App State isn't STARTUP
-        // This prevents the "white flash" by holding the splash screen 
-        // until we know if the user is logged in or not.
         splashScreen.setKeepOnScreenCondition {
             vm.appState == "STARTUP"
         }
 
         setContent { 
-            // Alarm Manager (Background Logic)
-            LaunchedEffect(vm.fullSchedule, vm.timeMap) {
-                if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty()) {
+            LaunchedEffect(vm.fullSchedule, vm.timeMap, vm.notificationsEnabled) {
+                if (vm.fullSchedule.isNotEmpty() && vm.timeMap.isNotEmpty() && vm.notificationsEnabled) {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
 
-            MyEduTheme { AppContent(vm) } 
+            MyEduTheme(themePreference = vm.appTheme) { AppContent(vm) } 
         }
     }
 }
 
 @Composable
-fun MyEduTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
+    val systemDark = isSystemInDarkTheme()
+    val useDarkTheme = when (themePreference) {
+        "light" -> false
+        "dark" -> true
+        else -> systemDark
+    }
+
     val context = LocalContext.current
     val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else { if (darkTheme) darkColorScheme() else lightColorScheme() }
+        if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else { if (useDarkTheme) darkColorScheme() else lightColorScheme() }
     
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as android.app.Activity).window
-            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
+            androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
         }
     }
     MaterialTheme(colorScheme = colorScheme, content = content)
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppContent(vm: MainViewModel) {
-    AnimatedContent(
-        targetState = vm.appState, 
-        label = "Root",
-        transitionSpec = {
-            // Smooth crossfade to match native splash exit
-            fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+    // 1. Root Container to hold persistent background
+    BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
+        
+        // 2. Persistent Background Layer
+        // Only show if in Login or Onboarding to avoid visual noise in the main app
+        if (vm.appState == "LOGIN" || vm.appState == "ONBOARDING") {
+            ExpressiveShapesBackground(maxWidth, maxHeight)
         }
-    ) { state ->
-        when (state) {
-            "LOGIN" -> LoginScreen(vm)
-            "APP" -> MainAppStructure(vm)
-            else -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) 
+
+        // 3. Shared Transition Layout
+        SharedTransitionLayout {
+            AnimatedContent(
+                targetState = vm.appState, 
+                label = "Root",
+                transitionSpec = {
+                    fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
+                }
+            ) { state ->
+                when (state) {
+                    // Pass Shared scopes
+                    "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                    "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                    "APP" -> MainAppStructure(vm)
+                    else -> Box(Modifier.fillMaxSize()) 
+                }
+            }
         }
     }
 }
 
-data class NavItem(
-    val label: String, 
-    val selectedIcon: ImageVector, 
-    val unselectedIcon: ImageVector,
-    val index: Int
-)
+data class NavItem(val label: String, val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val index: Int)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
-    // --- PERMISSION REQUEST (Only runs in APP state) ---
     NotificationPermissionRequest()
 
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
@@ -135,32 +141,18 @@ fun MainAppStructure(vm: MainViewModel) {
         NavItem("Profile", Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Scaffold(
             bottomBar = {
-                CompositionLocalProvider(LocalRippleConfiguration provides null) {
-                    ShortNavigationBar {
-                        navItems.forEach { item ->
-                            val isSelected = vm.currentTab == item.index
-                            
-                            ShortNavigationBarItem(
-                                selected = isSelected,
-                                onClick = { vm.currentTab = item.index },
-                                icon = {
-                                    Crossfade(
-                                        targetState = isSelected, 
-                                        label = "IconFade",
-                                        animationSpec = tween(durationMillis = 200) 
-                                    ) { selected ->
-                                        Icon(
-                                            imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
-                                            contentDescription = item.label
-                                        )
-                                    }
-                                },
-                                label = { Text(item.label) }
-                            )
-                        }
+                NavigationBar {
+                    navItems.forEach { item ->
+                        val isSelected = vm.currentTab == item.index
+                        NavigationBarItem(
+                            selected = isSelected,
+                            onClick = { vm.currentTab = item.index },
+                            icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
+                            label = { Text(item.label) }
+                        )
                     }
                 }
             }
@@ -169,10 +161,7 @@ fun MainAppStructure(vm: MainViewModel) {
                 AnimatedContent(
                     targetState = vm.currentTab,
                     label = "TabTransition",
-                    transitionSpec = {
-                        fadeIn(animationSpec = tween(300)) togetherWith 
-                        fadeOut(animationSpec = tween(300))
-                    }
+                    transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) }
                 ) { targetTab ->
                     when(targetTab) {
                         0 -> HomeScreen(vm)
@@ -183,34 +172,11 @@ fun MainAppStructure(vm: MainViewModel) {
                 }
             }
         }
-
-        AnimatedVisibility(
-            visible = vm.showTranscriptScreen, 
-            enter = slideInHorizontally { it }, 
-            exit = slideOutHorizontally { it },
-            modifier = Modifier.fillMaxSize() 
-        ) { 
-            TranscriptView(vm) { vm.showTranscriptScreen = false } 
-        }
-
-        AnimatedVisibility(
-            visible = vm.showReferenceScreen, 
-            enter = slideInHorizontally { it }, 
-            exit = slideOutHorizontally { it },
-            modifier = Modifier.fillMaxSize()
-        ) { 
-            ReferenceView(vm) { vm.showReferenceScreen = false } 
-        }
         
+        AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
+        AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
         if (vm.selectedClass != null) {
-            ModalBottomSheet(
-                onDismissRequest = { vm.selectedClass = null },
-                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-                containerColor = MaterialTheme.colorScheme.surface,
-                dragHandle = { BottomSheetDefaults.DragHandle() }
-            ) {
-                vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
-            }
+            ModalBottomSheet(onDismissRequest = { vm.selectedClass = null }) { vm.selectedClass?.let { ClassDetailsSheet(vm, it) } }
         }
     }
 }
@@ -218,12 +184,7 @@ fun MainAppStructure(vm: MainViewModel) {
 @Composable
 fun NotificationPermissionRequest() {
     val context = LocalContext.current
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-        onResult = { }
-    )
-    
-    // LaunchedEffect ensures this runs once when the composable enters the composition
+    val launcher = rememberLauncherForActivityResult(contract = ActivityResultContracts.RequestPermission(), onResult = { })
     LaunchedEffect(Unit) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {

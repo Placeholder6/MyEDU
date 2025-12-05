@@ -1,0 +1,21 @@
+# Gradle build directories and caches
+.gradle/
+build/
+app/build/
+
+# Ignore Gradle GUI config
+gradle-app.setting
+
+# Avoid ignoring Gradle wrapper jar file (if you want to commit the wrapper)
+!gradle-wrapper.jar
+
+# Cache of project (if present)
+.gradletasknamecache
+
+# Optional: Specific to Android projects
+.idea/
+local.properties
+*.iml
+
+# Optional: Virtual machine crash logs
+hs_err_pid*

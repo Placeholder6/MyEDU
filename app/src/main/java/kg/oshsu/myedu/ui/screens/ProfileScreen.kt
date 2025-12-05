@@ -2,12 +2,14 @@ package kg.oshsu.myedu.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.Book
@@ -37,7 +39,10 @@ fun ProfileScreen(vm: MainViewModel) {
     val user = vm.userData
     val profile = vm.profileData
     val pay = vm.payStatus
-    val fullName = "${user?.last_name ?: ""} ${user?.name ?: ""}".trim().ifEmpty { "Student" }
+    
+    // UI Override Values
+    val fullName = vm.uiName
+    val displayPhoto = vm.uiPhoto
     
     var showSettingsDialog by remember { mutableStateOf(false) }
 
@@ -99,7 +104,7 @@ fun ProfileScreen(vm: MainViewModel) {
                         .background(MaterialTheme.colorScheme.background)
                 ) { 
                     AsyncImage(
-                        model = profile?.avatar, 
+                        model = displayPhoto, 
                         contentDescription = null, 
                         contentScale = ContentScale.Crop, 
                         modifier = Modifier.fillMaxSize().clip(CircleShape)
@@ -107,7 +112,14 @@ fun ProfileScreen(vm: MainViewModel) {
                 }
                 
                 Spacer(Modifier.height(16.dp))
-                Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                
+                // Name & Edit Profile
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { vm.appState = "ONBOARDING" }) {
+                    Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Default.Edit, "Edit", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+                
                 Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                 
                 Spacer(Modifier.height(24.dp))

@@ -75,7 +75,7 @@ fun HomeScreen(vm: MainViewModel) {
                     Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) { 
                         Text(greetingText, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                         Text(
-                            text = user?.name ?: "Student", 
+                            text = vm.uiName, // <--- CHANGED
                             style = MaterialTheme.typography.titleMedium, 
                             fontWeight = FontWeight.Bold, 
                             maxLines = 1, 
