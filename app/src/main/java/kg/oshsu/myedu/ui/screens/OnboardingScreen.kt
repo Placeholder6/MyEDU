@@ -1,5 +1,6 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.graphics.Matrix
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -27,18 +28,53 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.star
+import androidx.graphics.shapes.toPath
 import coil.compose.AsyncImage
 import kg.oshsu.myedu.MainViewModel
-import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
-import kg.oshsu.myedu.ui.components.PolygonShape
+
+// --- CUSTOM ROTATING SHAPE IMPLEMENTATION ---
+class CustomRotatingShape(
+    private val polygon: RoundedPolygon,
+    private val rotation: Float
+) : Shape {
+    private val matrix = Matrix()
+
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        matrix.reset()
+        // 1. Scale to fit the container size (mapping -1..1 range to width/height)
+        matrix.postScale(size.width / 2f, size.height / 2f)
+        
+        // 2. Translate to center (moving 0,0 to center of container)
+        matrix.postTranslate(size.width / 2f, size.height / 2f)
+        
+        // 3. Rotate around the center
+        matrix.postRotate(rotation, size.width / 2f, size.height / 2f)
+
+        val path = polygon.toPath().asComposePath()
+        path.transform(matrix)
+        return Outline.Generic(path)
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
@@ -60,15 +96,30 @@ fun OnboardingScreen(
         }
     }
 
-    // 12-Sided Cookie Shape for the rotating border and the clipped image
-    val cookieShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
+    // 1. Define the 12-sided cookie polygon
+    val cookiePolygon = remember {
+        RoundedPolygon.star(
+            numVerticesPerRadius = 12,
+            innerRadius = 0.8f,
+            rounding = CornerRounding(0.2f)
+        )
+    }
     
-    val infiniteTransition = rememberInfiniteTransition(label = "border_rot")
+    // 2. Setup Infinite Rotation Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
     val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(20000, easing = LinearEasing)), 
-        label = "slow_rot"
+        initialValue = 0f, 
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(20000, easing = LinearEasing), 
+            repeatMode = RepeatMode.Restart
+        ), 
+        label = "rotation"
     )
+
+    // 3. Create the Shape instance driven by the animation value
+    // We recreate the shape object when rotation changes so the Outline updates
+    val animatedShape = CustomRotatingShape(cookiePolygon, rotation)
 
     // TRANSPARENT BACKGROUND
     Scaffold(
@@ -109,23 +160,18 @@ fun OnboardingScreen(
                             sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
-                        .size(140.dp) 
+                        .size(160.dp) // Slightly larger to accommodate the shape
                         .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                 ) {
-                    // Layer 1: The Rotating Cookie Border
+                    // Profile Photo (Clipped + Bordered with Rotating Shape)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .rotate(rotation) // Only the cookie border rotates
-                            .border(4.dp, MaterialTheme.colorScheme.primary, cookieShape)
-                    )
-
-                    // Layer 2: The Static Photo (Clipped to Cookie Shape)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(8.dp) // Gap between border and image
-                            .clip(cookieShape) // UPDATED: Clipped to shape instead of Circle
+                            .padding(8.dp)
+                            // Draw the border FIRST so it follows the shape outline
+                            .border(4.dp, MaterialTheme.colorScheme.primary, animatedShape)
+                            // Then Clip the content to the same rotating shape
+                            .clip(animatedShape)
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
                     ) {
@@ -139,6 +185,19 @@ fun OnboardingScreen(
                         } else {
                             Icon(Icons.Default.Add, contentDescription = "Add Photo", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
                         }
+                    }
+                    
+                    // Small "Edit" Badge (Static, overlaid)
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = (-12).dp, y = (-12).dp)
+                            .size(36.dp)
+                            .background(MaterialTheme.colorScheme.tertiaryContainer, CircleShape)
+                            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(20.dp))
                     }
                 }
             }
@@ -158,7 +217,7 @@ fun OnboardingScreen(
 
             Spacer(Modifier.height(32.dp))
 
-            // --- THEME SELECTOR (Expressive Cards) ---
+            // --- THEME SELECTOR ---
             Text("App Theme", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth().widthIn(max = 400.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -169,7 +228,7 @@ fun OnboardingScreen(
 
             Spacer(Modifier.height(24.dp))
 
-            // --- NOTIFICATIONS (Expressive Card) ---
+            // --- NOTIFICATIONS ---
             Card(
                 colors = CardDefaults.cardColors(
                     containerColor = if (notifications) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
@@ -223,7 +282,6 @@ fun OnboardingScreen(
 
 @Composable
 fun ThemeOption(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    // Expressive transitions for color and size (scale effect on select)
     val containerColor by animateColorAsState(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainer, label = "ThemeColor")
     val contentColor by animateColorAsState(if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface, label = "ThemeContent")
     val scale by animateFloatAsState(if (selected) 1.05f else 1f, label = "Scale")
@@ -231,7 +289,7 @@ fun ThemeOption(icon: ImageVector, label: String, selected: Boolean, onClick: ()
     Card(
         onClick = onClick, 
         modifier = modifier.height(100.dp).scale(scale), 
-        shape = RoundedCornerShape(24.dp), // Expressive rounding
+        shape = RoundedCornerShape(24.dp), 
         colors = CardDefaults.cardColors(containerColor = containerColor, contentColor = contentColor),
         elevation = CardDefaults.cardElevation(defaultElevation = if (selected) 6.dp else 0.dp)
     ) {
