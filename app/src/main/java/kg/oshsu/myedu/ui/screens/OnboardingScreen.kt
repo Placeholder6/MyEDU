@@ -6,20 +6,24 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentScope
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.SettingsSystemDaydream
@@ -30,11 +34,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -51,8 +57,10 @@ import coil.request.ImageRequest
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.PolygonShape
+import kotlinx.coroutines.delay
 
 // --- CUSTOM ROTATING SHAPE IMPLEMENTATION ---
+// Used only for the Profile Picture's rotation animation
 class CustomRotatingShape(
     private val polygon: RoundedPolygon,
     private val rotation: Float
@@ -60,21 +68,15 @@ class CustomRotatingShape(
     private val matrix = Matrix()
 
     override fun createOutline(
-        size: Size,
+        size: androidx.compose.ui.geometry.Size,
         layoutDirection: LayoutDirection,
         density: Density
     ): Outline {
         matrix.reset()
-        // 1. Scale to fit the container size
         matrix.postScale(size.width / 2f, size.height / 2f)
-        
-        // 2. Translate to center
         matrix.postTranslate(size.width / 2f, size.height / 2f)
-        
-        // 3. Rotate around the center
         matrix.postRotate(rotation, size.width / 2f, size.height / 2f)
 
-        // Convert Android Path to Compose Path
         val androidPath = polygon.toPath()
         androidPath.transform(matrix)
         
@@ -95,6 +97,25 @@ fun OnboardingScreen(
     var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
 
+    // --- TRANSITION STATE ---
+    var isUiVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(600) // 500ms morph + 100ms buffer
+        isUiVisible = true
+    }
+
+    // Standard UI Fade/Slide
+    val uiAlpha by animateFloatAsState(
+        targetValue = if (isUiVisible) 1f else 0f,
+        animationSpec = tween(600, easing = LinearOutSlowInEasing), 
+        label = "uiAlpha"
+    )
+    val uiTranslationY by animateDpAsState(
+        targetValue = if (isUiVisible) 0.dp else 40.dp,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow), 
+        label = "uiOffset"
+    )
+
     val photoPicker = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -102,7 +123,7 @@ fun OnboardingScreen(
         }
     }
 
-    // 1. Define the 12-sided cookie polygon
+    // 1. Shapes
     val cookiePolygon = remember {
         RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -111,6 +132,10 @@ fun OnboardingScreen(
         )
     }
     
+    // Sunny Shape for Edit Button & Eraser
+    // Using the shared helper from CommonUi to ensure consistency
+    val sunnyShape = remember { PolygonShape(M3ExpressiveShapes.verySunny()) }
+
     // 2. Setup Infinite Rotation Animation
     val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
     val rotation by infiniteTransition.animateFloat(
@@ -127,41 +152,55 @@ fun OnboardingScreen(
 
     // TRANSPARENT BACKGROUND
     Scaffold(
-        containerColor = Color.Transparent, 
-        bottomBar = {
-            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                Box(Modifier.padding(24.dp)) {
-                    Button(
-                        onClick = { vm.saveOnboardingSettings(name, photoUri, theme, notifications) },
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        Text("All Set", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.width(8.dp))
-                        Icon(Icons.Rounded.ArrowForward, null)
-                    }
-                }
-            }
-        }
+        containerColor = Color.Transparent
     ) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = 24.dp)
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Spacer(Modifier.weight(1f))
-            Text("Make it Yours", style = MaterialTheme.typography.displayMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-            Text("Customize your profile & experience", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(48.dp))
+
+            // HEADER (Delayed)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.graphicsLayer { 
+                    alpha = uiAlpha
+                    translationY = uiTranslationY.toPx() 
+                }
+            ) {
+                Text(
+                    "Make it Yours", 
+                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold), 
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Customize your profile & experience", 
+                    style = MaterialTheme.typography.bodyLarge, 
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Spacer(Modifier.height(48.dp))
 
             // --- PROFILE PICTURE SECTION ---
             with(sharedTransitionScope) {
+                // MAIN CONTAINER with Offscreen Compositing
+                // This is Critical: It creates a new layer for the profile picture group.
+                // The "Eraser" (BlendMode.Clear) will erase pixels from THIS layer, revealing the
+                // Activity background (animated shapes) behind it.
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(160.dp)
+                    modifier = Modifier
+                        .size(160.dp)
+                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                 ) {
-                    // Profile Photo (Clipped with Rotating Shape)
+                    // 1. Profile Photo (Shared Element)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -169,16 +208,14 @@ fun OnboardingScreen(
                             .sharedElement(
                                 sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                                 animatedVisibilityScope = animatedContentScope,
-                                // UPDATED: Faster morph transition (500ms)
                                 boundsTransform = { _, _ -> tween(durationMillis = 500, easing = LinearOutSlowInEasing) }
                             )
                             .clip(animatedShape)
                             .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                            .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                            .background(MaterialTheme.colorScheme.primary),
                         contentAlignment = Alignment.Center
                     ) {
                         if (photoUri != null) {
-                            // UPDATED: Standard loading without rotation or placeholder icons
                             SubcomposeAsyncImage(
                                 model = ImageRequest.Builder(LocalContext.current)
                                     .data(photoUri)
@@ -187,106 +224,184 @@ fun OnboardingScreen(
                                 contentDescription = "Profile Photo", 
                                 contentScale = ContentScale.Crop, 
                                 modifier = Modifier.fillMaxSize(),
-                                loading = { 
-                                    // Empty box while loading in background
-                                    Box(Modifier.fillMaxSize()) 
-                                }
+                                loading = { Box(Modifier.fillMaxSize()) }
                             )
                         }
-                        // No "else" block for Add icon - keeps it clean if no photo is selected
                     }
                     
-                    // Small "Edit" Badge (Separate from the rotating clip)
-                    Box(
+                    // --- EDIT BUTTON GROUP ---
+                    // Explicitly calling androidx.compose.animation.AnimatedVisibility to avoid scope issues
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isUiVisible,
+                        enter = scaleIn(
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessLow
+                            )
+                        ),
+                        exit = scaleOut(),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .offset(x = (-12).dp, y = (-12).dp)
-                            .size(36.dp)
-                            .clip(CircleShape)
-                            .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                            .background(MaterialTheme.colorScheme.tertiaryContainer)
-                            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
-                        contentAlignment = Alignment.Center
+                            .offset(x = (-6).dp, y = (-6).dp)
                     ) {
-                        Icon(Icons.Default.Add, null, tint = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.size(20.dp))
+                        // Wrapper Box centers the Eraser and the Button perfectly
+                        Box(contentAlignment = Alignment.Center) {
+                            
+                            // A. THE ERASER (Transparent Gap)
+                            // This creates the "border" effect by erasing the pixels below it.
+                            // We use Surface to strictly enforce the 'Sunny' shape.
+                            Surface(
+                                modifier = Modifier
+                                    .size(56.dp) // 48dp button + 8dp total border (4dp per side)
+                                    .graphicsLayer { blendMode = BlendMode.Clear }, // The Magic Eraser
+                                shape = sunnyShape, // Follows the exact shape
+                                color = Color.Black // Color doesn't matter, it just needs opacity to trigger the Clear
+                            ) {}
+
+                            // B. THE BUTTON CONTENT
+                            // This draws the actual button on top of the erased hole
+                            Surface(
+                                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                shape = sunnyShape,
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                modifier = Modifier.size(48.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Edit,
+                                        contentDescription = "Edit Profile",
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
             
-            TextButton(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }) {
+            // "Change Photo" Button (Delayed)
+            TextButton(
+                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                modifier = Modifier.graphicsLayer { alpha = uiAlpha }
+            ) {
                 Text(if (photoUri == null) "Add Photo" else "Change Photo")
             }
 
             Spacer(Modifier.height(24.dp))
 
-            // Name Field
-            OutlinedTextField(
-                value = name, onValueChange = { name = it }, label = { Text("Display Name") }, singleLine = true,
-                shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp),
-                colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outline)
-            )
-
-            Spacer(Modifier.height(32.dp))
-
-            // --- THEME SELECTOR ---
-            Text("App Theme", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(12.dp))
-            Row(Modifier.fillMaxWidth().widthIn(max = 400.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ThemeOption(Icons.Default.SettingsSystemDaydream, "System", theme == "system", { theme = "system" }, Modifier.weight(1f))
-                ThemeOption(Icons.Default.LightMode, "Light", theme == "light", { theme = "light" }, Modifier.weight(1f))
-                ThemeOption(Icons.Default.DarkMode, "Dark", theme == "dark", { theme = "dark" }, Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(24.dp))
-
-            // --- NOTIFICATIONS ---
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = if (notifications) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
-                ),
-                shape = RoundedCornerShape(24.dp), 
-                onClick = { notifications = !notifications },
-                modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp)
+            // --- FORM FIELDS (Delayed) ---
+            Column(
+                modifier = Modifier
+                    .widthIn(max = 400.dp)
+                    .graphicsLayer { 
+                        alpha = uiAlpha
+                        translationY = uiTranslationY.toPx() 
+                    },
+                verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(20.dp),
-                    verticalAlignment = Alignment.CenterVertically, 
-                    horizontalArrangement = Arrangement.SpaceBetween
+                // Name Field
+                OutlinedTextField(
+                    value = name, 
+                    onValueChange = { name = it }, 
+                    label = { Text("Display Name") }, 
+                    singleLine = true,
+                    shape = RoundedCornerShape(50), 
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                    )
+                )
+
+                // Theme Selector
+                Column {
+                    Text(
+                        "App Theme", 
+                        style = MaterialTheme.typography.labelMedium, 
+                        color = MaterialTheme.colorScheme.primary, 
+                        modifier = Modifier.padding(start = 12.dp, bottom = 8.dp)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ThemeOption(Icons.Default.SettingsSystemDaydream, "System", theme == "system", { theme = "system" }, Modifier.weight(1f))
+                        ThemeOption(Icons.Default.LightMode, "Light", theme == "light", { theme = "light" }, Modifier.weight(1f))
+                        ThemeOption(Icons.Default.DarkMode, "Dark", theme == "dark", { theme = "dark" }, Modifier.weight(1f))
+                    }
+                }
+
+                // Notifications Toggle
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (notifications) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
+                    ),
+                    shape = RoundedCornerShape(24.dp), 
+                    onClick = { notifications = !notifications },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(
-                            Icons.Default.Notifications, 
-                            null, 
-                            tint = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.width(16.dp))
-                        Column { 
+                    ListItem(
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        headlineContent = { 
                             Text(
                                 "Notifications", 
-                                style = MaterialTheme.typography.titleMedium, 
                                 fontWeight = FontWeight.Bold,
                                 color = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-                            )
+                            ) 
+                        },
+                        supportingContent = { 
                             Text(
                                 "Get class reminders", 
-                                style = MaterialTheme.typography.bodySmall, 
                                 color = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
                             ) 
+                        },
+                        leadingContent = {
+                            Icon(
+                                Icons.Default.Notifications, 
+                                null, 
+                                tint = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingContent = {
+                            Switch(
+                                checked = notifications, 
+                                onCheckedChange = { notifications = it }, 
+                                thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null,
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                    checkedTrackColor = MaterialTheme.colorScheme.onPrimary
+                                )
+                            )
                         }
-                    }
-                    Switch(
-                        checked = notifications, 
-                        onCheckedChange = { notifications = it }, 
-                        thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null,
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = MaterialTheme.colorScheme.primary,
-                            checkedTrackColor = MaterialTheme.colorScheme.onPrimary
-                        )
                     )
                 }
             }
 
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(48.dp))
+
+            // --- MAIN ACTION BUTTON ---
+            Button(
+                onClick = { vm.saveOnboardingSettings(name, photoUri, theme, notifications) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 400.dp)
+                    .height(56.dp)
+                    .graphicsLayer { 
+                        alpha = uiAlpha
+                        translationY = uiTranslationY.toPx() 
+                    },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                shape = RoundedCornerShape(50)
+            ) {
+                Text("All Set", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(8.dp))
+                Icon(Icons.Rounded.ArrowForward, null)
+            }
+            
+            Spacer(Modifier.height(32.dp))
         }
     }
 }
