@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -109,7 +110,7 @@ fun OnboardingScreen(
                             sharedContentState = rememberSharedContentState(key = "cookie_transform"),
                             animatedVisibilityScope = animatedContentScope
                         )
-                        .size(140.dp) // Increased size slightly for emphasis
+                        .size(140.dp) 
                         .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                 ) {
                     // Layer 1: The Rotating Cookie Border
@@ -125,7 +126,7 @@ fun OnboardingScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp) // Gap between border and image
-                            .clip(CircleShape) // Static photo needs circle shape to look good inside spinning border
+                            .clip(CircleShape) 
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
                     ) {
@@ -174,7 +175,7 @@ fun OnboardingScreen(
                 colors = CardDefaults.cardColors(
                     containerColor = if (notifications) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
                 ),
-                shape = RoundedCornerShape(24.dp), // Expressive Large rounding
+                shape = RoundedCornerShape(24.dp), 
                 onClick = { notifications = !notifications },
                 modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp)
             ) {
