@@ -11,6 +11,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -28,7 +29,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -46,7 +46,8 @@ import androidx.graphics.shapes.CornerRounding
 import androidx.graphics.shapes.RoundedPolygon
 import androidx.graphics.shapes.star
 import androidx.graphics.shapes.toPath
-import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.PolygonShape
@@ -158,43 +159,44 @@ fun OnboardingScreen(
             with(sharedTransitionScope) {
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .sharedElement(
-                            sharedContentState = rememberSharedContentState(key = "cookie_transform"),
-                            animatedVisibilityScope = animatedContentScope
-                        )
-                        .size(160.dp)
-                        // Removed clickable() from here to avoid the "invisible square" issue
+                    modifier = Modifier.size(160.dp)
                 ) {
                     // Profile Photo (Clipped with Rotating Shape)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp)
-                            // Clip the content to the rotating shape
+                            .sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "cookie_transform"),
+                                animatedVisibilityScope = animatedContentScope,
+                                // UPDATED: Faster morph transition (500ms)
+                                boundsTransform = { _, _ -> tween(durationMillis = 500, easing = LinearOutSlowInEasing) }
+                            )
                             .clip(animatedShape)
-                            // Clickable is now applied to the clipped shape.
-                            // While hit-testing in standard Compose is rectangular, 
-                            // the visual ripple will now be clipped to the shape, 
-                            // and the reduced size (due to padding) minimizes the "invisible" area.
                             .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
                     ) {
                         if (photoUri != null) {
-                            AsyncImage(
-                                model = photoUri, 
+                            // UPDATED: Standard loading without rotation or placeholder icons
+                            SubcomposeAsyncImage(
+                                model = ImageRequest.Builder(LocalContext.current)
+                                    .data(photoUri)
+                                    .crossfade(true)
+                                    .build(), 
                                 contentDescription = "Profile Photo", 
                                 contentScale = ContentScale.Crop, 
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                loading = { 
+                                    // Empty box while loading in background
+                                    Box(Modifier.fillMaxSize()) 
+                                }
                             )
-                        } else {
-                            Icon(Icons.Default.Add, contentDescription = "Add Photo", modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
                         }
+                        // No "else" block for Add icon - keeps it clean if no photo is selected
                     }
                     
-                    // Small "Edit" Badge
-                    // Made clickable independently so it works even if it overhangs or if the user targets it specifically
+                    // Small "Edit" Badge (Separate from the rotating clip)
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -203,7 +205,6 @@ fun OnboardingScreen(
                             .clip(CircleShape)
                             .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                             .background(MaterialTheme.colorScheme.tertiaryContainer)
-                            // Re-added border to the badge itself for contrast
                             .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
