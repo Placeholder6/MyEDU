@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -61,7 +60,7 @@ fun OnboardingScreen(
         }
     }
 
-    // 12-Sided Cookie Shape for the rotating border
+    // 12-Sided Cookie Shape for the rotating border and the clipped image
     val cookieShape = remember { PolygonShape(M3ExpressiveShapes.twelveSidedCookie()) }
     
     val infiniteTransition = rememberInfiniteTransition(label = "border_rot")
@@ -121,12 +120,12 @@ fun OnboardingScreen(
                             .border(4.dp, MaterialTheme.colorScheme.primary, cookieShape)
                     )
 
-                    // Layer 2: The Static Photo (Clipped to Circle to spin freely inside the cookie frame)
+                    // Layer 2: The Static Photo (Clipped to Cookie Shape)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(8.dp) // Gap between border and image
-                            .clip(CircleShape) 
+                            .clip(cookieShape) // UPDATED: Clipped to shape instead of Circle
                             .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                         contentAlignment = Alignment.Center
                     ) {
