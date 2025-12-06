@@ -6,17 +6,19 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContentScope
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,9 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
@@ -55,12 +55,9 @@ import androidx.graphics.shapes.toPath
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import kg.oshsu.myedu.MainViewModel
-import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
-import kg.oshsu.myedu.ui.components.PolygonShape
 import kotlinx.coroutines.delay
 
 // --- CUSTOM ROTATING SHAPE IMPLEMENTATION ---
-// Used only for the Profile Picture's rotation animation
 class CustomRotatingShape(
     private val polygon: RoundedPolygon,
     private val rotation: Float
@@ -123,7 +120,7 @@ fun OnboardingScreen(
         }
     }
 
-    // 1. Shapes
+    // 1. Define the 12-sided cookie polygon
     val cookiePolygon = remember {
         RoundedPolygon.star(
             numVerticesPerRadius = 12,
@@ -132,10 +129,6 @@ fun OnboardingScreen(
         )
     }
     
-    // Sunny Shape for Edit Button & Eraser
-    // Using the shared helper from CommonUi to ensure consistency
-    val sunnyShape = remember { PolygonShape(M3ExpressiveShapes.verySunny()) }
-
     // 2. Setup Infinite Rotation Animation
     val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
     val rotation by infiniteTransition.animateFloat(
@@ -190,17 +183,11 @@ fun OnboardingScreen(
 
             // --- PROFILE PICTURE SECTION ---
             with(sharedTransitionScope) {
-                // MAIN CONTAINER with Offscreen Compositing
-                // This is Critical: It creates a new layer for the profile picture group.
-                // The "Eraser" (BlendMode.Clear) will erase pixels from THIS layer, revealing the
-                // Activity background (animated shapes) behind it.
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier
-                        .size(160.dp)
-                        .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    modifier = Modifier.size(160.dp)
                 ) {
-                    // 1. Profile Photo (Shared Element)
+                    // Profile Photo (Shared Element)
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
@@ -229,8 +216,8 @@ fun OnboardingScreen(
                         }
                     }
                     
-                    // --- EDIT BUTTON GROUP ---
-                    // Explicitly calling androidx.compose.animation.AnimatedVisibility to avoid scope issues
+                    // Small "Edit" Badge (Native AnimatedVisibility + Surface)
+                    // FIX: Explicitly call androidx.compose.animation.AnimatedVisibility to avoid scope ambiguity error
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isUiVisible,
                         enter = scaleIn(
@@ -242,38 +229,23 @@ fun OnboardingScreen(
                         exit = scaleOut(),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
-                            .offset(x = (-6).dp, y = (-6).dp)
+                            .offset(x = (-10).dp, y = (-10).dp)
                     ) {
-                        // Wrapper Box centers the Eraser and the Button perfectly
-                        Box(contentAlignment = Alignment.Center) {
-                            
-                            // A. THE ERASER (Transparent Gap)
-                            // This creates the "border" effect by erasing the pixels below it.
-                            // We use Surface to strictly enforce the 'Sunny' shape.
-                            Surface(
-                                modifier = Modifier
-                                    .size(56.dp) // 48dp button + 8dp total border (4dp per side)
-                                    .graphicsLayer { blendMode = BlendMode.Clear }, // The Magic Eraser
-                                shape = sunnyShape, // Follows the exact shape
-                                color = Color.Black // Color doesn't matter, it just needs opacity to trigger the Clear
-                            ) {}
-
-                            // B. THE BUTTON CONTENT
-                            // This draws the actual button on top of the erased hole
-                            Surface(
-                                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                                shape = sunnyShape,
-                                color = MaterialTheme.colorScheme.tertiaryContainer,
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Edit,
-                                        contentDescription = "Edit Profile",
-                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                }
+                        Surface(
+                            onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            // Thicker border (4dp) for clean cutout effect
+                            border = BorderStroke(4.dp, MaterialTheme.colorScheme.surface),
+                            modifier = Modifier.size(48.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Edit,
+                                    contentDescription = "Edit Profile",
+                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    modifier = Modifier.size(22.dp)
+                                )
                             }
                         }
                     }
