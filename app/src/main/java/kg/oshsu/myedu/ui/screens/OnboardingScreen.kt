@@ -1,7 +1,6 @@
 package kg.oshsu.myedu.ui.screens
 
 import android.graphics.Matrix
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -14,7 +13,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -22,7 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
@@ -35,8 +33,12 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asComposePath
@@ -89,10 +91,16 @@ fun OnboardingScreen(
     animatedContentScope: AnimatedContentScope
 ) {
     val context = LocalContext.current
+    
+    // --- STATE TRACKING ---
+    // Track the initial photo to determine if changes occurred
+    val initialPhotoUri = remember { vm.customPhotoUri ?: vm.uiPhoto?.toString() }
     var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
-    var photoUri by remember { mutableStateOf(vm.customPhotoUri ?: vm.uiPhoto?.toString()) }
+    var photoUri by remember { mutableStateOf(initialPhotoUri) }
     var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
+
+    val showRevert = photoUri != initialPhotoUri
 
     // --- TRANSITION STATE ---
     var isUiVisible by remember { mutableStateOf(false) }
@@ -111,6 +119,20 @@ fun OnboardingScreen(
         targetValue = if (isUiVisible) 0.dp else 40.dp,
         animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessLow), 
         label = "uiOffset"
+    )
+
+    // Animation for the "Hole" cutout scale (Edit Button)
+    val holeScale by animateFloatAsState(
+        targetValue = if (isUiVisible) 1f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        label = "holeScale"
+    )
+
+    // Animation for the Revert "Hole" cutout scale
+    val revertHoleScale by animateFloatAsState(
+        targetValue = if (showRevert && isUiVisible) 1f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        label = "revertHoleScale"
     )
 
     val photoPicker = rememberLauncherForActivityResult(contract = ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -197,6 +219,56 @@ fun OnboardingScreen(
                                 animatedVisibilityScope = animatedContentScope,
                                 boundsTransform = { _, _ -> tween(durationMillis = 500, easing = LinearOutSlowInEasing) }
                             )
+                            // START: BLEND MODE IMPLEMENTATION
+                            .graphicsLayer {
+                                compositingStrategy = CompositingStrategy.Offscreen
+                            }
+                            .drawWithCache {
+                                val buttonRadius = 20.dp.toPx() 
+                                val borderSize = 4.dp.toPx()
+                                
+                                // Coordinates for Edit Button (BottomRight)
+                                // Parent 160dp -> Inner 144dp (8dp padding)
+                                // Center offset logic: 
+                                // 8dp padding + 10dp offset + 20dp radius = 38dp from edge.
+                                // Inner box edge to button center = 38 - 8 = 30? No.
+                                // Let's stick to the verified math:
+                                // Button Center X relative to Parent = Width - 10 - 20 = Width - 30.
+                                // Inner Box Right Edge = Width - 8.
+                                // Distance from Inner Edge = (Width - 8) - (Width - 30) = 22dp.
+                                val editCenter = Offset(size.width - 22.dp.toPx(), size.height - 22.dp.toPx())
+                                val editCutRadius = (buttonRadius + borderSize) * holeScale
+
+                                // Coordinates for Revert Button (BottomLeft)
+                                // Button Center X relative to Parent = 10 + 20 = 30.
+                                // Inner Box Left Edge = 8.
+                                // Distance from Inner Edge = 30 - 8 = 22dp.
+                                val revertCenter = Offset(22.dp.toPx(), size.height - 22.dp.toPx())
+                                val revertCutRadius = (buttonRadius + borderSize) * revertHoleScale
+                                
+                                onDrawWithContent {
+                                    drawContent()
+                                    // Cut hole for Edit Button
+                                    if (holeScale > 0f) {
+                                        drawCircle(
+                                            color = Color.Black, 
+                                            radius = editCutRadius,
+                                            center = editCenter,
+                                            blendMode = BlendMode.Clear
+                                        )
+                                    }
+                                    // Cut hole for Revert Button
+                                    if (revertHoleScale > 0f) {
+                                        drawCircle(
+                                            color = Color.Black,
+                                            radius = revertCutRadius,
+                                            center = revertCenter,
+                                            blendMode = BlendMode.Clear
+                                        )
+                                    }
+                                }
+                            }
+                            // END: BLEND MODE IMPLEMENTATION
                             .clip(animatedShape)
                             .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                             .background(MaterialTheme.colorScheme.primary),
@@ -216,16 +288,36 @@ fun OnboardingScreen(
                         }
                     }
                     
-                    // Small "Edit" Badge (Native AnimatedVisibility + Surface)
-                    // FIX: Explicitly call androidx.compose.animation.AnimatedVisibility to avoid scope ambiguity error
+                    // REVERT BUTTON (Bottom Left, Secondary Color)
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = isUiVisible && showRevert,
+                        enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)),
+                        exit = scaleOut(),
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .offset(x = 10.dp, y = (-10).dp)
+                    ) {
+                        Surface(
+                            onClick = { photoUri = initialPhotoUri }, 
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.secondary, // Secondary Theme
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Undo,
+                                    contentDescription = "Revert Photo",
+                                    tint = MaterialTheme.colorScheme.onSecondary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    // EDIT BUTTON (Bottom Right, Primary Color)
                     androidx.compose.animation.AnimatedVisibility(
                         visible = isUiVisible,
-                        enter = scaleIn(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ),
+                        enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)),
                         exit = scaleOut(),
                         modifier = Modifier
                             .align(Alignment.BottomEnd)
@@ -234,17 +326,15 @@ fun OnboardingScreen(
                         Surface(
                             onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            // Thicker border (4dp) for clean cutout effect
-                            border = BorderStroke(4.dp, MaterialTheme.colorScheme.surface),
-                            modifier = Modifier.size(48.dp)
+                            color = MaterialTheme.colorScheme.primary, // Primary Theme (Contrasting)
+                            modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Filled.Edit,
                                     contentDescription = "Edit Profile",
-                                    tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    modifier = Modifier.size(22.dp)
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         }
