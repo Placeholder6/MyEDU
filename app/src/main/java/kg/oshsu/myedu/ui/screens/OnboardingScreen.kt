@@ -93,14 +93,19 @@ fun OnboardingScreen(
     val context = LocalContext.current
     
     // --- STATE TRACKING ---
-    // Track the initial photo to determine if changes occurred
-    val initialPhotoUri = remember { vm.customPhotoUri ?: vm.uiPhoto?.toString() }
+    // Fix: Determine the original API photo directly from profileData
+    val apiPhoto = vm.profileData?.avatar
+    
+    // Fix: Initialize photoUri with the stored custom photo OR the API photo
+    val startPhoto = remember { vm.customPhotoUri ?: apiPhoto }
+    
     var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
-    var photoUri by remember { mutableStateOf(initialPhotoUri) }
+    var photoUri by remember { mutableStateOf(startPhoto) }
     var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
 
-    val showRevert = photoUri != initialPhotoUri
+    // Fix: Show revert button if the current photoUri is different from the API photo
+    val showRevert = photoUri != apiPhoto
 
     // --- TRANSITION STATE ---
     var isUiVisible by remember { mutableStateOf(false) }
@@ -228,21 +233,10 @@ fun OnboardingScreen(
                                 val borderSize = 4.dp.toPx()
                                 
                                 // Coordinates for Edit Button (BottomRight)
-                                // Parent 160dp -> Inner 144dp (8dp padding)
-                                // Center offset logic: 
-                                // 8dp padding + 10dp offset + 20dp radius = 38dp from edge.
-                                // Inner box edge to button center = 38 - 8 = 30? No.
-                                // Let's stick to the verified math:
-                                // Button Center X relative to Parent = Width - 10 - 20 = Width - 30.
-                                // Inner Box Right Edge = Width - 8.
-                                // Distance from Inner Edge = (Width - 8) - (Width - 30) = 22dp.
                                 val editCenter = Offset(size.width - 22.dp.toPx(), size.height - 22.dp.toPx())
                                 val editCutRadius = (buttonRadius + borderSize) * holeScale
 
                                 // Coordinates for Revert Button (BottomLeft)
-                                // Button Center X relative to Parent = 10 + 20 = 30.
-                                // Inner Box Left Edge = 8.
-                                // Distance from Inner Edge = 30 - 8 = 22dp.
                                 val revertCenter = Offset(22.dp.toPx(), size.height - 22.dp.toPx())
                                 val revertCutRadius = (buttonRadius + borderSize) * revertHoleScale
                                 
@@ -298,9 +292,9 @@ fun OnboardingScreen(
                             .offset(x = 10.dp, y = (-10).dp)
                     ) {
                         Surface(
-                            onClick = { photoUri = initialPhotoUri }, 
+                            onClick = { photoUri = apiPhoto }, // Fix: Revert to API photo
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.secondary, // Secondary Theme
+                            color = MaterialTheme.colorScheme.secondary, 
                             modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
@@ -326,7 +320,7 @@ fun OnboardingScreen(
                         Surface(
                             onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                             shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary, // Primary Theme (Contrasting)
+                            color = MaterialTheme.colorScheme.primary, 
                             modifier = Modifier.size(40.dp)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
