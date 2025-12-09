@@ -1,8 +1,6 @@
 package kg.oshsu.myedu
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.runtime.*
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -37,6 +35,19 @@ class MainViewModel : ViewModel() {
     var profileData by mutableStateOf<StudentInfoResponse?>(null)
     var payStatus by mutableStateOf<PayStatusResponse?>(null)
     var newsList by mutableStateOf<List<NewsItem>>(emptyList())
+
+    // --- STATE: CUSTOM UI DATA (Onboarding) ---
+    var customName by mutableStateOf<String?>(null)
+    var customPhotoUri by mutableStateOf<String?>(null)
+    var appTheme by mutableStateOf("system") // system, light, dark
+    var notificationsEnabled by mutableStateOf(true)
+
+    // Computed Properties for UI (Fallback to API data)
+    val uiName: String
+        get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "Student"
+    
+    val uiPhoto: Any?
+        get() = customPhotoUri ?: profileData?.avatar
 
     // --- STATE: SCHEDULE DATA ---
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
@@ -81,16 +92,29 @@ class MainViewModel : ViewModel() {
             if (prefs == null) {
                 prefs = PrefsManager(context)
             }
+            // Load Settings
+            prefs?.let { p ->
+                customName = p.getCustomName()
+                customPhotoUri = p.getCustomPhoto()
+                appTheme = p.getAppTheme()
+                notificationsEnabled = p.areNotificationsEnabled()
+            }
+
             val token = prefs?.getToken()
-            
-            // DELAY REMOVED: Checks token and proceeds immediately
             
             if (token != null) {
                 NetworkClient.interceptor.authToken = token
                 NetworkClient.cookieJar.injectSessionCookies(token)
                 loadOfflineData()
-                appState = "APP"
-                // Trigger background refresh silently
+                
+                // Check if onboarding was completed
+                if (prefs?.isOnboardingComplete() == true) {
+                    appState = "APP"
+                } else {
+                    appState = "ONBOARDING"
+                }
+
+                // Trigger background refresh
                 launch(Dispatchers.IO) {
                     try { fetchAllDataSuspend() } catch (_: Exception) {}
                 }
@@ -131,20 +155,28 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // 2. Load ALL Data (Loader is still visible)
+                    // 2. Load ALL Data
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
 
-                    // 3. Trigger Expansion Animation (Zoom)
+                    // 3. Trigger Morph Animation
                     isLoginSuccess = true
-                    
-                    // Wait for 1.0s (sync with zoom animation) then switch
-                    delay(1000) 
+                    // IMMEDIATE MORPH: Very short delay (50ms) to allow frame update
+                    delay(200) 
 
-                    appState = "APP"
+                    // Check Onboarding
+                    if (prefs?.isOnboardingComplete() == true) {
+                        appState = "APP"
+                    } else {
+                        // Pre-fill name if not set
+                        if (customName == null) {
+                            customName = "${userData?.last_name ?: ""} ${userData?.name ?: ""}".trim()
+                        }
+                        appState = "ONBOARDING"
+                    }
                 } else {
                     errorMsg = "Incorrect credentials"
                     isLoading = false
@@ -154,6 +186,19 @@ class MainViewModel : ViewModel() {
                 isLoading = false
             }
         }
+    }
+
+    // --- ONBOARDING ACTIONS ---
+    fun saveOnboardingSettings(name: String, photo: String?, theme: String, notifications: Boolean) {
+        customName = name
+        customPhotoUri = photo
+        appTheme = theme
+        notificationsEnabled = notifications
+        
+        prefs?.saveSettings(name, photo, theme, notifications)
+        prefs?.setOnboardingComplete(true)
+        
+        appState = "APP"
     }
 
     fun logout() {
@@ -170,9 +215,14 @@ class MainViewModel : ViewModel() {
         NetworkClient.cookieJar.clear()
         NetworkClient.interceptor.authToken = null
         
-        // Reset Login States
+        // Reset States
         isLoading = false
         isLoginSuccess = false
+        // Reset Custom Settings for next user
+        customName = null
+        customPhotoUri = null
+        appTheme = "system"
+        notificationsEnabled = true
     }
 
     // --- PUBLIC REFRESH ACTION ---
@@ -201,7 +251,6 @@ class MainViewModel : ViewModel() {
             prefs?.saveData("profile_data", profile)
         }
 
-        // Fetch optional data without blocking strict flow if they fail
         try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
         try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
 
@@ -287,6 +336,7 @@ class MainViewModel : ViewModel() {
                 }
 
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
+                // Important: Use API data for PDF generation, not UI overrides
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
                 infoJson.put("fullName", fullName)
@@ -399,7 +449,7 @@ class MainViewModel : ViewModel() {
             val resRaw = withContext(Dispatchers.IO) { NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string() }
             val url = JSONObject(resRaw).optString("url")
             if (url.isNotEmpty()) { 
-                val i = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                val i = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
                 context.startActivity(i) 
                 pdfStatusMessage = null 
             } else {
