@@ -43,8 +43,6 @@ fun ProfileScreen(vm: MainViewModel) {
     // UI Override Values
     val fullName = vm.uiName
     val displayPhoto = vm.uiPhoto
-    
-    var showSettingsDialog by remember { mutableStateOf(false) }
 
     val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } 
         ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } 
@@ -78,9 +76,9 @@ fun ProfileScreen(vm: MainViewModel) {
             ) {
                 Spacer(Modifier.height(24.dp))
                 
-                // Settings Button
+                // Settings Button (UPDATED)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                     IconButton(onClick = { showSettingsDialog = true }) { 
+                     IconButton(onClick = { vm.showSettingsScreen = true }) { 
                          Icon(Icons.Default.Settings, "Settings") 
                      }
                 }
@@ -216,28 +214,5 @@ fun ProfileScreen(vm: MainViewModel) {
                 Spacer(Modifier.height(80.dp))
             }
         }
-    }
-
-    // Settings Dialog
-    if (showSettingsDialog) {
-        AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
-            title = { Text("Settings") },
-            text = {
-                Column {
-                    Text("Dictionary URL")
-                    OutlinedTextField(
-                        value = vm.dictionaryUrl, 
-                        onValueChange = { vm.dictionaryUrl = it },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = { 
-                TextButton(onClick = { showSettingsDialog = false }) { 
-                    Text("Done") 
-                } 
-            }
-        )
     }
 }

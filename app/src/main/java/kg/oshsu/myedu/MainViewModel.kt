@@ -42,6 +42,12 @@ class MainViewModel : ViewModel() {
     var appTheme by mutableStateOf("system") // system, light, dark
     var notificationsEnabled by mutableStateOf(true)
 
+    // --- STATE: SETTINGS (NEW) ---
+    var showSettingsScreen by mutableStateOf(false) // <--- ADDED THIS
+    var downloadMode by mutableStateOf("IN_APP")
+    var language by mutableStateOf("en")
+    var showDictionaryScreen by mutableStateOf(false)
+
     // Computed Properties for UI (Fallback to API data)
     val uiName: String
         get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "Student"
@@ -70,7 +76,7 @@ class MainViewModel : ViewModel() {
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
 
-    // --- STATE: SETTINGS ---
+    // --- STATE: SETTINGS API ---
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
     private var cachedDictionary: Map<String, String> = emptyMap()
 
@@ -85,6 +91,20 @@ class MainViewModel : ViewModel() {
     private var cachedResourcesEn: PdfResources? = null
     private var cachedRefResourcesRu: ReferenceResources? = null
     private var cachedRefResourcesEn: ReferenceResources? = null
+
+    // --- SETTINGS ACTIONS ---
+    fun setTheme(theme: String) {
+        appTheme = theme
+        prefs?.saveSettings(customName ?: "", customPhotoUri, theme, notificationsEnabled)
+    }
+
+    fun setDocMode(mode: String) {
+        downloadMode = mode
+    }
+
+    fun setAppLanguage(lang: String) {
+        language = lang
+    }
 
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {

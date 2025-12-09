@@ -126,11 +126,12 @@ data class NavItem(val label: String, val selectedIcon: ImageVector, val unselec
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
+    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
             vm.showTranscriptScreen -> vm.showTranscriptScreen = false
             vm.showReferenceScreen -> vm.showReferenceScreen = false
+            vm.showSettingsScreen -> vm.showSettingsScreen = false // Handle back for settings
         }
     }
 
@@ -175,6 +176,17 @@ fun MainAppStructure(vm: MainViewModel) {
         
         AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
         AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
+        
+        // Add Settings Screen Overlay
+        AnimatedVisibility(
+            visible = vm.showSettingsScreen, 
+            enter = slideInHorizontally(initialOffsetX = { it }), 
+            exit = slideOutHorizontally(targetOffsetX = { it }), 
+            modifier = Modifier.fillMaxSize()
+        ) { 
+            SettingsScreen(vm) { vm.showSettingsScreen = false } 
+        }
+
         if (vm.selectedClass != null) {
             ModalBottomSheet(onDismissRequest = { vm.selectedClass = null }) { vm.selectedClass?.let { ClassDetailsSheet(vm, it) } }
         }
