@@ -20,12 +20,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.SettingsSystemDaydream
 import androidx.compose.material.icons.rounded.ArrowForward
 import androidx.compose.material3.*
@@ -47,6 +47,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -95,17 +96,23 @@ fun OnboardingScreen(
     // --- STATE TRACKING ---
     // Fix: Determine the original API photo directly from profileData
     val apiPhoto = vm.profileData?.avatar
+
+    // Fix: Determine the original API name (Full Name)
+    val apiName = remember { vm.userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "" }
     
     // Fix: Initialize photoUri with the stored custom photo OR the API photo
     val startPhoto = remember { vm.customPhotoUri ?: apiPhoto }
     
-    var name by remember { mutableStateOf(vm.customName ?: vm.userData?.name ?: "") }
+    // Fix: Initialize name with customName OR the full apiName
+    var name by remember { mutableStateOf(vm.customName ?: apiName) }
     var photoUri by remember { mutableStateOf(startPhoto) }
     var theme by remember { mutableStateOf(vm.appTheme) }
     var notifications by remember { mutableStateOf(vm.notificationsEnabled) }
 
     // Fix: Show revert button if the current photoUri is different from the API photo
-    val showRevert = photoUri != apiPhoto
+    val showRevertPhoto = photoUri != apiPhoto
+    // Show revert button if current name differs from API name
+    val showRevertName = name != apiName
 
     // --- TRANSITION STATE ---
     var isUiVisible by remember { mutableStateOf(false) }
@@ -135,7 +142,7 @@ fun OnboardingScreen(
 
     // Animation for the Revert "Hole" cutout scale
     val revertHoleScale by animateFloatAsState(
-        targetValue = if (showRevert && isUiVisible) 1f else 0f,
+        targetValue = if (showRevertPhoto && isUiVisible) 1f else 0f,
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "revertHoleScale"
     )
@@ -284,7 +291,7 @@ fun OnboardingScreen(
                     
                     // REVERT BUTTON (Bottom Left, Secondary Color)
                     androidx.compose.animation.AnimatedVisibility(
-                        visible = isUiVisible && showRevert,
+                        visible = isUiVisible && showRevertPhoto,
                         enter = scaleIn(animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)),
                         exit = scaleOut(),
                         modifier = Modifier
@@ -299,7 +306,7 @@ fun OnboardingScreen(
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Undo,
+                                    imageVector = Icons.Default.Restore,
                                     contentDescription = "Revert Photo",
                                     tint = MaterialTheme.colorScheme.onSecondary,
                                     modifier = Modifier.size(20.dp)
@@ -369,7 +376,18 @@ fun OnboardingScreen(
                         unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    )
+                    ),
+                    trailingIcon = if (showRevertName) {
+                        {
+                            IconButton(onClick = { name = apiName }) {
+                                Icon(
+                                    imageVector = Icons.Default.Restore,
+                                    contentDescription = "Revert Name",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+                    } else null
                 )
 
                 // Theme Selector
@@ -393,7 +411,7 @@ fun OnboardingScreen(
                 // Notifications Toggle
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = if (notifications) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer
                     ),
                     shape = RoundedCornerShape(24.dp), 
                     onClick = { notifications = !notifications },
@@ -405,31 +423,27 @@ fun OnboardingScreen(
                             Text(
                                 "Notifications", 
                                 fontWeight = FontWeight.Bold,
-                                color = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
+                                color = MaterialTheme.colorScheme.onSurface
                             ) 
                         },
                         supportingContent = { 
                             Text(
                                 "Get class reminders", 
-                                color = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha=0.8f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             ) 
                         },
                         leadingContent = {
                             Icon(
                                 Icons.Default.Notifications, 
                                 null, 
-                                tint = if (notifications) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
                         trailingContent = {
                             Switch(
                                 checked = notifications, 
                                 onCheckedChange = { notifications = it }, 
-                                thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null,
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = MaterialTheme.colorScheme.primary,
-                                    checkedTrackColor = MaterialTheme.colorScheme.onPrimary
-                                )
+                                thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null
                             )
                         }
                     )
@@ -457,6 +471,22 @@ fun OnboardingScreen(
                 Icon(Icons.Rounded.ArrowForward, null)
             }
             
+            Spacer(Modifier.height(32.dp))
+
+            // --- DISCLAIMER ---
+            Text(
+                text = "Disclaimer: Customizations are stored locally on your device and are not uploaded to MyEDU servers.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(horizontal = 32.dp)
+                    .graphicsLayer { 
+                        alpha = uiAlpha
+                        translationY = uiTranslationY.toPx() 
+                    }
+            )
+
             Spacer(Modifier.height(32.dp))
         }
     }
