@@ -1,7 +1,10 @@
 package kg.oshsu.myedu
 
 import android.app.Application
+import android.app.DownloadManager
 import android.content.Context
+import android.net.Uri
+import android.os.Environment
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,6 +21,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
+import kotlin.math.max
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
@@ -57,6 +61,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var language by mutableStateOf("en")
     var showDictionaryScreen by mutableStateOf(false)
 
+    // --- STATE: UPDATES & NETWORK ---
+    var updateAvailableRelease by mutableStateOf<GitHubRelease?>(null)
+    var downloadId by mutableStateOf<Long?>(null)
+    var lastRefreshTime by mutableStateOf(System.currentTimeMillis())
+        private set
+
     val uiName: String
         get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: getString(R.string.student_default)
     
@@ -92,10 +102,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     // Exposed merged dictionary for UI and Logic
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
-
-    // --- STATE: UPDATES ---
-    var updateAvailableRelease by mutableStateOf<GitHubRelease?>(null)
-    var downloadId by mutableStateOf<Long?>(null)
 
     private var prefs: PrefsManager? = null
 
@@ -199,7 +205,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
-                        checkForUpdates(context) // Check for updates
                     } catch (e: Exception) {
                         // Handle Token Expiry during init
                         if (e.toString().contains("401") || e.message?.contains("401") == true) {
@@ -207,17 +212,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+                
+                // Check for updates in background
+                checkForUpdates(context)
+                
             } else {
                 appState = "LOGIN"
             }
         }
     }
 
-    // --- UPDATE CHECK LOGIC ---
+    private fun loadOfflineData() {
+        prefs?.let { p ->
+            userData = p.loadData("user_data", UserData::class.java)
+            profileData = p.loadData("profile_data", StudentInfoResponse::class.java)
+            payStatus = p.loadData("pay_status", PayStatusResponse::class.java)
+            newsList = p.loadList("news_list")
+            fullSchedule = p.loadList("schedule_list")
+            sessionData = p.loadList("session_list")
+            transcriptData = p.loadList<TranscriptYear>("transcript_list")
+            processScheduleLocally()
+        }
+    }
+
+    // --- NETWORK & UPDATES ---
+    
+    fun onNetworkAvailable() {
+        // Deliberately empty to avoid auto-refresh spam. 
+        // Logic can be added here if needed (e.g. show a "Back Online" snackbar).
+    }
+
     fun checkForUpdates(context: Context) {
         viewModelScope.launch {
             try {
-                // Ensure this string resource exists in strings.xml
+                // Ensure this string exists in strings.xml: repos/<USER>/<REPO>/releases/latest
                 val apiUrl = context.getString(R.string.update_repo_path) 
                 
                 val release = withContext(Dispatchers.IO) { NetworkClient.githubApi.getLatestRelease(apiUrl) }
@@ -239,7 +267,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
             val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
-            val length = maxOf(rParts.size, lParts.size)
+            val length = max(rParts.size, lParts.size)
             for (i in 0 until length) {
                 val r = rParts.getOrElse(i) { 0 }
                 val l = lParts.getOrElse(i) { 0 }
@@ -255,32 +283,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val apkAsset = release.assets.find { it.name.endsWith(".apk") } ?: return
         
         try {
-            val request = android.app.DownloadManager.Request(android.net.Uri.parse(apkAsset.downloadUrl))
+            val request = DownloadManager.Request(Uri.parse(apkAsset.downloadUrl))
                 .setTitle(getString(R.string.update_notif_title))
                 .setDescription(getString(R.string.update_notif_desc, release.tagName))
-                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, apkAsset.name)
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, apkAsset.name)
                 .setMimeType("application/vnd.android.package-archive")
 
-            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             downloadId = manager.enqueue(request)
             
             updateAvailableRelease = null // Close dialog
         } catch (e: Exception) {
             e.printStackTrace()
-        }
-    }
-
-    private fun loadOfflineData() {
-        prefs?.let { p ->
-            userData = p.loadData("user_data", UserData::class.java)
-            profileData = p.loadData("profile_data", StudentInfoResponse::class.java)
-            payStatus = p.loadData("pay_status", PayStatusResponse::class.java)
-            newsList = p.loadList("news_list")
-            fullSchedule = p.loadList("schedule_list")
-            sessionData = p.loadList("session_list")
-            transcriptData = p.loadList<TranscriptYear>("transcript_list")
-            processScheduleLocally()
         }
     }
 
@@ -293,7 +308,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
 
-            // Save credentials if Remember Me is active
             if (rememberMe) {
                 prefs?.saveData("pref_remember_me", true)
                 prefs?.saveData("pref_saved_email", email)
@@ -314,8 +328,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
-                        // Check updates on login
-                        checkForUpdates(getApplication())
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -358,7 +370,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         appState = "LOGIN"
         
-        // Preserve credentials if Remember Me was active
         val wasRemember = rememberMe
         val savedE = loginEmail
         val savedP = loginPass
@@ -399,9 +410,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) { isRefreshing = true }
             try {
                 fetchAllDataSuspend()
-                checkForUpdates(getApplication()) // Check on refresh
+                withContext(Dispatchers.Main) { lastRefreshTime = System.currentTimeMillis() }
             } catch (e: Exception) {
-                // If 401, try to refresh/re-login instead of just logging out
                 if (e.message?.contains("401") == true || e.toString().contains("401")) { 
                     withContext(Dispatchers.Main) { handleTokenExpiration() } 
                 }
@@ -411,16 +421,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- DEBUG: FORCE TOKEN EXPIRY ---
     fun debugForceTokenExpiry() {
         handleTokenExpiration()
     }
 
     private fun handleTokenExpiration() {
-        // Switch to Login screen but attempt auto-login if credentials are saved
         if (rememberMe && loginEmail.isNotBlank() && loginPass.isNotBlank()) {
             appState = "LOGIN"
-            login(loginEmail, loginPass) // This will set isLoading=true and show the refreshing spinner
+            login(loginEmail, loginPass) 
         } else {
             logout()
             errorMsg = getString(R.string.error_credentials)
@@ -495,7 +503,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val transcript = NetworkClient.api.getTranscript(uid, movId)
                 withContext(Dispatchers.Main) { transcriptData = transcript; prefs?.saveList("transcript_list", transcript) }
             } catch (e: Exception) {
-                // Handle 401 in transcript fetch
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 }
@@ -549,7 +556,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
 
             } catch (e: Exception) {
-                // Handle 401
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
@@ -616,7 +622,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
 
             } catch (e: Exception) {
-                // Handle 401
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {

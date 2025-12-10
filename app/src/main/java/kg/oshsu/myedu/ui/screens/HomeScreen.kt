@@ -111,9 +111,6 @@ fun HomeScreen(vm: MainViewModel) {
                 
                 // Title Logic
                 val todayString = stringResource(R.string.today)
-                // If vm.todayDayName is empty (init), use "Today". 
-                // If it equals localized "Today", use generic title.
-                // Else use "Monday's Classes" format.
                 val displayDay = vm.todayDayName.ifEmpty { todayString }
                 val title = if (displayDay == todayString) {
                     stringResource(R.string.todays_classes)

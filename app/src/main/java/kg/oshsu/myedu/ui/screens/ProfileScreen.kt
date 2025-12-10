@@ -25,6 +25,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -38,6 +39,8 @@ import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.DetailCard
 import kg.oshsu.myedu.ui.components.InfoSection
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -141,11 +144,10 @@ fun ProfileScreen(vm: MainViewModel) {
                 Spacer(Modifier.height(32.dp))
                 
                 // --- LOGOUT BUTTON (Tap = Logout, Long Press = Debug Force Expiry) ---
-                // Replaced standard Button with Surface to use combinedClickable
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp) // Standard button height
+                        .height(50.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                             onClick = { vm.logout() },
@@ -167,6 +169,26 @@ fun ProfileScreen(vm: MainViewModel) {
                     }
                 }
                 
+                Spacer(Modifier.height(24.dp))
+
+                // --- FOOTER INFO ---
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.alpha(0.6f)) {
+                    if (vm.lastRefreshTime > 0) {
+                        val formattedTime = remember(vm.lastRefreshTime) {
+                            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                            sdf.format(vm.lastRefreshTime)
+                        }
+                        Text(
+                            text = "Last updated: $formattedTime",
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Text(
+                        text = "Session: Active", 
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+                
                 Spacer(Modifier.height(80.dp))
             }
         }
@@ -178,7 +200,6 @@ fun ProfileScreen(vm: MainViewModel) {
             title = { Text(stringResource(R.string.settings)) },
             text = {
                 Column {
-                    // UPDATED: String Resource
                     Text(stringResource(R.string.dict_url))
                     OutlinedTextField(value = vm.dictionaryUrl, onValueChange = { vm.dictionaryUrl = it }, modifier = Modifier.fillMaxWidth())
                 }
