@@ -1,8 +1,11 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +29,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,7 +39,7 @@ import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.DetailCard
 import kg.oshsu.myedu.ui.components.InfoSection
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(vm: MainViewModel) {
     val user = vm.userData
@@ -44,6 +48,7 @@ fun ProfileScreen(vm: MainViewModel) {
     
     val fullName = vm.uiName
     val displayPhoto = vm.uiPhoto
+    val context = LocalContext.current
     
     var showSettingsDialog by remember { mutableStateOf(false) }
 
@@ -135,9 +140,33 @@ fun ProfileScreen(vm: MainViewModel) {
                 
                 Spacer(Modifier.height(32.dp))
                 
-                Button(onClick = { vm.logout() }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer), modifier = Modifier.fillMaxWidth()) { 
-                    Text(stringResource(R.string.log_out)) 
+                // --- LOGOUT BUTTON (Tap = Logout, Long Press = Debug Force Expiry) ---
+                // Replaced standard Button with Surface to use combinedClickable
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp) // Standard button height
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = { vm.logout() },
+                            onLongClick = {
+                                Toast.makeText(context, "DEBUG: Token Expired. Refreshing...", Toast.LENGTH_SHORT).show()
+                                vm.debugForceTokenExpiry()
+                            }
+                        ),
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    shape = CircleShape
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = stringResource(R.string.log_out), 
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
+                
                 Spacer(Modifier.height(80.dp))
             }
         }

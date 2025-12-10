@@ -195,7 +195,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        // Handle Token Expiry during init
+                        if (e.toString().contains("401") || e.message?.contains("401") == true) {
+                             withContext(Dispatchers.Main) { handleTokenExpiration() }
+                        }
+                    }
                 }
             } else {
                 appState = "LOGIN"
@@ -330,10 +335,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 fetchAllDataSuspend()
             } catch (e: Exception) {
-                if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
+                // If 401, try to refresh/re-login instead of just logging out
+                if (e.message?.contains("401") == true || e.toString().contains("401")) { 
+                    withContext(Dispatchers.Main) { handleTokenExpiration() } 
+                }
             } finally {
                 withContext(Dispatchers.Main) { isRefreshing = false }
             }
+        }
+    }
+
+    // --- DEBUG: FORCE TOKEN EXPIRY ---
+    fun debugForceTokenExpiry() {
+        handleTokenExpiration()
+    }
+
+    private fun handleTokenExpiration() {
+        // Switch to Login screen but attempt auto-login if credentials are saved
+        if (rememberMe && loginEmail.isNotBlank() && loginPass.isNotBlank()) {
+            appState = "LOGIN"
+            login(loginEmail, loginPass) // This will set isLoading=true and show the refreshing spinner
+        } else {
+            logout()
+            errorMsg = getString(R.string.error_credentials)
         }
     }
 
@@ -404,7 +428,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val movId = profileData?.studentMovement?.id ?: return@launch 
                 val transcript = NetworkClient.api.getTranscript(uid, movId)
                 withContext(Dispatchers.Main) { transcriptData = transcript; prefs?.saveList("transcript_list", transcript) }
-            } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isTranscriptLoading = false } }
+            } catch (e: Exception) {
+                // Handle 401 in transcript fetch
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                }
+            } finally { withContext(Dispatchers.Main) { isTranscriptLoading = false } }
         }
     }
     
@@ -454,10 +483,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
 
             } catch (e: Exception) {
-                pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
-                e.printStackTrace()
-                delay(3000)
-                pdfStatusMessage = null
+                // Handle 401
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                } else {
+                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    e.printStackTrace()
+                    delay(3000)
+                    pdfStatusMessage = null
+                }
             } finally {
                 isPdfGenerating = false
             }
@@ -516,10 +550,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
 
             } catch (e: Exception) {
-                pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
-                e.printStackTrace()
-                delay(3000)
-                pdfStatusMessage = null
+                // Handle 401
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                } else {
+                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    e.printStackTrace()
+                    delay(3000)
+                    pdfStatusMessage = null
+                }
             } finally {
                 isPdfGenerating = false
             }
