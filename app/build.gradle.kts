@@ -47,6 +47,7 @@ android {
     // --- BUILD FEATURES ---
     buildFeatures { 
         compose = true 
+        buildConfig = true
     }
     
     // --- COMPILE OPTIONS ---
@@ -103,4 +104,7 @@ dependencies {
     // --- IMAGE LOADING (Coil) ---
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("io.coil-kt:coil-svg:2.7.0") 
+    
+    // WORK MANAGER (Required for Background Sync)
+    implementation("androidx.work:work-runtime-ktx:2.10.0") 
 }

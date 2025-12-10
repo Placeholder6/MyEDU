@@ -6,7 +6,6 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 
 class PrefsManager(context: Context) {
-    // @PublishedApi makes these accessible to the inline function below
     @PublishedApi
     internal val prefs: SharedPreferences = context.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
     
@@ -40,10 +39,33 @@ class PrefsManager(context: Context) {
             .apply()
     }
 
+    // --- LANGUAGE SETTINGS ---
+    fun saveAppLanguage(lang: String) {
+        prefs.edit().putString("app_language", lang).apply()
+    }
+
+    fun getAppLanguage(): String = prefs.getString("app_language", "en") ?: "en"
+
     fun getCustomName(): String? = prefs.getString("custom_name", null)
     fun getCustomPhoto(): String? = prefs.getString("custom_photo", null)
     fun getAppTheme(): String = prefs.getString("app_theme", "system") ?: "system"
     fun areNotificationsEnabled(): Boolean = prefs.getBoolean("notifications_enabled", true)
+
+    // --- DICTIONARY (NEW) ---
+    fun saveCustomDictionary(map: Map<String, String>) {
+        val json = gson.toJson(map)
+        prefs.edit().putString("custom_dictionary", json).apply()
+    }
+
+    fun getCustomDictionary(): Map<String, String> {
+        val json = prefs.getString("custom_dictionary", null) ?: return emptyMap()
+        val type = object : TypeToken<Map<String, String>>() {}.type
+        return try {
+            gson.fromJson(json, type)
+        } catch (e: Exception) {
+            emptyMap()
+        }
+    }
 
     fun clearAll() {
         prefs.edit().clear().apply()

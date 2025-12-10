@@ -1,7 +1,14 @@
 package kg.oshsu.myedu
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -28,21 +35,96 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     
     private val vm by viewModels<MainViewModel>()
 
+    // --- INSTALL RECEIVER ---
+    private val installReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                
+                // Check if this matches our update download
+                if (id == vm.downloadId) {
+                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    val query = DownloadManager.Query().setFilterById(id)
+                    var cursor: Cursor? = null
+                    
+                    try {
+                        cursor = downloadManager.query(query)
+                        if (cursor.moveToFirst()) {
+                            val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                            val status = cursor.getInt(statusIndex)
+
+                            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                                val uriString = cursor.getString(uriIndex)
+                                
+                                if (uriString != null) {
+                                    val localFile = File(Uri.parse(uriString).path!!)
+                                    
+                                    // Get Secure URI via FileProvider
+                                    val contentUri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.provider",
+                                        localFile
+                                    )
+
+                                    // Launch Installer
+                                    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(contentUri, "application/vnd.android.package-archive")
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                                    }
+                                    context.startActivity(installIntent)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        cursor?.close()
+                    }
+                }
+            }
+        }
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        val prefs = newBase.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
+        val lang = prefs.getString("app_language", "en") ?: "en"
+        super.attachBaseContext(LocaleHelper.setLocale(newBase, lang))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Register Installer Receiver
+        registerReceiver(installReceiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+
+        // Initialize background work for syncing grades
+        setupBackgroundWork()
+
         enableEdgeToEdge()
         vm.initSession(applicationContext)
 
@@ -60,8 +142,31 @@ class MainActivity : ComponentActivity() {
             MyEduTheme(themePreference = vm.appTheme) { AppContent(vm) } 
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(installReceiver)
+    }
+
+    private fun setupBackgroundWork() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true)
+            .build()
+            
+        val syncRequest = PeriodicWorkRequestBuilder<BackgroundSyncWorker>(4, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .build()
+            
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "MyEduGradeSync", 
+            ExistingPeriodicWorkPolicy.KEEP, 
+            syncRequest
+        )
+    }
 }
 
+// ... [MyEduTheme and rememberAnimatedColorScheme remain the same] ...
 @Composable
 fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     val systemDark = isSystemInDarkTheme()
@@ -72,10 +177,12 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     }
 
     val context = LocalContext.current
-    val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val targetScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else { if (useDarkTheme) darkColorScheme() else lightColorScheme() }
     
+    val animatedScheme = rememberAnimatedColorScheme(targetScheme)
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -83,22 +190,64 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
             androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
         }
     }
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    MaterialTheme(colorScheme = animatedScheme, content = content)
+}
+
+@Composable
+fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
+    val animationSpec = tween<Color>(durationMillis = 600)
+
+    val primary by animateColorAsState(targetColorScheme.primary, animationSpec, label = "primary")
+    val onPrimary by animateColorAsState(targetColorScheme.onPrimary, animationSpec, label = "onPrimary")
+    val primaryContainer by animateColorAsState(targetColorScheme.primaryContainer, animationSpec, label = "primaryContainer")
+    val onPrimaryContainer by animateColorAsState(targetColorScheme.onPrimaryContainer, animationSpec, label = "onPrimaryContainer")
+    val secondary by animateColorAsState(targetColorScheme.secondary, animationSpec, label = "secondary")
+    val onSecondary by animateColorAsState(targetColorScheme.onSecondary, animationSpec, label = "onSecondary")
+    val secondaryContainer by animateColorAsState(targetColorScheme.secondaryContainer, animationSpec, label = "secondaryContainer")
+    val onSecondaryContainer by animateColorAsState(targetColorScheme.onSecondaryContainer, animationSpec, label = "onSecondaryContainer")
+    val tertiary by animateColorAsState(targetColorScheme.tertiary, animationSpec, label = "tertiary")
+    val onTertiary by animateColorAsState(targetColorScheme.onTertiary, animationSpec, label = "onTertiary")
+    val tertiaryContainer by animateColorAsState(targetColorScheme.tertiaryContainer, animationSpec, label = "tertiaryContainer")
+    val onTertiaryContainer by animateColorAsState(targetColorScheme.onTertiaryContainer, animationSpec, label = "onTertiaryContainer")
+    val background by animateColorAsState(targetColorScheme.background, animationSpec, label = "background")
+    val onBackground by animateColorAsState(targetColorScheme.onBackground, animationSpec, label = "onBackground")
+    val surface by animateColorAsState(targetColorScheme.surface, animationSpec, label = "surface")
+    val onSurface by animateColorAsState(targetColorScheme.onSurface, animationSpec, label = "onSurface")
+    val surfaceVariant by animateColorAsState(targetColorScheme.surfaceVariant, animationSpec, label = "surfaceVariant")
+    val onSurfaceVariant by animateColorAsState(targetColorScheme.onSurfaceVariant, animationSpec, label = "onSurfaceVariant")
+    val outline by animateColorAsState(targetColorScheme.outline, animationSpec, label = "outline")
+    val outlineVariant by animateColorAsState(targetColorScheme.outlineVariant, animationSpec, label = "outlineVariant")
+    val error by animateColorAsState(targetColorScheme.error, animationSpec, label = "error")
+    val onError by animateColorAsState(targetColorScheme.onError, animationSpec, label = "onError")
+    val errorContainer by animateColorAsState(targetColorScheme.errorContainer, animationSpec, label = "errorContainer")
+    val onErrorContainer by animateColorAsState(targetColorScheme.onErrorContainer, animationSpec, label = "onErrorContainer")
+    val surfaceContainerLowest by animateColorAsState(targetColorScheme.surfaceContainerLowest, animationSpec, label = "sCL")
+    val surfaceContainerLow by animateColorAsState(targetColorScheme.surfaceContainerLow, animationSpec, label = "sCLow")
+    val surfaceContainer by animateColorAsState(targetColorScheme.surfaceContainer, animationSpec, label = "sC")
+    val surfaceContainerHigh by animateColorAsState(targetColorScheme.surfaceContainerHigh, animationSpec, label = "sCH")
+    val surfaceContainerHighest by animateColorAsState(targetColorScheme.surfaceContainerHighest, animationSpec, label = "sCHH")
+
+    return targetColorScheme.copy(
+        primary = primary, onPrimary = onPrimary, primaryContainer = primaryContainer, onPrimaryContainer = onPrimaryContainer,
+        secondary = secondary, onSecondary = onSecondary, secondaryContainer = secondaryContainer, onSecondaryContainer = onSecondaryContainer,
+        tertiary = tertiary, onTertiary = onTertiary, tertiaryContainer = tertiaryContainer, onTertiaryContainer = onTertiaryContainer,
+        background = background, onBackground = onBackground,
+        surface = surface, onSurface = onSurface, surfaceVariant = surfaceVariant, onSurfaceVariant = onSurfaceVariant,
+        outline = outline, outlineVariant = outlineVariant,
+        error = error, onError = onError, errorContainer = errorContainer, onErrorContainer = onErrorContainer,
+        surfaceContainerLowest = surfaceContainerLowest, surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer, surfaceContainerHigh = surfaceContainerHigh, surfaceContainerHighest = surfaceContainerHighest
+    )
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppContent(vm: MainViewModel) {
-    // 1. Root Container to hold persistent background
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        
-        // 2. Persistent Background Layer
-        // Only show if in Login or Onboarding to avoid visual noise in the main app
         if (vm.appState == "LOGIN" || vm.appState == "ONBOARDING") {
             ExpressiveShapesBackground(maxWidth, maxHeight)
         }
 
-        // 3. Shared Transition Layout
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = vm.appState, 
@@ -108,13 +257,33 @@ fun AppContent(vm: MainViewModel) {
                 }
             ) { state ->
                 when (state) {
-                    // Pass Shared scopes
                     "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
                     "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
                     "APP" -> MainAppStructure(vm)
                     else -> Box(Modifier.fillMaxSize()) 
                 }
             }
+        }
+
+        // --- UPDATE DIALOG ---
+        val context = LocalContext.current
+        if (vm.updateAvailableRelease != null) {
+            val release = vm.updateAvailableRelease!!
+            AlertDialog(
+                onDismissRequest = { vm.updateAvailableRelease = null },
+                title = { Text(stringResource(R.string.update_available_title)) },
+                text = { Text(stringResource(R.string.update_available_msg, release.tagName, release.body)) },
+                confirmButton = {
+                    Button(onClick = { vm.downloadUpdate(context) }) {
+                        Text(stringResource(R.string.update_btn_download))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vm.updateAvailableRelease = null }) {
+                        Text(stringResource(R.string.update_btn_later))
+                    }
+                }
+            )
         }
     }
 }
@@ -126,19 +295,21 @@ data class NavItem(val label: String, val selectedIcon: ImageVector, val unselec
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen) { 
+    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen || vm.showDictionaryScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
             vm.showTranscriptScreen -> vm.showTranscriptScreen = false
             vm.showReferenceScreen -> vm.showReferenceScreen = false
+            vm.showDictionaryScreen -> vm.showDictionaryScreen = false // Close Dict
+            vm.showSettingsScreen -> vm.showSettingsScreen = false 
         }
     }
 
     val navItems = listOf(
-        NavItem("Home", Icons.Filled.Home, Icons.Outlined.Home, 0),
-        NavItem("Schedule", Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
-        NavItem("Grades", Icons.Filled.Description, Icons.Outlined.Description, 2),
-        NavItem("Profile", Icons.Filled.Person, Icons.Outlined.Person, 3)
+        NavItem(stringResource(R.string.nav_home), Icons.Filled.Home, Icons.Outlined.Home, 0),
+        NavItem(stringResource(R.string.nav_schedule), Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
+        NavItem(stringResource(R.string.nav_grades), Icons.Filled.Description, Icons.Outlined.Description, 2),
+        NavItem(stringResource(R.string.nav_profile), Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -175,6 +346,26 @@ fun MainAppStructure(vm: MainViewModel) {
         
         AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
         AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
+        
+        AnimatedVisibility(
+            visible = vm.showSettingsScreen, 
+            enter = slideInHorizontally(initialOffsetX = { it }), 
+            exit = slideOutHorizontally(targetOffsetX = { it }), 
+            modifier = Modifier.fillMaxSize()
+        ) { 
+            SettingsScreen(vm) { vm.showSettingsScreen = false } 
+        }
+
+        // --- NEW: Dictionary Screen Overlay ---
+        AnimatedVisibility(
+            visible = vm.showDictionaryScreen, 
+            enter = slideInHorizontally(initialOffsetX = { it }), 
+            exit = slideOutHorizontally(targetOffsetX = { it }), 
+            modifier = Modifier.fillMaxSize()
+        ) { 
+            DictionaryScreen(vm) { vm.showDictionaryScreen = false } 
+        }
+
         if (vm.selectedClass != null) {
             ModalBottomSheet(onDismissRequest = { vm.selectedClass = null }) { vm.selectedClass?.let { ClassDetailsSheet(vm, it) } }
         }

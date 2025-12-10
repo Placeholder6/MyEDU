@@ -21,6 +21,7 @@ import retrofit2.http.Multipart
 import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Query
+import retrofit2.http.Url
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -33,7 +34,6 @@ data class AuthData(val token: String?, val is_student: Boolean?)
 data class UserResponse(val user: UserData?)
 data class UserData(val id: Long, val name: String?, val last_name: String?, val email: String?)
 
-// ... [Keep existing Profile, Schedule, and Session models exactly as they were] ...
 data class StudentInfoResponse(
     @SerializedName("pdsstudentinfo") val pdsstudentinfo: PdsInfo?,
     @SerializedName("studentMovement") val studentMovement: MovementInfo?,
@@ -113,6 +113,18 @@ data class TranscriptSemester(@SerializedName("semester") val semesterName: Stri
 data class TranscriptSubject(@SerializedName("subject") val subjectName: String?, @SerializedName("code") val code: String?, @SerializedName("credit") val credit: Double?, @SerializedName("mark_list") val markList: MarkList?, @SerializedName("exam_rule") val examRule: ExamRule?)
 data class ExamRule(@SerializedName("alphabetic") val alphabetic: String?, @SerializedName("digital") val digital: Double?, @SerializedName("control_form") val controlForm: String?, @SerializedName("word_ru") val wordRu: String?)
 
+// --- GITHUB UPDATE MODELS ---
+data class GitHubRelease(
+    @SerializedName("tag_name") val tagName: String,
+    @SerializedName("body") val body: String,
+    @SerializedName("assets") val assets: List<GitHubAsset>
+)
+data class GitHubAsset(
+    @SerializedName("browser_download_url") val downloadUrl: String,
+    @SerializedName("name") val name: String,
+    @SerializedName("content_type") val contentType: String
+)
+
 // --- API INTERFACE ---
 interface OshSuApi {
     @POST("public/api/login") suspend fun login(@Body request: LoginRequest): LoginResponse
@@ -126,7 +138,7 @@ interface OshSuApi {
     @GET("public/api/studentsession") suspend fun getSession(@Query("id_semester") semesterId: Int): List<SessionResponse>
     @GET("public/api/studenttranscript") suspend fun getTranscript(@Query("id_student") studentId: Long, @Query("id_movement") movementId: Long): List<TranscriptYear>
 
-    // --- DOCS: RAW ENDPOINTS (Added for PDF Generators) ---
+    // --- DOCS: RAW ENDPOINTS ---
     @GET("public/api/searchstudentinfo") 
     suspend fun getStudentInfoRaw(@Query("id_student") studentId: Long): ResponseBody
 
@@ -138,8 +150,7 @@ interface OshSuApi {
 
     @GET("public/api/control/structure/university")
     suspend fun getUniversityInfo(): ResponseBody
-    // -----------------------------------------------------
-
+    
     // DOCS: Form 13 (Transcript)
     @POST("public/api/student/doc/form13link") suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
     @Multipart @POST("public/api/student/doc/form13") suspend fun uploadPdf(@Part("id") id: RequestBody, @Part("id_student") idStudent: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
@@ -150,6 +161,12 @@ interface OshSuApi {
 
     // DOCS: Shared
     @POST("public/api/open/doc/showlink") suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
+}
+
+// --- GITHUB API INTERFACE ---
+interface GitHubApi {
+    @GET
+    suspend fun getLatestRelease(@Url url: String): GitHubRelease
 }
 
 // --- NETWORK CLIENT SETUP ---
@@ -183,6 +200,7 @@ class WindowsInterceptor : Interceptor {
 object NetworkClient {
     val cookieJar = UniversalCookieJar()
     val interceptor = WindowsInterceptor()
+    
     val api: OshSuApi = Retrofit.Builder().baseUrl("https://api.myedu.oshsu.kg/")
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
@@ -192,4 +210,13 @@ object NetworkClient {
             .build())
         .addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create()))
         .build().create(OshSuApi::class.java)
+
+    // Separate Client for GitHub
+    val githubApi: GitHubApi = Retrofit.Builder().baseUrl("https://api.github.com/")
+        .client(OkHttpClient.Builder()
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .build())
+        .addConverterFactory(GsonConverterFactory.create())
+        .build().create(GitHubApi::class.java)
 }

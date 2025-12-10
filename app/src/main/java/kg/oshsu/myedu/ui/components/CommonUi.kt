@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -15,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -27,6 +25,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
@@ -40,10 +39,13 @@ import androidx.graphics.shapes.toPath
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import coil.decode.SvgDecoder
+import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ScheduleItem
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.random.Random
+
+// --- SHAPES & BACKGROUND ---
 
 object M3ExpressiveShapes {
     fun twelveSidedCookie(): RoundedPolygon {
@@ -89,11 +91,11 @@ class PolygonShape(private val polygon: RoundedPolygon) : Shape {
     }
 }
 
-// --- BACKGROUND COMPONENTS (Moved from LoginScreen) ---
 sealed class BgElement {
     data class Shape(val polygon: RoundedPolygon) : BgElement()
     data class Icon(val imageVector: ImageVector) : BgElement()
 }
+
 private data class SimItem(val id: Int, var x: Float, var y: Float, var size: Float, var speed: Float, var active: Boolean = true)
 data class BgItem(val element: BgElement, val xOffset: Dp, val yOffset: Dp, val size: Dp, val color: Color, val alpha: Float, val direction: Float)
 
@@ -158,7 +160,6 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
             BgElement.Shape(M3ExpressiveShapes.square()), BgElement.Shape(M3ExpressiveShapes.triangle()), BgElement.Shape(M3ExpressiveShapes.scallop()),
             BgElement.Shape(M3ExpressiveShapes.flower()), BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
             BgElement.Icon(Icons.Rounded.School), BgElement.Icon(Icons.Rounded.AutoStories), BgElement.Icon(Icons.Rounded.Edit), BgElement.Icon(Icons.Rounded.Lightbulb),
-            BgElement.Icon(Icons.Rounded.MenuBook), 
             BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
             BgElement.Icon(Icons.Rounded.Science), BgElement.Icon(Icons.Rounded.Star)
         )
@@ -196,7 +197,65 @@ fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
     }
 }
 
-// ... [Existing CommonUi functions: OshSuLogo, StatCard, ClassItem, etc.] ...
+// --- HELPER: Map API Strings to Localized Resources ---
+@Composable
+fun getLocalizedSubjectType(apiType: String?): String {
+    if (apiType == null) return stringResource(R.string.lesson_default)
+    return when {
+        apiType.contains("Lecture", ignoreCase = true) || apiType.contains("Лекция", ignoreCase = true) -> stringResource(R.string.type_lecture)
+        apiType.contains("Practical", ignoreCase = true) || apiType.contains("Practice", ignoreCase = true) || apiType.contains("Практика", ignoreCase = true) -> stringResource(R.string.type_practice)
+        apiType.contains("Lab", ignoreCase = true) || apiType.contains("Laboratory", ignoreCase = true) || apiType.contains("Лабораторная", ignoreCase = true) -> stringResource(R.string.type_lab)
+        else -> apiType
+    }
+}
+
+@Composable
+fun getLocalizedRoomName(apiName: String?): String {
+    if (apiName == null) return stringResource(R.string.unknown_room)
+    return when {
+        apiName.equals("Online", ignoreCase = true) || apiName.equals("Онлайн", ignoreCase = true) -> stringResource(R.string.online)
+        else -> apiName
+    }
+}
+
+// --- LOCALIZED UI COMPONENTS ---
+
+@Composable
+fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
+    val localizedType = getLocalizedSubjectType(item.subject_type?.get())
+    val labelStream = stringResource(R.string.stream)
+    val labelGroup = stringResource(R.string.group)
+    val typeLecture = stringResource(R.string.type_lecture)
+    
+    val streamInfo = if (item.stream?.numeric != null) { 
+        if (localizedType == typeLecture) "$labelStream ${item.stream.numeric}" else "$labelGroup ${item.stream.numeric}" 
+    } else ""
+    
+    val localizedRoom = getLocalizedRoomName(item.room?.name_en)
+
+    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)).padding(vertical = 8.dp)) {
+                Text("${item.id_lesson}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(timeString.split("-").firstOrNull()?.trim() ?: "", style = MaterialTheme.typography.labelSmall)
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.subject?.get() ?: stringResource(R.string.subject_default), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                val metaText = buildString { 
+                    append(localizedRoom)
+                    append(" • ")
+                    append(localizedType)
+                    if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } 
+                }
+                Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+            }
+            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
+        }
+    }
+}
+
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
@@ -214,27 +273,6 @@ fun StatCard(icon: ImageVector, label: String, value: String, secondaryValue: St
             Text(label, style = MaterialTheme.typography.labelMedium, color = Color.Black.copy(alpha=0.6f))
             Text(text = value, style = if(value.length > 8) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (secondaryValue != null) Text(text = secondaryValue, style = MaterialTheme.typography.bodySmall, color = Color.Black.copy(alpha = 0.5f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
-    val streamInfo = if (item.stream?.numeric != null) { val type = item.subject_type?.get(); if (type == "Lecture") "Stream ${item.stream.numeric}" else "Group ${item.stream.numeric}" } else ""
-    Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp).background(MaterialTheme.colorScheme.background, RoundedCornerShape(8.dp)).padding(vertical = 8.dp)) {
-                Text("${item.id_lesson}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text(timeString.split("-").firstOrNull()?.trim() ?: "", style = MaterialTheme.typography.labelSmall)
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                val metaText = buildString { append(item.room?.name_en ?: "Room ?"); append(" • "); append(item.subject_type?.get() ?: "Lesson"); if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } }
-                Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
-            }
-            Icon(Icons.Outlined.ChevronRight, null, tint = MaterialTheme.colorScheme.outline)
         }
     }
 }

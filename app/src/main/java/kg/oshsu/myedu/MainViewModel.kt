@@ -1,8 +1,9 @@
 package kg.oshsu.myedu
 
+import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.*
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -18,17 +19,25 @@ import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    
+    // Helper to get strings in ViewModel
+    private fun getString(resId: Int, vararg args: Any): String {
+        return getApplication<Application>().getString(resId, *args)
+    }
+
     // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
     var isRefreshing by mutableStateOf(false)
-    
-    // Trigger for the "Expand" animation on the Login Screen
     var isLoginSuccess by mutableStateOf(false) 
-    
     var errorMsg by mutableStateOf<String?>(null)
+
+    // --- STATE: LOGIN CREDENTIALS ---
+    var loginEmail by mutableStateOf("")
+    var loginPass by mutableStateOf("")
+    var rememberMe by mutableStateOf(false)
 
     // --- STATE: USER DATA ---
     var userData by mutableStateOf<UserData?>(null)
@@ -36,15 +45,20 @@ class MainViewModel : ViewModel() {
     var payStatus by mutableStateOf<PayStatusResponse?>(null)
     var newsList by mutableStateOf<List<NewsItem>>(emptyList())
 
-    // --- STATE: CUSTOM UI DATA (Onboarding) ---
+    // --- STATE: CUSTOM UI DATA ---
     var customName by mutableStateOf<String?>(null)
     var customPhotoUri by mutableStateOf<String?>(null)
-    var appTheme by mutableStateOf("system") // system, light, dark
+    var appTheme by mutableStateOf("system") 
     var notificationsEnabled by mutableStateOf(true)
 
-    // Computed Properties for UI (Fallback to API data)
+    // --- STATE: SETTINGS ---
+    var showSettingsScreen by mutableStateOf(false)
+    var downloadMode by mutableStateOf("IN_APP")
+    var language by mutableStateOf("en")
+    var showDictionaryScreen by mutableStateOf(false)
+
     val uiName: String
-        get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "Student"
+        get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: getString(R.string.student_default)
     
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
@@ -53,7 +67,7 @@ class MainViewModel : ViewModel() {
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var timeMap by mutableStateOf<Map<Int, String>>(emptyMap())
-    var todayDayName by mutableStateOf("Today")
+    var todayDayName by mutableStateOf("") 
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
@@ -70,9 +84,18 @@ class MainViewModel : ViewModel() {
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
 
-    // --- STATE: SETTINGS ---
+    // --- STATE: DICTIONARY ---
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
-    private var cachedDictionary: Map<String, String> = emptyMap()
+    
+    private var remoteDictionary: Map<String, String> = emptyMap()
+    private var customDictionary: MutableMap<String, String> = mutableMapOf()
+    
+    // Exposed merged dictionary for UI and Logic
+    var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
+
+    // --- STATE: UPDATES ---
+    var updateAvailableRelease by mutableStateOf<GitHubRelease?>(null)
+    var downloadId by mutableStateOf<Long?>(null)
 
     private var prefs: PrefsManager? = null
 
@@ -86,18 +109,77 @@ class MainViewModel : ViewModel() {
     private var cachedRefResourcesRu: ReferenceResources? = null
     private var cachedRefResourcesEn: ReferenceResources? = null
 
+    // --- SETTINGS ACTIONS ---
+    fun setTheme(theme: String) {
+        appTheme = theme
+        prefs?.saveSettings(customName ?: "", customPhotoUri, theme, notificationsEnabled)
+    }
+
+    fun setDocMode(mode: String) {
+        downloadMode = mode
+    }
+
+    fun setAppLanguage(lang: String) {
+        language = lang
+        prefs?.saveAppLanguage(lang)
+    }
+
+    // --- DICTIONARY ACTIONS ---
+    fun addOrUpdateDictionaryEntry(original: String, translation: String) {
+        customDictionary[original] = translation
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    fun removeDictionaryEntry(original: String) {
+        customDictionary.remove(original)
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    fun resetDictionaryToDefault() {
+        customDictionary.clear()
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    private fun updateCombinedDictionary() {
+        combinedDictionary = remoteDictionary + customDictionary
+    }
+
+    private suspend fun fetchDictionaryIfNeeded() {
+        if (remoteDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
+            remoteDictionary = dictUtils.fetchDictionary(dictionaryUrl)
+        }
+        if (customDictionary.isEmpty()) {
+            customDictionary = prefs?.getCustomDictionary()?.toMutableMap() ?: mutableMapOf()
+        }
+        withContext(Dispatchers.Main) {
+            updateCombinedDictionary()
+        }
+    }
+
     // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
         viewModelScope.launch {
             if (prefs == null) {
                 prefs = PrefsManager(context)
             }
-            // Load Settings
             prefs?.let { p ->
                 customName = p.getCustomName()
                 customPhotoUri = p.getCustomPhoto()
                 appTheme = p.getAppTheme()
                 notificationsEnabled = p.areNotificationsEnabled()
+                language = p.getAppLanguage()
+                customDictionary = p.getCustomDictionary().toMutableMap()
+                
+                // Load Saved Credentials
+                val isRemember = p.loadData("pref_remember_me", Boolean::class.java) ?: false
+                rememberMe = isRemember
+                if (isRemember) {
+                    loginEmail = p.loadData("pref_saved_email", String::class.java) ?: ""
+                    loginPass = p.loadData("pref_saved_pass", String::class.java) ?: ""
+                }
             }
 
             val token = prefs?.getToken()
@@ -107,20 +189,85 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.injectSessionCookies(token)
                 loadOfflineData()
                 
-                // Check if onboarding was completed
                 if (prefs?.isOnboardingComplete() == true) {
                     appState = "APP"
                 } else {
                     appState = "ONBOARDING"
                 }
 
-                // Trigger background refresh
                 launch(Dispatchers.IO) {
-                    try { fetchAllDataSuspend() } catch (_: Exception) {}
+                    try { 
+                        fetchAllDataSuspend()
+                        fetchDictionaryIfNeeded()
+                        checkForUpdates(context) // Check for updates
+                    } catch (e: Exception) {
+                        // Handle Token Expiry during init
+                        if (e.toString().contains("401") || e.message?.contains("401") == true) {
+                             withContext(Dispatchers.Main) { handleTokenExpiration() }
+                        }
+                    }
                 }
             } else {
                 appState = "LOGIN"
             }
+        }
+    }
+
+    // --- UPDATE CHECK LOGIC ---
+    fun checkForUpdates(context: Context) {
+        viewModelScope.launch {
+            try {
+                // Ensure this string resource exists in strings.xml
+                val apiUrl = context.getString(R.string.update_repo_path) 
+                
+                val release = withContext(Dispatchers.IO) { NetworkClient.githubApi.getLatestRelease(apiUrl) }
+                val currentVer = BuildConfig.VERSION_NAME
+                
+                val remoteVer = release.tagName.replace("v", "")
+                val localVer = currentVer.replace("v", "")
+                
+                if (remoteVer != localVer && isNewerVersion(remoteVer, localVer)) {
+                    updateAvailableRelease = release
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun isNewerVersion(remote: String, local: String): Boolean {
+        return try {
+            val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
+            val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
+            val length = maxOf(rParts.size, lParts.size)
+            for (i in 0 until length) {
+                val r = rParts.getOrElse(i) { 0 }
+                val l = lParts.getOrElse(i) { 0 }
+                if (r > l) return true
+                if (r < l) return false
+            }
+            false
+        } catch (e: Exception) { false }
+    }
+
+    fun downloadUpdate(context: Context) {
+        val release = updateAvailableRelease ?: return
+        val apkAsset = release.assets.find { it.name.endsWith(".apk") } ?: return
+        
+        try {
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(apkAsset.downloadUrl))
+                .setTitle(getString(R.string.update_notif_title))
+                .setDescription(getString(R.string.update_notif_desc, release.tagName))
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, apkAsset.name)
+                .setMimeType("application/vnd.android.package-archive")
+
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            downloadId = manager.enqueue(request)
+            
+            updateAvailableRelease = null // Close dialog
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -146,8 +293,18 @@ class MainViewModel : ViewModel() {
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
 
+            // Save credentials if Remember Me is active
+            if (rememberMe) {
+                prefs?.saveData("pref_remember_me", true)
+                prefs?.saveData("pref_saved_email", email)
+                prefs?.saveData("pref_saved_pass", pass)
+            } else {
+                prefs?.saveData("pref_remember_me", false)
+                prefs?.saveData("pref_saved_email", "")
+                prefs?.saveData("pref_saved_pass", "")
+            }
+
             try {
-                // 1. Perform Login
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
                 val token = resp.authorisation?.token
                 if (token != null) {
@@ -155,34 +312,31 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // 2. Load ALL Data
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
+                        // Check updates on login
+                        checkForUpdates(getApplication())
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
 
-                    // 3. Trigger Morph Animation
                     isLoginSuccess = true
-                    // IMMEDIATE MORPH: Very short delay (50ms) to allow frame update
                     delay(200) 
 
-                    // Check Onboarding
                     if (prefs?.isOnboardingComplete() == true) {
                         appState = "APP"
                     } else {
-                        // Pre-fill name if not set
                         if (customName == null) {
                             customName = "${userData?.last_name ?: ""} ${userData?.name ?: ""}".trim()
                         }
                         appState = "ONBOARDING"
                     }
                 } else {
-                    errorMsg = "Incorrect credentials"
+                    errorMsg = getString(R.string.error_credentials)
                     isLoading = false
                 }
             } catch (e: Exception) {
-                errorMsg = "Login Failed: ${e.message}"
+                errorMsg = getString(R.string.error_login_failed, e.message ?: "Unknown")
                 isLoading = false
             }
         }
@@ -203,6 +357,12 @@ class MainViewModel : ViewModel() {
 
     fun logout() {
         appState = "LOGIN"
+        
+        // Preserve credentials if Remember Me was active
+        val wasRemember = rememberMe
+        val savedE = loginEmail
+        val savedP = loginPass
+
         currentTab = 0
         userData = null
         profileData = null
@@ -215,31 +375,58 @@ class MainViewModel : ViewModel() {
         NetworkClient.cookieJar.clear()
         NetworkClient.interceptor.authToken = null
         
-        // Reset States
         isLoading = false
         isLoginSuccess = false
-        // Reset Custom Settings for next user
         customName = null
         customPhotoUri = null
         appTheme = "system"
         notificationsEnabled = true
+        showSettingsScreen = false
+        showDictionaryScreen = false
+
+        if (wasRemember) {
+            prefs?.saveData("pref_remember_me", true)
+            prefs?.saveData("pref_saved_email", savedE)
+            prefs?.saveData("pref_saved_pass", savedP)
+            loginEmail = savedE
+            loginPass = savedP
+            rememberMe = true
+        }
     }
 
-    // --- PUBLIC REFRESH ACTION ---
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) { isRefreshing = true }
             try {
                 fetchAllDataSuspend()
+                checkForUpdates(getApplication()) // Check on refresh
             } catch (e: Exception) {
-                if (e.message?.contains("401") == true) { withContext(Dispatchers.Main) { logout() } }
+                // If 401, try to refresh/re-login instead of just logging out
+                if (e.message?.contains("401") == true || e.toString().contains("401")) { 
+                    withContext(Dispatchers.Main) { handleTokenExpiration() } 
+                }
             } finally {
                 withContext(Dispatchers.Main) { isRefreshing = false }
             }
         }
     }
 
-    // --- CORE DATA FETCHING (Suspendable) ---
+    // --- DEBUG: FORCE TOKEN EXPIRY ---
+    fun debugForceTokenExpiry() {
+        handleTokenExpiration()
+    }
+
+    private fun handleTokenExpiration() {
+        // Switch to Login screen but attempt auto-login if credentials are saved
+        if (rememberMe && loginEmail.isNotBlank() && loginPass.isNotBlank()) {
+            appState = "LOGIN"
+            login(loginEmail, loginPass) // This will set isLoading=true and show the refreshing spinner
+        } else {
+            logout()
+            errorMsg = getString(R.string.error_credentials)
+        }
+    }
+
     private suspend fun fetchAllDataSuspend() {
         val user = NetworkClient.api.getUser().user
         val profile = NetworkClient.api.getProfile()
@@ -280,8 +467,9 @@ class MainViewModel : ViewModel() {
         if (fullSchedule.isEmpty()) return
         determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
         determinedGroup = fullSchedule.asSequence().filter { it.subject_type?.get() == "Practical Class" }.mapNotNull { it.stream?.numeric }.firstOrNull()
+        
         val cal = Calendar.getInstance()
-        todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
+        todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: getString(R.string.today)
         val apiDay = if (cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 6 else cal.get(Calendar.DAY_OF_WEEK) - 2
         todayClasses = fullSchedule.filter { it.day == apiDay }
     }
@@ -306,17 +494,16 @@ class MainViewModel : ViewModel() {
                 val movId = profileData?.studentMovement?.id ?: return@launch 
                 val transcript = NetworkClient.api.getTranscript(uid, movId)
                 withContext(Dispatchers.Main) { transcriptData = transcript; prefs?.saveList("transcript_list", transcript) }
-            } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isTranscriptLoading = false } }
+            } catch (e: Exception) {
+                // Handle 401 in transcript fetch
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                }
+            } finally { withContext(Dispatchers.Main) { isTranscriptLoading = false } }
         }
     }
     
-    fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "Pair $lessonId"
-
-    private suspend fun fetchDictionaryIfNeeded() {
-        if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
-            cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
-        }
-    }
+    fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "${getString(R.string.pair)} $lessonId"
 
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
@@ -324,19 +511,19 @@ class MainViewModel : ViewModel() {
         
         viewModelScope.launch {
             isPdfGenerating = true
-            pdfStatusMessage = "Preparing Transcript ($language)..."
+            pdfStatusMessage = getString(R.string.status_preparing_transcript)
             try {
                 fetchDictionaryIfNeeded()
+                val dictToUse = combinedDictionary
                 
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
-                    pdfStatusMessage = "Fetching Scripts..."
-                    resources = jsFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    pdfStatusMessage = getString(R.string.status_fetching_scripts)
+                    resources = jsFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                // Important: Use API data for PDF generation, not UI overrides
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
                 infoJson.put("fullName", fullName)
@@ -349,23 +536,28 @@ class MainViewModel : ViewModel() {
                 val linkId = keyObj.optLong("id")
                 val qrUrl = keyObj.optString("url")
                 
-                pdfStatusMessage = "Generating PDF..."
+                pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = WebPdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
+                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, dictToUse
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
 
-                pdfStatusMessage = "Uploading..."
+                pdfStatusMessage = getString(R.string.status_uploading)
                 uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
 
             } catch (e: Exception) {
-                pdfStatusMessage = "Error: ${e.message}"
-                e.printStackTrace()
-                delay(3000)
-                pdfStatusMessage = null
+                // Handle 401
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                } else {
+                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    e.printStackTrace()
+                    delay(3000)
+                    pdfStatusMessage = null
+                }
             } finally {
                 isPdfGenerating = false
             }
@@ -378,14 +570,15 @@ class MainViewModel : ViewModel() {
 
         viewModelScope.launch {
             isPdfGenerating = true
-            pdfStatusMessage = "Preparing Reference ($language)..."
+            pdfStatusMessage = getString(R.string.status_preparing_reference)
             try {
                 fetchDictionaryIfNeeded()
+                val dictToUse = combinedDictionary
 
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
-                    pdfStatusMessage = "Fetching Scripts..."
-                    resources = refFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    pdfStatusMessage = getString(R.string.status_fetching_scripts)
+                    resources = refFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
                 
@@ -410,23 +603,28 @@ class MainViewModel : ViewModel() {
 
                 val token = prefs?.getToken() ?: ""
 
-                pdfStatusMessage = "Generating PDF..."
+                pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = ReferencePdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
+                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, dictToUse
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
 
-                pdfStatusMessage = "Uploading..."
+                pdfStatusMessage = getString(R.string.status_uploading)
                 uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
 
             } catch (e: Exception) {
-                pdfStatusMessage = "Error: ${e.message}"
-                e.printStackTrace()
-                delay(3000)
-                pdfStatusMessage = null
+                // Handle 401
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                } else {
+                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    e.printStackTrace()
+                    delay(3000)
+                    pdfStatusMessage = null
+                }
             } finally {
                 isPdfGenerating = false
             }
@@ -453,10 +651,10 @@ class MainViewModel : ViewModel() {
                 context.startActivity(i) 
                 pdfStatusMessage = null 
             } else {
-                pdfStatusMessage = "URL not found"
+                pdfStatusMessage = getString(R.string.error_url_not_found)
             }
         } catch (e: Exception) {
-            pdfStatusMessage = "Upload failed: ${e.message}"
+            pdfStatusMessage = getString(R.string.error_upload_failed, e.message ?: "Unknown")
         }
     }
 }
