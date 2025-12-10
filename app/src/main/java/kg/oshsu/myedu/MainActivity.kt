@@ -33,7 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.stringResource  // <--- ADDED THIS IMPORT
+import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
@@ -43,7 +43,6 @@ class MainActivity : ComponentActivity() {
     
     private val vm by viewModels<MainViewModel>()
 
-    // --- Apply Language Context ---
     override fun attachBaseContext(newBase: Context) {
         val prefs = newBase.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
         val lang = prefs.getString("app_language", "en") ?: "en"
@@ -72,6 +71,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ... [MyEduTheme and rememberAnimatedColorScheme remain the same] ...
 @Composable
 fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     val systemDark = isSystemInDarkTheme()
@@ -86,7 +86,6 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
         if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else { if (useDarkTheme) darkColorScheme() else lightColorScheme() }
     
-    // SMOOTH THEME TRANSITION
     val animatedScheme = rememberAnimatedColorScheme(targetScheme)
 
     val view = LocalView.current
@@ -99,9 +98,6 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     MaterialTheme(colorScheme = animatedScheme, content = content)
 }
 
-/**
- * Helper to smoothly animate between color schemes
- */
 @Composable
 fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
     val animationSpec = tween<Color>(durationMillis = 600)
@@ -130,7 +126,6 @@ fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
     val onError by animateColorAsState(targetColorScheme.onError, animationSpec, label = "onError")
     val errorContainer by animateColorAsState(targetColorScheme.errorContainer, animationSpec, label = "errorContainer")
     val onErrorContainer by animateColorAsState(targetColorScheme.onErrorContainer, animationSpec, label = "onErrorContainer")
-    
     val surfaceContainerLowest by animateColorAsState(targetColorScheme.surfaceContainerLowest, animationSpec, label = "sCL")
     val surfaceContainerLow by animateColorAsState(targetColorScheme.surfaceContainerLow, animationSpec, label = "sCLow")
     val surfaceContainer by animateColorAsState(targetColorScheme.surfaceContainer, animationSpec, label = "sC")
@@ -154,7 +149,6 @@ fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
 @Composable
 fun AppContent(vm: MainViewModel) {
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        
         if (vm.appState == "LOGIN" || vm.appState == "ONBOARDING") {
             ExpressiveShapesBackground(maxWidth, maxHeight)
         }
@@ -185,11 +179,12 @@ data class NavItem(val label: String, val selectedIcon: ImageVector, val unselec
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen) { 
+    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen || vm.showDictionaryScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
             vm.showTranscriptScreen -> vm.showTranscriptScreen = false
             vm.showReferenceScreen -> vm.showReferenceScreen = false
+            vm.showDictionaryScreen -> vm.showDictionaryScreen = false // Close Dict
             vm.showSettingsScreen -> vm.showSettingsScreen = false 
         }
     }
@@ -243,6 +238,16 @@ fun MainAppStructure(vm: MainViewModel) {
             modifier = Modifier.fillMaxSize()
         ) { 
             SettingsScreen(vm) { vm.showSettingsScreen = false } 
+        }
+
+        // --- NEW: Dictionary Screen Overlay ---
+        AnimatedVisibility(
+            visible = vm.showDictionaryScreen, 
+            enter = slideInHorizontally(initialOffsetX = { it }), 
+            exit = slideOutHorizontally(targetOffsetX = { it }), 
+            modifier = Modifier.fillMaxSize()
+        ) { 
+            DictionaryScreen(vm) { vm.showDictionaryScreen = false } 
         }
 
         if (vm.selectedClass != null) {

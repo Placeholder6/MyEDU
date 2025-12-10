@@ -21,7 +21,6 @@ import java.util.Locale
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
-    // Helper to get strings in ViewModel
     private fun getString(resId: Int, vararg args: Any): String {
         return getApplication<Application>().getString(resId, *args)
     }
@@ -40,7 +39,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var payStatus by mutableStateOf<PayStatusResponse?>(null)
     var newsList by mutableStateOf<List<NewsItem>>(emptyList())
 
-    // --- STATE: CUSTOM UI DATA (Onboarding) ---
+    // --- STATE: CUSTOM UI DATA ---
     var customName by mutableStateOf<String?>(null)
     var customPhotoUri by mutableStateOf<String?>(null)
     var appTheme by mutableStateOf("system") 
@@ -58,7 +57,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
 
-    // --- STATE: SCHEDULE DATA ---
+    // --- STATE: SCHEDULE & GRADES ---
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var timeMap by mutableStateOf<Map<Int, String>>(emptyMap())
@@ -66,8 +65,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
-
-    // --- STATE: GRADES DATA ---
     var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
     var isGradesLoading by mutableStateOf(false)
 
@@ -79,13 +76,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
 
-    // --- STATE: SETTINGS API ---
+    // --- STATE: DICTIONARY ---
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
-    private var cachedDictionary: Map<String, String> = emptyMap()
+    
+    // Internal caches
+    private var remoteDictionary: Map<String, String> = emptyMap()
+    private var customDictionary: MutableMap<String, String> = mutableMapOf()
+    
+    // Exposed merged dictionary for UI and Logic
+    var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
     private var prefs: PrefsManager? = null
-
-    // --- RESOURCE CACHE ---
     private val jsFetcher = JsResourceFetcher()
     private val refFetcher = ReferenceJsFetcher()
     private val dictUtils = DictionaryUtils()
@@ -110,7 +111,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs?.saveAppLanguage(lang)
     }
 
-    // --- INIT: CHECK SESSION ---
+    // --- DICTIONARY ACTIONS ---
+    fun addOrUpdateDictionaryEntry(original: String, translation: String) {
+        customDictionary[original] = translation
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    fun removeDictionaryEntry(original: String) {
+        customDictionary.remove(original)
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    fun resetDictionaryToDefault() {
+        customDictionary.clear()
+        updateCombinedDictionary()
+        prefs?.saveCustomDictionary(customDictionary)
+    }
+
+    private fun updateCombinedDictionary() {
+        // Custom overrides Remote
+        combinedDictionary = remoteDictionary + customDictionary
+    }
+
+    private suspend fun fetchDictionaryIfNeeded() {
+        // 1. Fetch Remote if empty
+        if (remoteDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
+            remoteDictionary = dictUtils.fetchDictionary(dictionaryUrl)
+        }
+        // 2. Load Local if empty
+        if (customDictionary.isEmpty()) {
+            customDictionary = prefs?.getCustomDictionary()?.toMutableMap() ?: mutableMapOf()
+        }
+        // 3. Merge
+        withContext(Dispatchers.Main) {
+            updateCombinedDictionary()
+        }
+    }
+
+    // --- INIT ---
     fun initSession(context: Context) {
         viewModelScope.launch {
             if (prefs == null) {
@@ -122,6 +162,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 appTheme = p.getAppTheme()
                 notificationsEnabled = p.areNotificationsEnabled()
                 language = p.getAppLanguage()
+                
+                // Load Custom Dict immediately
+                customDictionary = p.getCustomDictionary().toMutableMap()
             }
 
             val token = prefs?.getToken()
@@ -138,7 +181,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 launch(Dispatchers.IO) {
-                    try { fetchAllDataSuspend() } catch (_: Exception) {}
+                    try { 
+                        fetchAllDataSuspend() 
+                        fetchDictionaryIfNeeded() // Fetch dict in background
+                    } catch (_: Exception) {}
                 }
             } else {
                 appState = "LOGIN"
@@ -146,6 +192,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ... [loadOfflineData, login, saveOnboardingSettings, logout, refresh, fetchAllDataSuspend, loadScheduleNetwork, processScheduleLocally, fetchSessionSuspend, fetchTranscript, getTimeString - NO CHANGES] ...
+    
     private fun loadOfflineData() {
         prefs?.let { p ->
             userData = p.loadData("user_data", UserData::class.java)
@@ -159,7 +207,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- AUTH: LOGIN LOGIC ---
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
@@ -198,14 +245,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoading = false
                 }
             } catch (e: Exception) {
-                // FIXED: Use elvis operator to ensure non-null String
                 errorMsg = getString(R.string.error_login_failed, e.message ?: "Unknown")
                 isLoading = false
             }
         }
     }
 
-    // --- ONBOARDING ACTIONS ---
     fun saveOnboardingSettings(name: String, photo: String?, theme: String, notifications: Boolean) {
         customName = name
         customPhotoUri = photo
@@ -327,12 +372,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "${getString(R.string.pair)} $lessonId"
 
-    private suspend fun fetchDictionaryIfNeeded() {
-        if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
-            cachedDictionary = dictUtils.fetchDictionary(dictionaryUrl)
-        }
-    }
-
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
         val studentId = userData?.id ?: return
@@ -342,11 +381,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pdfStatusMessage = getString(R.string.status_preparing_transcript)
             try {
                 fetchDictionaryIfNeeded()
+                // Use combined dictionary
+                val dictToUse = combinedDictionary
                 
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
                     pdfStatusMessage = getString(R.string.status_fetching_scripts)
-                    resources = jsFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    resources = jsFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
@@ -366,7 +407,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = WebPdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
+                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, dictToUse
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
@@ -376,7 +417,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
 
             } catch (e: Exception) {
-                // FIXED: Use elvis operator to ensure non-null String
                 pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
                 e.printStackTrace()
                 delay(3000)
@@ -396,11 +436,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pdfStatusMessage = getString(R.string.status_preparing_reference)
             try {
                 fetchDictionaryIfNeeded()
+                val dictToUse = combinedDictionary
 
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
                     pdfStatusMessage = getString(R.string.status_fetching_scripts)
-                    resources = refFetcher.fetchResources({ println(it) }, language, cachedDictionary)
+                    resources = refFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
                 
@@ -428,7 +469,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = ReferencePdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
+                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, dictToUse
                 ) { println(it) }
 
                 val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
@@ -438,7 +479,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
 
             } catch (e: Exception) {
-                // FIXED: Use elvis operator to ensure non-null String
                 pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
                 e.printStackTrace()
                 delay(3000)
@@ -472,7 +512,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pdfStatusMessage = getString(R.string.error_url_not_found)
             }
         } catch (e: Exception) {
-            // FIXED: Use elvis operator to ensure non-null String
             pdfStatusMessage = getString(R.string.error_upload_failed, e.message ?: "Unknown")
         }
     }
