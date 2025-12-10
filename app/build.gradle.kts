@@ -47,6 +47,7 @@ android {
     // --- BUILD FEATURES ---
     buildFeatures { 
         compose = true 
+        buildConfig = true
     }
     
     // --- COMPILE OPTIONS ---

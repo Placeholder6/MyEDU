@@ -93,6 +93,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // Exposed merged dictionary for UI and Logic
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
+    // --- STATE: UPDATES ---
+    var updateAvailableRelease by mutableStateOf<GitHubRelease?>(null)
+    var downloadId by mutableStateOf<Long?>(null)
+
     private var prefs: PrefsManager? = null
 
     // --- RESOURCE CACHE ---
@@ -195,6 +199,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
+                        checkForUpdates(context) // Check for updates
                     } catch (e: Exception) {
                         // Handle Token Expiry during init
                         if (e.toString().contains("401") || e.message?.contains("401") == true) {
@@ -205,6 +210,64 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } else {
                 appState = "LOGIN"
             }
+        }
+    }
+
+    // --- UPDATE CHECK LOGIC ---
+    fun checkForUpdates(context: Context) {
+        viewModelScope.launch {
+            try {
+                // Ensure this string resource exists in strings.xml
+                val apiUrl = context.getString(R.string.update_repo_path) 
+                
+                val release = withContext(Dispatchers.IO) { NetworkClient.githubApi.getLatestRelease(apiUrl) }
+                val currentVer = BuildConfig.VERSION_NAME
+                
+                val remoteVer = release.tagName.replace("v", "")
+                val localVer = currentVer.replace("v", "")
+                
+                if (remoteVer != localVer && isNewerVersion(remoteVer, localVer)) {
+                    updateAvailableRelease = release
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun isNewerVersion(remote: String, local: String): Boolean {
+        return try {
+            val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
+            val lParts = local.split(".").map { it.toIntOrNull() ?: 0 }
+            val length = maxOf(rParts.size, lParts.size)
+            for (i in 0 until length) {
+                val r = rParts.getOrElse(i) { 0 }
+                val l = lParts.getOrElse(i) { 0 }
+                if (r > l) return true
+                if (r < l) return false
+            }
+            false
+        } catch (e: Exception) { false }
+    }
+
+    fun downloadUpdate(context: Context) {
+        val release = updateAvailableRelease ?: return
+        val apkAsset = release.assets.find { it.name.endsWith(".apk") } ?: return
+        
+        try {
+            val request = android.app.DownloadManager.Request(android.net.Uri.parse(apkAsset.downloadUrl))
+                .setTitle(getString(R.string.update_notif_title))
+                .setDescription(getString(R.string.update_notif_desc, release.tagName))
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                .setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, apkAsset.name)
+                .setMimeType("application/vnd.android.package-archive")
+
+            val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as android.app.DownloadManager
+            downloadId = manager.enqueue(request)
+            
+            updateAvailableRelease = null // Close dialog
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -251,6 +314,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
+                        // Check updates on login
+                        checkForUpdates(getApplication())
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -334,6 +399,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             withContext(Dispatchers.Main) { isRefreshing = true }
             try {
                 fetchAllDataSuspend()
+                checkForUpdates(getApplication()) // Check on refresh
             } catch (e: Exception) {
                 // If 401, try to refresh/re-login instead of just logging out
                 if (e.message?.contains("401") == true || e.toString().contains("401")) { 

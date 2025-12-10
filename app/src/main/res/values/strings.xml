@@ -206,4 +206,5 @@
     <string name="update_status_downloading">Downloading %1$s...</string>
     <string name="update_error_download">Download failed: %1$s</string>
     <string name="install_prompt">Install Update</string>
+    <string name="update_repo_path">repos/placeholder6/myedu/releases/latest</string>
 </resources>

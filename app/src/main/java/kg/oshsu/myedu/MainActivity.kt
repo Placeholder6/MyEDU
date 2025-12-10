@@ -1,8 +1,14 @@
 package kg.oshsu.myedu
 
 import android.Manifest
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.database.Cursor
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -35,6 +41,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.work.Constraints
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -43,11 +50,64 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
+import java.io.File
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     
     private val vm by viewModels<MainViewModel>()
+
+    // --- INSTALL RECEIVER ---
+    private val installReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == DownloadManager.ACTION_DOWNLOAD_COMPLETE) {
+                val id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
+                
+                // Check if this matches our update download
+                if (id == vm.downloadId) {
+                    val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                    val query = DownloadManager.Query().setFilterById(id)
+                    var cursor: Cursor? = null
+                    
+                    try {
+                        cursor = downloadManager.query(query)
+                        if (cursor.moveToFirst()) {
+                            val statusIndex = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
+                            val status = cursor.getInt(statusIndex)
+
+                            if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                                val uriIndex = cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)
+                                val uriString = cursor.getString(uriIndex)
+                                
+                                if (uriString != null) {
+                                    val localFile = File(Uri.parse(uriString).path!!)
+                                    
+                                    // Get Secure URI via FileProvider
+                                    val contentUri = FileProvider.getUriForFile(
+                                        context,
+                                        "${context.packageName}.provider",
+                                        localFile
+                                    )
+
+                                    // Launch Installer
+                                    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                                        setDataAndType(contentUri, "application/vnd.android.package-archive")
+                                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                        putExtra(Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+                                    }
+                                    context.startActivity(installIntent)
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    } finally {
+                        cursor?.close()
+                    }
+                }
+            }
+        }
+    }
 
     override fun attachBaseContext(newBase: Context) {
         val prefs = newBase.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
@@ -59,6 +119,9 @@ class MainActivity : ComponentActivity() {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         
+        // Register Installer Receiver
+        registerReceiver(installReceiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
+
         // Initialize background work for syncing grades
         setupBackgroundWork()
 
@@ -78,6 +141,11 @@ class MainActivity : ComponentActivity() {
 
             MyEduTheme(themePreference = vm.appTheme) { AppContent(vm) } 
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(installReceiver)
     }
 
     private fun setupBackgroundWork() {
@@ -195,6 +263,27 @@ fun AppContent(vm: MainViewModel) {
                     else -> Box(Modifier.fillMaxSize()) 
                 }
             }
+        }
+
+        // --- UPDATE DIALOG ---
+        val context = LocalContext.current
+        if (vm.updateAvailableRelease != null) {
+            val release = vm.updateAvailableRelease!!
+            AlertDialog(
+                onDismissRequest = { vm.updateAvailableRelease = null },
+                title = { Text(stringResource(R.string.update_available_title)) },
+                text = { Text(stringResource(R.string.update_available_msg, release.tagName, release.body)) },
+                confirmButton = {
+                    Button(onClick = { vm.downloadUpdate(context) }) {
+                        Text(stringResource(R.string.update_btn_download))
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vm.updateAvailableRelease = null }) {
+                        Text(stringResource(R.string.update_btn_later))
+                    }
+                }
+            )
         }
     }
 }
