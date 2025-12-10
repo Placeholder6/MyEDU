@@ -1,8 +1,9 @@
 package kg.oshsu.myedu
 
+import android.app.Application
 import android.content.Context
 import androidx.compose.runtime.*
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -18,16 +19,19 @@ import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
 
-class MainViewModel : ViewModel() {
+class MainViewModel(application: Application) : AndroidViewModel(application) {
+    
+    // Helper to get strings in ViewModel
+    private fun getString(resId: Int, vararg args: Any): String {
+        return getApplication<Application>().getString(resId, *args)
+    }
+
     // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
     var currentTab by mutableStateOf(0)
     var isLoading by mutableStateOf(false)
     var isRefreshing by mutableStateOf(false)
-    
-    // Trigger for the "Expand" animation on the Login Screen
     var isLoginSuccess by mutableStateOf(false) 
-    
     var errorMsg by mutableStateOf<String?>(null)
 
     // --- STATE: USER DATA ---
@@ -39,18 +43,17 @@ class MainViewModel : ViewModel() {
     // --- STATE: CUSTOM UI DATA (Onboarding) ---
     var customName by mutableStateOf<String?>(null)
     var customPhotoUri by mutableStateOf<String?>(null)
-    var appTheme by mutableStateOf("system") // system, light, dark
+    var appTheme by mutableStateOf("system") 
     var notificationsEnabled by mutableStateOf(true)
 
-    // --- STATE: SETTINGS (NEW) ---
-    var showSettingsScreen by mutableStateOf(false) // <--- ADDED THIS
+    // --- STATE: SETTINGS ---
+    var showSettingsScreen by mutableStateOf(false)
     var downloadMode by mutableStateOf("IN_APP")
     var language by mutableStateOf("en")
     var showDictionaryScreen by mutableStateOf(false)
 
-    // Computed Properties for UI (Fallback to API data)
     val uiName: String
-        get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "Student"
+        get() = customName ?: userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: getString(R.string.student_default)
     
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
@@ -59,7 +62,7 @@ class MainViewModel : ViewModel() {
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var timeMap by mutableStateOf<Map<Int, String>>(emptyMap())
-    var todayDayName by mutableStateOf("Today")
+    var todayDayName by mutableStateOf("") 
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
@@ -104,6 +107,7 @@ class MainViewModel : ViewModel() {
 
     fun setAppLanguage(lang: String) {
         language = lang
+        prefs?.saveAppLanguage(lang)
     }
 
     // --- INIT: CHECK SESSION ---
@@ -112,12 +116,12 @@ class MainViewModel : ViewModel() {
             if (prefs == null) {
                 prefs = PrefsManager(context)
             }
-            // Load Settings
             prefs?.let { p ->
                 customName = p.getCustomName()
                 customPhotoUri = p.getCustomPhoto()
                 appTheme = p.getAppTheme()
                 notificationsEnabled = p.areNotificationsEnabled()
+                language = p.getAppLanguage()
             }
 
             val token = prefs?.getToken()
@@ -127,14 +131,12 @@ class MainViewModel : ViewModel() {
                 NetworkClient.cookieJar.injectSessionCookies(token)
                 loadOfflineData()
                 
-                // Check if onboarding was completed
                 if (prefs?.isOnboardingComplete() == true) {
                     appState = "APP"
                 } else {
                     appState = "ONBOARDING"
                 }
 
-                // Trigger background refresh
                 launch(Dispatchers.IO) {
                     try { fetchAllDataSuspend() } catch (_: Exception) {}
                 }
@@ -167,7 +169,6 @@ class MainViewModel : ViewModel() {
             NetworkClient.interceptor.authToken = null
 
             try {
-                // 1. Perform Login
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
                 val token = resp.authorisation?.token
                 if (token != null) {
@@ -175,34 +176,30 @@ class MainViewModel : ViewModel() {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    // 2. Load ALL Data
                     try {
                         withContext(Dispatchers.IO) { fetchAllDataSuspend() }
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
 
-                    // 3. Trigger Morph Animation
                     isLoginSuccess = true
-                    // IMMEDIATE MORPH: Very short delay (50ms) to allow frame update
                     delay(200) 
 
-                    // Check Onboarding
                     if (prefs?.isOnboardingComplete() == true) {
                         appState = "APP"
                     } else {
-                        // Pre-fill name if not set
                         if (customName == null) {
                             customName = "${userData?.last_name ?: ""} ${userData?.name ?: ""}".trim()
                         }
                         appState = "ONBOARDING"
                     }
                 } else {
-                    errorMsg = "Incorrect credentials"
+                    errorMsg = getString(R.string.error_credentials)
                     isLoading = false
                 }
             } catch (e: Exception) {
-                errorMsg = "Login Failed: ${e.message}"
+                // FIXED: Use elvis operator to ensure non-null String
+                errorMsg = getString(R.string.error_login_failed, e.message ?: "Unknown")
                 isLoading = false
             }
         }
@@ -235,17 +232,15 @@ class MainViewModel : ViewModel() {
         NetworkClient.cookieJar.clear()
         NetworkClient.interceptor.authToken = null
         
-        // Reset States
         isLoading = false
         isLoginSuccess = false
-        // Reset Custom Settings for next user
         customName = null
         customPhotoUri = null
         appTheme = "system"
         notificationsEnabled = true
+        showSettingsScreen = false
     }
 
-    // --- PUBLIC REFRESH ACTION ---
     fun refresh() {
         viewModelScope.launch(Dispatchers.IO) {
             withContext(Dispatchers.Main) { isRefreshing = true }
@@ -259,7 +254,6 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // --- CORE DATA FETCHING (Suspendable) ---
     private suspend fun fetchAllDataSuspend() {
         val user = NetworkClient.api.getUser().user
         val profile = NetworkClient.api.getProfile()
@@ -300,8 +294,9 @@ class MainViewModel : ViewModel() {
         if (fullSchedule.isEmpty()) return
         determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
         determinedGroup = fullSchedule.asSequence().filter { it.subject_type?.get() == "Practical Class" }.mapNotNull { it.stream?.numeric }.firstOrNull()
+        
         val cal = Calendar.getInstance()
-        todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: "Today"
+        todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: getString(R.string.today)
         val apiDay = if (cal.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY) 6 else cal.get(Calendar.DAY_OF_WEEK) - 2
         todayClasses = fullSchedule.filter { it.day == apiDay }
     }
@@ -330,7 +325,7 @@ class MainViewModel : ViewModel() {
         }
     }
     
-    fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "Pair $lessonId"
+    fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "${getString(R.string.pair)} $lessonId"
 
     private suspend fun fetchDictionaryIfNeeded() {
         if (cachedDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
@@ -344,19 +339,18 @@ class MainViewModel : ViewModel() {
         
         viewModelScope.launch {
             isPdfGenerating = true
-            pdfStatusMessage = "Preparing Transcript ($language)..."
+            pdfStatusMessage = getString(R.string.status_preparing_transcript)
             try {
                 fetchDictionaryIfNeeded()
                 
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
                 if (resources == null) {
-                    pdfStatusMessage = "Fetching Scripts..."
+                    pdfStatusMessage = getString(R.string.status_fetching_scripts)
                     resources = jsFetcher.fetchResources({ println(it) }, language, cachedDictionary)
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
 
                 val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                // Important: Use API data for PDF generation, not UI overrides
                 val infoJson = JSONObject(infoRaw)
                 val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
                 infoJson.put("fullName", fullName)
@@ -369,7 +363,7 @@ class MainViewModel : ViewModel() {
                 val linkId = keyObj.optLong("id")
                 val qrUrl = keyObj.optString("url")
                 
-                pdfStatusMessage = "Generating PDF..."
+                pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = WebPdfGenerator(context)
                 val bytes = generator.generatePdf(
                     infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, cachedDictionary
@@ -378,11 +372,12 @@ class MainViewModel : ViewModel() {
                 val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
 
-                pdfStatusMessage = "Uploading..."
+                pdfStatusMessage = getString(R.string.status_uploading)
                 uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
 
             } catch (e: Exception) {
-                pdfStatusMessage = "Error: ${e.message}"
+                // FIXED: Use elvis operator to ensure non-null String
+                pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
                 e.printStackTrace()
                 delay(3000)
                 pdfStatusMessage = null
@@ -398,13 +393,13 @@ class MainViewModel : ViewModel() {
 
         viewModelScope.launch {
             isPdfGenerating = true
-            pdfStatusMessage = "Preparing Reference ($language)..."
+            pdfStatusMessage = getString(R.string.status_preparing_reference)
             try {
                 fetchDictionaryIfNeeded()
 
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
                 if (resources == null) {
-                    pdfStatusMessage = "Fetching Scripts..."
+                    pdfStatusMessage = getString(R.string.status_fetching_scripts)
                     resources = refFetcher.fetchResources({ println(it) }, language, cachedDictionary)
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
@@ -430,7 +425,7 @@ class MainViewModel : ViewModel() {
 
                 val token = prefs?.getToken() ?: ""
 
-                pdfStatusMessage = "Generating PDF..."
+                pdfStatusMessage = getString(R.string.generating_pdf)
                 val generator = ReferencePdfGenerator(context)
                 val bytes = generator.generatePdf(
                     infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, cachedDictionary
@@ -439,11 +434,12 @@ class MainViewModel : ViewModel() {
                 val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
                 withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
 
-                pdfStatusMessage = "Uploading..."
+                pdfStatusMessage = getString(R.string.status_uploading)
                 uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
 
             } catch (e: Exception) {
-                pdfStatusMessage = "Error: ${e.message}"
+                // FIXED: Use elvis operator to ensure non-null String
+                pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
                 e.printStackTrace()
                 delay(3000)
                 pdfStatusMessage = null
@@ -473,10 +469,11 @@ class MainViewModel : ViewModel() {
                 context.startActivity(i) 
                 pdfStatusMessage = null 
             } else {
-                pdfStatusMessage = "URL not found"
+                pdfStatusMessage = getString(R.string.error_url_not_found)
             }
         } catch (e: Exception) {
-            pdfStatusMessage = "Upload failed: ${e.message}"
+            // FIXED: Use elvis operator to ensure non-null String
+            pdfStatusMessage = getString(R.string.error_upload_failed, e.message ?: "Unknown")
         }
     }
 }

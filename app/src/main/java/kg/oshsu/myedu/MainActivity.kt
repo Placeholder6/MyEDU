@@ -1,6 +1,7 @@
 package kg.oshsu.myedu
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -39,6 +40,14 @@ import kg.oshsu.myedu.ui.screens.*
 class MainActivity : ComponentActivity() {
     
     private val vm by viewModels<MainViewModel>()
+
+    // --- NEW: Apply Language Context ---
+    override fun attachBaseContext(newBase: Context) {
+        // FIXED: Use "myedu_offline_cache" to match PrefsManager
+        val prefs = newBase.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
+        val lang = prefs.getString("app_language", "en") ?: "en"
+        super.attachBaseContext(LocaleHelper.setLocale(newBase, lang))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
@@ -126,12 +135,13 @@ data class NavItem(val label: String, val selectedIcon: ImageVector, val unselec
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
+    // --- UPDATED: Handle Back Press for Settings ---
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
             vm.showTranscriptScreen -> vm.showTranscriptScreen = false
             vm.showReferenceScreen -> vm.showReferenceScreen = false
-            vm.showSettingsScreen -> vm.showSettingsScreen = false // Handle back for settings
+            vm.showSettingsScreen -> vm.showSettingsScreen = false // Close settings
         }
     }
 
@@ -174,10 +184,11 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
         
+        // Full Screen Overlays
         AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
         AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
         
-        // Add Settings Screen Overlay
+        // --- ADDED: Settings Screen Overlay ---
         AnimatedVisibility(
             visible = vm.showSettingsScreen, 
             enter = slideInHorizontally(initialOffsetX = { it }), 

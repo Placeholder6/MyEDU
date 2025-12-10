@@ -26,11 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kg.oshsu.myedu.MainActivity
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,14 +56,14 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
             LargeTopAppBar(
                 title = { 
                     Text(
-                        "Settings", 
+                        stringResource(R.string.settings), 
                         fontWeight = FontWeight.SemiBold,
                         letterSpacing = (-0.5).sp
                     ) 
                 },
                 navigationIcon = {
                     IconButton(onClick = onClose) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.desc_back))
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -83,17 +85,21 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
             
             // --- SECTION: APPEARANCE ---
             item {
-                SettingsSectionTitle("Appearance", Icons.Outlined.Palette)
+                SettingsSectionTitle(stringResource(R.string.appearance), Icons.Outlined.Palette)
                 SettingsGroup {
                     Text(
-                        "App Theme", 
+                        stringResource(R.string.app_theme_title), 
                         style = MaterialTheme.typography.labelLarge, 
                         modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
                     )
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         val options = listOf("system", "light", "dark")
                         val icons = listOf(Icons.Filled.BrightnessAuto, Icons.Filled.LightMode, Icons.Filled.DarkMode)
-                        val labels = listOf("System", "Light", "Dark")
+                        val labels = listOf(
+                            stringResource(R.string.follow_system),
+                            stringResource(R.string.light_mode),
+                            stringResource(R.string.dark_mode)
+                        )
                         
                         options.forEachIndexed { index, option ->
                             SegmentedButton(
@@ -114,16 +120,15 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Text(
-                        "Language", 
+                        stringResource(R.string.language), 
                         style = MaterialTheme.typography.labelLarge, 
                         modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
                     )
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        // FIXED: Use a Triple to hold (Code, Label, Icon) together
                         val languages = listOf(
-                            Triple("en", "English", Icons.Filled.Language),
-                            Triple("ru", "Русский", Icons.Filled.Translate),
-                            Triple("ky", "Кыргызча", Icons.Filled.Book)
+                            Triple("en", "Eng", Icons.Filled.Language),
+                            Triple("ru", "Рус", Icons.Filled.Translate),
+                            Triple("ky", "Кыр", Icons.Filled.Book)
                         )
                         
                         languages.forEachIndexed { index, (code, label, icon) ->
@@ -142,7 +147,7 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                                     }
                                 }
                             ) {
-                                Text(label) // Now correctly passing a String
+                                Text(label)
                             }
                         }
                     }
@@ -151,16 +156,19 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
 
             // --- SECTION: CONTENT ---
             item {
-                SettingsSectionTitle("Content & Data", Icons.Outlined.Description)
+                SettingsSectionTitle(stringResource(R.string.documents), Icons.Outlined.Description)
                 SettingsGroup {
                     Text(
-                        "Document Viewer", 
+                        stringResource(R.string.doc_viewer_title), 
                         style = MaterialTheme.typography.labelLarge, 
                         modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
                     )
                     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                         val options = listOf("IN_APP", "WEBSITE")
-                        val labels = listOf("In-App PDF", "Official Web")
+                        val labels = listOf(
+                            stringResource(R.string.in_app_pdf),
+                            stringResource(R.string.website_official)
+                        )
                         val icons = listOf(Icons.Outlined.Description, Icons.Outlined.Web)
 
                         options.forEachIndexed { index, option ->
@@ -183,7 +191,7 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
 
             // --- SECTION: TOOLS ---
             item {
-                SettingsSectionTitle("Tools", Icons.Outlined.Translate)
+                SettingsSectionTitle(stringResource(R.string.tools_title), Icons.Outlined.Translate)
                 SettingsGroup(padding = 0.dp) {
                    Row(
                        modifier = Modifier
@@ -199,8 +207,8 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                        )
                        Spacer(Modifier.width(16.dp))
                        Column(modifier = Modifier.weight(1f)) {
-                           Text("Dictionary", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                           Text("Offline translation tools", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                           Text(stringResource(R.string.dict_title), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                           Text(stringResource(R.string.dict_subtitle), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                        }
                        Icon(
                            Icons.AutoMirrored.Outlined.OpenInNew, 
@@ -214,7 +222,7 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
 
             // --- SECTION: ABOUT ---
             item {
-                SettingsSectionTitle("About", Icons.Outlined.Info)
+                SettingsSectionTitle(stringResource(R.string.about), Icons.Outlined.Info)
                 SettingsGroup {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -222,8 +230,8 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("MyEDU Student", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                            Text("Osh State University", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                            Text(stringResource(R.string.app_name_display), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.univ_name), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                         }
                         Surface(
                             shape = RoundedCornerShape(8.dp),

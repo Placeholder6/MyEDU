@@ -30,9 +30,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ScheduleItem
 import kg.oshsu.myedu.ui.components.*
 import kotlinx.coroutines.launch
@@ -41,10 +43,12 @@ import java.util.Calendar
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ScheduleScreen(vm: MainViewModel) {
-    val tabs = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    val scope = rememberCoroutineScope()
+    val tabs = listOf(
+        stringResource(R.string.mon), stringResource(R.string.tue), stringResource(R.string.wed),
+        stringResource(R.string.thu), stringResource(R.string.fri), stringResource(R.string.sat)
+    )
     
-    // Calculate initial page based on current day
+    val scope = rememberCoroutineScope()
     val initialPage = remember { 
         val cal = Calendar.getInstance()
         val dow = cal.get(Calendar.DAY_OF_WEEK)
@@ -54,85 +58,43 @@ fun ScheduleScreen(vm: MainViewModel) {
     val pagerState = rememberPagerState(initialPage = initialPage) { tabs.size }
     val pullState = rememberPullToRefreshState()
 
-    Scaffold(
-        topBar = { 
-            CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) 
-        }
-    ) { padding ->
+    Scaffold(topBar = { CenterAlignedTopAppBar(title = { OshSuLogo(modifier = Modifier.width(100.dp).height(40.dp)) }) }) { padding ->
         Column(Modifier.padding(padding)) {
-            
-            // UPDATED: PrimaryTabRow with correct 'tabs' parameter placement
             PrimaryTabRow(
                 selectedTabIndex = pagerState.currentPage,
                 containerColor = MaterialTheme.colorScheme.surface,
                 contentColor = MaterialTheme.colorScheme.primary,
-                indicator = { 
-                    TabRowDefaults.PrimaryIndicator(
-                        modifier = Modifier.tabIndicatorOffset(pagerState.currentPage),
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                },
+                indicator = { TabRowDefaults.PrimaryIndicator(modifier = Modifier.tabIndicatorOffset(pagerState.currentPage), color = MaterialTheme.colorScheme.primary) },
                 tabs = {
                     tabs.forEachIndexed { index, title -> 
-                        Tab(
-                            selected = pagerState.currentPage == index, 
-                            onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, 
-                            text = { Text(title) }
-                        ) 
+                        Tab(selected = pagerState.currentPage == index, onClick = { scope.launch { pagerState.animateScrollToPage(index) } }, text = { Text(title) }) 
                     } 
                 }
             )
             
             HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { pageIndex ->
                 val dayClasses = vm.fullSchedule.filter { it.day == pageIndex }
-                
-                // UPDATED: PullToRefreshBox with Expressive LoadingIndicator
                 PullToRefreshBox(
-                    isRefreshing = vm.isRefreshing,
-                    onRefresh = { vm.refresh() },
-                    state = pullState,
-                    indicator = {
-                        PullToRefreshDefaults.LoadingIndicator(
-                            state = pullState,
-                            isRefreshing = vm.isRefreshing,
-                            modifier = Modifier.align(Alignment.TopCenter),
-                        )
-                    },
+                    isRefreshing = vm.isRefreshing, onRefresh = { vm.refresh() }, state = pullState,
+                    indicator = { PullToRefreshDefaults.LoadingIndicator(state = pullState, isRefreshing = vm.isRefreshing, modifier = Modifier.align(Alignment.TopCenter)) },
                     modifier = Modifier.fillMaxSize()
                 ) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { 
                         if (dayClasses.isEmpty()) { 
-                            // Use LazyColumn even for empty state to support pull-to-refresh gesture
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp)
-                            ) {
+                            LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
                                 item {
-                                    Box(
-                                        Modifier.fillMaxWidth().height(400.dp), 
-                                        contentAlignment = Alignment.Center
-                                    ) {
+                                    Box(Modifier.fillMaxWidth().height(400.dp), contentAlignment = Alignment.Center) {
                                         Column(horizontalAlignment = Alignment.CenterHorizontally) { 
-                                            Icon(
-                                                Icons.Outlined.Weekend, 
-                                                null, 
-                                                modifier = Modifier.size(64.dp), 
-                                                tint = MaterialTheme.colorScheme.surfaceVariant
-                                            )
+                                            Icon(Icons.Outlined.Weekend, null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.surfaceVariant)
                                             Spacer(Modifier.height(16.dp))
-                                            Text("No classes", color = Color.Gray) 
+                                            Text(stringResource(R.string.no_classes), color = Color.Gray) 
                                         }
                                     }
                                 }
                             }
                         } else { 
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), 
-                                contentPadding = PaddingValues(16.dp)
-                            ) { 
-                                items(dayClasses) { item -> 
-                                    ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } 
-                                }
+                            LazyColumn(modifier = Modifier.fillMaxSize().widthIn(max = 840.dp), contentPadding = PaddingValues(16.dp)) { 
+                                items(dayClasses) { item -> ClassItem(item, vm.getTimeString(item.id_lesson)) { vm.selectedClass = item } }
                                 item { Spacer(Modifier.height(80.dp)) } 
                             } 
                         } 
@@ -145,30 +107,34 @@ fun ScheduleScreen(vm: MainViewModel) {
 
 @Composable
 fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
-    // UPDATED: New Clipboard API
     val clipboard = LocalClipboard.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
-    val groupLabel = if (item.subject_type?.get() == "Lecture") "Stream" else "Group"
+    // --- LOCALIZATION FIXES ---
+    val typeLecture = stringResource(R.string.type_lecture)
+    val labelStream = stringResource(R.string.stream)
+    val labelGroup = stringResource(R.string.group)
+    
+    // Use helper to translate "Practical Class" -> "Практика", etc.
+    val localizedSubjectType = getLocalizedSubjectType(item.subject_type?.get())
+    
+    // Logic: If localized type is Lecture, use Stream label, else Group
+    val groupLabel = if (localizedSubjectType == typeLecture) labelStream else labelGroup
     val groupValue = item.stream?.numeric?.toString() ?: "?"
     
     val timeString = vm.getTimeString(item.id_lesson)
 
-    // Grades Logic
     val activeSemester = vm.profileData?.active_semester
     val session = vm.sessionData
     val currentSemSession = session.find { it.semester?.id == activeSemester } ?: session.lastOrNull()
-    val subjectGrades = currentSemSession?.subjects?.find { 
-        it.subject?.get() == item.subject?.get() 
-    }
+    val subjectGrades = currentSemSession?.subjects?.find { it.subject?.get() == item.subject?.get() }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxWidth().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp)) {
-            // Header
             Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) { 
                 Column(Modifier.padding(24.dp)) { 
-                    Text(item.subject?.get() ?: "Subject", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    Text(item.subject?.get() ?: stringResource(R.string.subject_default), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                     Spacer(Modifier.height(4.dp))
                     
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -179,7 +145,9 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
-                        AssistChip(onClick = {}, label = { Text(item.subject_type?.get() ?: "Lesson") })
+                        // UPDATED: Use localized string in chip
+                        AssistChip(onClick = {}, label = { Text(localizedSubjectType) })
+                        
                         if (item.stream?.numeric != null) { 
                             AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) 
                         } 
@@ -187,55 +155,48 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                 } 
             }
             
-            // Grades Section
             Spacer(Modifier.height(24.dp))
-            Text("Current Performance", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.current_performance), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) {
                 if (subjectGrades != null) {
                     Column(Modifier.padding(16.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            ScoreColumn("M1", subjectGrades.marklist?.point1)
-                            ScoreColumn("M2", subjectGrades.marklist?.point2)
-                            ScoreColumn("Exam", subjectGrades.marklist?.finally)
-                            ScoreColumn("Total", subjectGrades.marklist?.total, true)
+                            ScoreColumn(stringResource(R.string.m1), subjectGrades.marklist?.point1)
+                            ScoreColumn(stringResource(R.string.m2), subjectGrades.marklist?.point2)
+                            ScoreColumn(stringResource(R.string.exam_short), subjectGrades.marklist?.finally)
+                            ScoreColumn(stringResource(R.string.total_short), subjectGrades.marklist?.total, true)
                         }
                     }
                 } else {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Info, null, tint = MaterialTheme.colorScheme.outline)
                         Spacer(Modifier.width(16.dp))
-                        Text("No grades available for this subject yet.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                        Text(stringResource(R.string.no_grades), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }
 
-            // Teacher Section
             Spacer(Modifier.height(24.dp))
-            Text("Teacher", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.teacher), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { 
                     Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.secondary)
                     Spacer(Modifier.width(16.dp))
-                    Text(item.teacher?.get() ?: "Unknown", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text(item.teacher?.get() ?: stringResource(R.string.unknown), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     
-                    // Copy Teacher Name
+                    val copiedMsg = stringResource(R.string.copied)
                     IconButton(onClick = { 
                         val text = item.teacher?.get() ?: ""
-                        scope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("teacher", text)))
-                        }
-                        Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
-                    }) { 
-                        Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
-                    } 
+                        scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("teacher", text))) }
+                        Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show() 
+                    }) { Icon(Icons.Default.ContentCopy, stringResource(R.string.copy), tint = MaterialTheme.colorScheme.outline) } 
                 } 
             }
 
-            // Location Section
             Spacer(Modifier.height(24.dp))
-            Text("Location", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            Text(stringResource(R.string.location), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.height(8.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow), modifier = Modifier.fillMaxWidth()) { 
                 Column { 
@@ -243,8 +204,9 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Icon(Icons.Outlined.MeetingRoom, null, tint = MaterialTheme.colorScheme.secondary)
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) { 
-                            Text("Room", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            Text(item.room?.name_en ?: "Unknown", style = MaterialTheme.typography.bodyLarge) 
+                            Text(stringResource(R.string.room), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            // UPDATED: Use helper to translate "Online"
+                            Text(getLocalizedRoomName(item.room?.name_en), style = MaterialTheme.typography.bodyLarge) 
                         } 
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -253,33 +215,27 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) { 
                             val address = item.classroom?.building?.getAddress()
-                            val displayAddress = if (address.isNullOrBlank()) "Building" else address
+                            val displayAddress = if (address.isNullOrBlank()) stringResource(R.string.building) else address
                             
                             Text(displayAddress, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
-                            Text(item.classroom?.building?.getName() ?: "Campus", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
+                            Text(item.classroom?.building?.getName() ?: stringResource(R.string.campus), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                         }
                         
-                        // Copy Building Name
+                        val copiedMsg = stringResource(R.string.copied)
                         IconButton(onClick = { 
                             val text = item.classroom?.building?.getName() ?: ""
-                            scope.launch {
-                                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("location", text)))
-                            }
-                            Toast.makeText(context, "Copied", Toast.LENGTH_SHORT).show() 
-                        }) { 
-                            Icon(Icons.Default.ContentCopy, "Copy", tint = MaterialTheme.colorScheme.outline) 
-                        }
+                            scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("location", text))) }
+                            Toast.makeText(context, copiedMsg, Toast.LENGTH_SHORT).show() 
+                        }) { Icon(Icons.Default.ContentCopy, stringResource(R.string.copy), tint = MaterialTheme.colorScheme.outline) }
                         
-                        // Map Intent
+                        val noMapMsg = stringResource(R.string.no_map_app)
                         IconButton(onClick = { 
                             val locationName = item.classroom?.building?.getName() ?: ""
                             if (locationName.isNotEmpty()) { 
                                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse("geo:0,0?q=${Uri.encode(locationName)}"))
-                                try { context.startActivity(intent) } catch (e: Exception) { Toast.makeText(context, "No map app found", Toast.LENGTH_SHORT).show() }
+                                try { context.startActivity(intent) } catch (e: Exception) { Toast.makeText(context, noMapMsg, Toast.LENGTH_SHORT).show() }
                             } 
-                        }) { 
-                            Icon(Icons.Outlined.Map, "Map", tint = MaterialTheme.colorScheme.primary) 
-                        } 
+                        }) { Icon(Icons.Outlined.Map, stringResource(R.string.map), tint = MaterialTheme.colorScheme.primary) } 
                     } 
                 } 
             }

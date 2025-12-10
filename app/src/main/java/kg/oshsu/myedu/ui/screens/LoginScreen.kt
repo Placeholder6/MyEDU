@@ -29,10 +29,12 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.*
 import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.M3ExpressiveShapes
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import kg.oshsu.myedu.ui.components.PolygonShape
@@ -49,7 +51,6 @@ fun LoginScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
-    // TRANSPARENT BACKGROUND to let MainActivity's background show
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(Color.Transparent)) {
         val verticalBias by animateFloatAsState(
             targetValue = if (vm.isLoading || vm.isLoginSuccess) 0f else 0.85f,
@@ -88,8 +89,6 @@ fun LoginScreen(
             animationSpec = tween(400)
         )
 
-        // REMOVED ExpressiveShapesBackground call from here
-
         Column(
             modifier = Modifier.fillMaxSize().padding(24.dp).alpha(contentAlpha).verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -98,13 +97,17 @@ fun LoginScreen(
             Spacer(Modifier.height(48.dp))
             OshSuLogo(modifier = Modifier.width(160.dp).height(80.dp))
             Spacer(Modifier.height(32.dp))
-            Text("Welcome Back", style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-            Text("Sign in to your account", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // UPDATED: String Resources (Add these to strings.xml if missing)
+            Text(stringResource(R.string.welcome_back), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+            Text(stringResource(R.string.login_subtitle), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(48.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 OutlinedTextField(
-                    value = email, onValueChange = { email = it }, label = { Text("Email") }, leadingIcon = { Icon(Icons.Default.Email, null) },
+                    value = email, onValueChange = { email = it }, 
+                    // UPDATED
+                    label = { Text(stringResource(R.string.email)) }, 
+                    leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), 
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Next), 
@@ -112,7 +115,10 @@ fun LoginScreen(
                     singleLine = true
                 )
                 OutlinedTextField(
-                    value = pass, onValueChange = { pass = it }, label = { Text("Password") }, leadingIcon = { Icon(Icons.Default.Lock, null) },
+                    value = pass, onValueChange = { pass = it }, 
+                    // UPDATED
+                    label = { Text(stringResource(R.string.password)) }, 
+                    leadingIcon = { Icon(Icons.Default.Lock, null) },
                     trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) } },
                     modifier = Modifier.fillMaxWidth(), visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(), shape = RoundedCornerShape(50),
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
@@ -153,7 +159,8 @@ fun LoginScreen(
                         label = "ContentMorph"
                     ) { state ->
                         when(state) {
-                            0 -> Text("Sign In", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                            // UPDATED: String Resource
+                            0 -> Text(stringResource(R.string.sign_in), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                             1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) 
                             2 -> Box(Modifier.fillMaxSize()) 
                         }

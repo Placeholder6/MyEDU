@@ -40,6 +40,13 @@ class PrefsManager(context: Context) {
             .apply()
     }
 
+    // --- LANGUAGE SETTINGS (NEW) ---
+    fun saveAppLanguage(lang: String) {
+        prefs.edit().putString("app_language", lang).apply()
+    }
+
+    fun getAppLanguage(): String = prefs.getString("app_language", "en") ?: "en"
+
     fun getCustomName(): String? = prefs.getString("custom_name", null)
     fun getCustomPhoto(): String? = prefs.getString("custom_photo", null)
     fun getAppTheme(): String = prefs.getString("app_theme", "system") ?: "system"

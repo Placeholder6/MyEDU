@@ -11,9 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
+import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.ScoreColumn
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,7 +24,6 @@ fun GradesScreen(vm: MainViewModel) {
     val session = vm.sessionData
     val activeSemId = vm.profileData?.active_semester
     
-    // Expressive Pull-to-Refresh State
     val state = rememberPullToRefreshState()
     
     PullToRefreshBox(
@@ -30,7 +31,6 @@ fun GradesScreen(vm: MainViewModel) {
         onRefresh = { vm.refresh() },
         state = state,
         indicator = {
-            // Material 3 Expressive Loading Indicator
             PullToRefreshDefaults.LoadingIndicator(
                 state = state,
                 isRefreshing = vm.isRefreshing,
@@ -40,7 +40,6 @@ fun GradesScreen(vm: MainViewModel) {
         modifier = Modifier.fillMaxSize()
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            // Show progress only if loading initially (not during swipe refresh)
             if (vm.isGradesLoading && !vm.isRefreshing) { 
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
                     CircularProgressIndicator() 
@@ -55,7 +54,7 @@ fun GradesScreen(vm: MainViewModel) {
                     item { 
                         Spacer(Modifier.height(32.dp))
                         Text(
-                            "Current Session", 
+                            stringResource(R.string.current_session), 
                             style = MaterialTheme.typography.headlineMedium, 
                             fontWeight = FontWeight.Bold
                         )
@@ -64,15 +63,17 @@ fun GradesScreen(vm: MainViewModel) {
                     
                     if (session.isEmpty()) {
                         item { 
-                            Text("No grades available.", color = Color.Gray) 
+                            Text(stringResource(R.string.no_grades), color = Color.Gray) 
                         }
                     } else {
                         val currentSem = session.find { it.semester?.id == activeSemId } ?: session.lastOrNull()
                         
                         if (currentSem != null) {
                             item { 
+                                // UPDATED: Use localized format instead of API name_en
+                                val semId = currentSem.semester?.id ?: 0
                                 Text(
-                                    currentSem.semester?.name_en ?: "", 
+                                    text = stringResource(R.string.semester_format, semId),
                                     style = MaterialTheme.typography.titleMedium, 
                                     color = MaterialTheme.colorScheme.primary
                                 )
@@ -88,7 +89,7 @@ fun GradesScreen(vm: MainViewModel) {
                                 ) {
                                     Column(Modifier.padding(16.dp)) {
                                         Text(
-                                            sub.subject?.get() ?: "Subject", 
+                                            sub.subject?.get() ?: stringResource(R.string.subject_default), 
                                             style = MaterialTheme.typography.titleMedium, 
                                             fontWeight = FontWeight.Bold
                                         )
@@ -98,17 +99,17 @@ fun GradesScreen(vm: MainViewModel) {
                                             Modifier.fillMaxWidth(), 
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
-                                            ScoreColumn("M1", sub.marklist?.point1)
-                                            ScoreColumn("M2", sub.marklist?.point2)
-                                            ScoreColumn("Exam", sub.marklist?.finally)
-                                            ScoreColumn("Total", sub.marklist?.total, true)
+                                            ScoreColumn(stringResource(R.string.m1), sub.marklist?.point1)
+                                            ScoreColumn(stringResource(R.string.m2), sub.marklist?.point2)
+                                            ScoreColumn(stringResource(R.string.exam_short), sub.marklist?.finally)
+                                            ScoreColumn(stringResource(R.string.total_short), sub.marklist?.total, true)
                                         }
                                     }
                                 }
                             }
                         } else {
                             item { 
-                                Text("Semester data not found.", color = Color.Gray) 
+                                Text(stringResource(R.string.semester_not_found), color = Color.Gray) 
                             }
                         }
                     }
