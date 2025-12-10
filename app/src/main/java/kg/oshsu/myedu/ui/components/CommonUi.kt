@@ -45,26 +45,167 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.random.Random
 
+// --- SHAPES & BACKGROUND ---
+
+object M3ExpressiveShapes {
+    fun twelveSidedCookie(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 12,
+            radius = 1f,
+            innerRadius = 0.8f,
+            rounding = CornerRounding(radius = 0.2f),
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    fun fourSidedCookie(): RoundedPolygon {
+        return RoundedPolygon.star(
+            numVerticesPerRadius = 4,
+            innerRadius = 0.5f,
+            rounding = CornerRounding(radius = 0.2f), 
+            innerRounding = CornerRounding(radius = 0.2f)
+        ).normalized()
+    }
+
+    fun verySunny() = RoundedPolygon.star(8, innerRadius = 0.78f, rounding = CornerRounding(0.15f)).normalized()
+    fun pill() = RoundedPolygon(4, rounding = CornerRounding(1.0f)).normalized()
+    fun square() = RoundedPolygon(4, rounding = CornerRounding(0.2f)).normalized()
+    fun triangle() = RoundedPolygon(3, rounding = CornerRounding(0.2f)).normalized()
+    fun scallop() = RoundedPolygon.star(10, innerRadius = 0.9f, rounding = CornerRounding(0.5f), innerRounding = CornerRounding(0.5f)).normalized()
+    fun flower() = RoundedPolygon.star(6, innerRadius = 0.6f, rounding = CornerRounding(0.8f), innerRounding = CornerRounding(0.2f)).normalized()
+}
+
+class PolygonShape(private val polygon: RoundedPolygon) : Shape {
+    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
+        val p = android.graphics.Path()
+        polygon.toPath(p) 
+        val matrix = android.graphics.Matrix()
+        val bounds = android.graphics.RectF()
+        p.computeBounds(bounds, true)
+        val scaleX = size.width / bounds.width()
+        val scaleY = size.height / bounds.height()
+        matrix.postTranslate(-bounds.left, -bounds.top)
+        matrix.postScale(scaleX, scaleY)
+        p.transform(matrix)
+        return Outline.Generic(p.asComposePath())
+    }
+}
+
+sealed class BgElement {
+    data class Shape(val polygon: RoundedPolygon) : BgElement()
+    data class Icon(val imageVector: ImageVector) : BgElement()
+}
+
+private data class SimItem(val id: Int, var x: Float, var y: Float, var size: Float, var speed: Float, var active: Boolean = true)
+data class BgItem(val element: BgElement, val xOffset: Dp, val yOffset: Dp, val size: Dp, val color: Color, val alpha: Float, val direction: Float)
+
+@Composable
+fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
+    val density = LocalDensity.current
+    val primary = MaterialTheme.colorScheme.primaryContainer
+    val secondary = MaterialTheme.colorScheme.secondaryContainer
+    val tertiary = MaterialTheme.colorScheme.tertiaryContainer
+    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
+    val errorContainer = MaterialTheme.colorScheme.errorContainer
+    val inversePrimary = MaterialTheme.colorScheme.inversePrimary
+    val colors = listOf(primary, secondary, tertiary, surfaceVariant, errorContainer, inversePrimary)
+
+    val items = remember(maxWidth, maxHeight) {
+        val w = with(density) { maxWidth.toPx() }
+        val h = with(density) { maxHeight.toPx() }
+        val targetCellSize = with(density) { 140.dp.toPx() }
+        val cols = (w / targetCellSize).toInt().coerceAtLeast(3)
+        val rows = (h / targetCellSize).toInt().coerceAtLeast(5)
+        val cellW = w / cols
+        val cellH = h / rows
+        val simItems = mutableListOf<SimItem>()
+        var idCounter = 0
+        for (r in 0 until rows) {
+            for (c in 0 until cols) {
+                val cx = c * cellW + cellW / 2
+                val cy = r * cellH + cellH / 2
+                val jitterX = (Random.nextFloat() - 0.5f) * cellW * 0.8f
+                val jitterY = (Random.nextFloat() - 0.5f) * cellH * 0.8f
+                simItems.add(SimItem(idCounter++, cx + jitterX, cy + jitterY, 50f, Random.nextFloat() * 1.0f + 0.5f, true))
+            }
+        }
+        val maxIterations = 200
+        val rotSafeFactor = 1.45f 
+        for (i in 0 until maxIterations) {
+            var anyGrowing = false
+            for (item in simItems) {
+                if (!item.active) continue
+                anyGrowing = true
+                val newSize = item.size + item.speed
+                val halfSize = newSize / 2
+                if (item.x - halfSize < 20f || item.x + halfSize > w - 20f || item.y - halfSize < 20f || item.y + halfSize > h - 20f) {
+                    item.active = false
+                    continue
+                }
+                var collides = false
+                for (other in simItems) {
+                    if (item.id == other.id) continue
+                    val dx = abs(item.x - other.x)
+                    val dy = abs(item.y - other.y)
+                    val dist = hypot(dx, dy)
+                    val minSafeDist = (newSize/2 + other.size/2) * rotSafeFactor
+                    if (dist < minSafeDist) { collides = true; break }
+                }
+                if (collides) item.active = false else item.size = newSize
+            }
+            if (!anyGrowing) break
+        }
+        val elements = listOf(
+            BgElement.Shape(M3ExpressiveShapes.verySunny()), BgElement.Shape(M3ExpressiveShapes.fourSidedCookie()), BgElement.Shape(M3ExpressiveShapes.pill()),
+            BgElement.Shape(M3ExpressiveShapes.square()), BgElement.Shape(M3ExpressiveShapes.triangle()), BgElement.Shape(M3ExpressiveShapes.scallop()),
+            BgElement.Shape(M3ExpressiveShapes.flower()), BgElement.Shape(M3ExpressiveShapes.twelveSidedCookie()),
+            BgElement.Icon(Icons.Rounded.School), BgElement.Icon(Icons.Rounded.AutoStories), BgElement.Icon(Icons.Rounded.Edit), BgElement.Icon(Icons.Rounded.Lightbulb),
+            BgElement.Icon(Icons.Rounded.HistoryEdu), BgElement.Icon(Icons.Rounded.Psychology), BgElement.Icon(Icons.Rounded.Calculate),
+            BgElement.Icon(Icons.Rounded.Science), BgElement.Icon(Icons.Rounded.Star)
+        )
+        simItems.map { sim ->
+            BgItem(elements.random(), with(density) { (sim.x - sim.size/2).toDp() }, with(density) { (sim.y - sim.size/2).toDp() }, with(density) { sim.size.toDp() }, colors.random(), Random.nextFloat() * 0.3f + 0.2f, if (Random.nextBoolean()) 1f else -1f)
+        }
+    }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "master_rot")
+    val rotation by infiniteTransition.animateFloat(initialValue = 0f, targetValue = 360f, animationSpec = infiniteRepeatable(tween(60000, easing = LinearEasing)), label = "rot")
+
+    Box(Modifier.fillMaxSize()) {
+        items.forEach { item ->
+            Box(modifier = Modifier.offset(x = item.xOffset, y = item.yOffset).size(item.size).rotate(rotation * item.direction).alpha(item.alpha)) {
+                when (val type = item.element) {
+                    is BgElement.Shape -> { 
+                        Canvas(Modifier.fillMaxSize()) { 
+                            val path = android.graphics.Path()
+                            type.polygon.toPath(path)
+                            val matrix = android.graphics.Matrix()
+                            val bounds = android.graphics.RectF()
+                            path.computeBounds(bounds, true)
+                            val scale = minOf(size.width / bounds.width(), size.height / bounds.height())
+                            matrix.postTranslate(-bounds.centerX(), -bounds.centerY())
+                            matrix.postScale(scale, scale)
+                            matrix.postTranslate(size.width / 2f, size.height / 2f)
+                            path.transform(matrix)
+                            drawPath(path.asComposePath(), item.color, style = Fill) 
+                        } 
+                    }
+                    is BgElement.Icon -> { Icon(imageVector = type.imageVector, contentDescription = null, tint = item.color, modifier = Modifier.fillMaxSize()) }
+                }
+            }
+        }
+    }
+}
+
 // --- HELPER: Map API Strings to Localized Resources ---
 @Composable
 fun getLocalizedSubjectType(apiType: String?): String {
     if (apiType == null) return stringResource(R.string.lesson_default)
     return when {
-        // Lecture
-        apiType.contains("Lecture", ignoreCase = true) || 
-        apiType.contains("Лекция", ignoreCase = true) -> stringResource(R.string.type_lecture)
-        
-        // Practical Class / Practice
-        apiType.contains("Practical", ignoreCase = true) || 
-        apiType.contains("Practice", ignoreCase = true) || 
-        apiType.contains("Практика", ignoreCase = true) -> stringResource(R.string.type_practice)
-        
-        // Lab
-        apiType.contains("Lab", ignoreCase = true) || 
-        apiType.contains("Laboratory", ignoreCase = true) || 
-        apiType.contains("Лабораторная", ignoreCase = true) -> stringResource(R.string.type_lab)
-        
-        else -> apiType // Fallback to API string if unknown
+        apiType.contains("Lecture", ignoreCase = true) || apiType.contains("Лекция", ignoreCase = true) -> stringResource(R.string.type_lecture)
+        apiType.contains("Practical", ignoreCase = true) || apiType.contains("Practice", ignoreCase = true) || apiType.contains("Практика", ignoreCase = true) -> stringResource(R.string.type_practice)
+        apiType.contains("Lab", ignoreCase = true) || apiType.contains("Laboratory", ignoreCase = true) || apiType.contains("Лабораторная", ignoreCase = true) -> stringResource(R.string.type_lab)
+        else -> apiType
     }
 }
 
@@ -72,8 +213,7 @@ fun getLocalizedSubjectType(apiType: String?): String {
 fun getLocalizedRoomName(apiName: String?): String {
     if (apiName == null) return stringResource(R.string.unknown_room)
     return when {
-        apiName.equals("Online", ignoreCase = true) || 
-        apiName.equals("Онлайн", ignoreCase = true) -> stringResource(R.string.online)
+        apiName.equals("Online", ignoreCase = true) || apiName.equals("Онлайн", ignoreCase = true) -> stringResource(R.string.online)
         else -> apiName
     }
 }
@@ -82,21 +222,15 @@ fun getLocalizedRoomName(apiName: String?): String {
 
 @Composable
 fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
-    // 1. Localize the Subject Type
     val localizedType = getLocalizedSubjectType(item.subject_type?.get())
-    
-    // 2. Localize the Stream/Group Label
     val labelStream = stringResource(R.string.stream)
     val labelGroup = stringResource(R.string.group)
     val typeLecture = stringResource(R.string.type_lecture)
     
     val streamInfo = if (item.stream?.numeric != null) { 
-        // Logic: If the *localized* type matches "Lecture", show Stream, else Group
-        if (localizedType == typeLecture) "$labelStream ${item.stream.numeric}" 
-        else "$labelGroup ${item.stream.numeric}" 
+        if (localizedType == typeLecture) "$labelStream ${item.stream.numeric}" else "$labelGroup ${item.stream.numeric}" 
     } else ""
     
-    // 3. Localize Room Name
     val localizedRoom = getLocalizedRoomName(item.room?.name_en)
 
     Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha=0.5f))) {
@@ -111,11 +245,8 @@ fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
                 val metaText = buildString { 
                     append(localizedRoom)
                     append(" • ")
-                    append(localizedType) // <--- Now uses localized string
-                    if (streamInfo.isNotEmpty()) { 
-                        append(" • ")
-                        append(streamInfo) 
-                    } 
+                    append(localizedType)
+                    if (streamInfo.isNotEmpty()) { append(" • "); append(streamInfo) } 
                 }
                 Text(metaText, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 Text(timeString, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
@@ -125,7 +256,6 @@ fun ClassItem(item: ScheduleItem, timeString: String, onClick: () -> Unit) {
     }
 }
 
-// ... [Existing OshSuLogo, StatCard, InfoSection, DetailCard, ScoreColumn] ...
 @Composable
 fun OshSuLogo(modifier: Modifier = Modifier, tint: Color = MaterialTheme.colorScheme.primary) {
     val context = LocalContext.current
@@ -166,41 +296,4 @@ fun ScoreColumn(label: String, score: Double?, isTotal: Boolean = false) {
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         Text("${score?.toInt() ?: 0}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = if (isTotal && (score ?: 0.0) >= 50) Color(0xFF4CAF50) else if (isTotal) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
     }
-}
-
-// --- SHAPES & BACKGROUND (Kept for compatibility) ---
-object M3ExpressiveShapes {
-    fun twelveSidedCookie() = RoundedPolygon.star(12, radius = 1f, innerRadius = 0.8f, rounding = CornerRounding(0.2f)).normalized()
-    fun fourSidedCookie() = RoundedPolygon.star(4, innerRadius = 0.5f, rounding = CornerRounding(0.2f)).normalized()
-    fun verySunny() = RoundedPolygon.star(8, innerRadius = 0.78f, rounding = CornerRounding(0.15f)).normalized()
-    fun pill() = RoundedPolygon(4, rounding = CornerRounding(1.0f)).normalized()
-    fun square() = RoundedPolygon(4, rounding = CornerRounding(0.2f)).normalized()
-    fun triangle() = RoundedPolygon(3, rounding = CornerRounding(0.2f)).normalized()
-    fun scallop() = RoundedPolygon.star(10, innerRadius = 0.9f, rounding = CornerRounding(0.5f)).normalized()
-    fun flower() = RoundedPolygon.star(6, innerRadius = 0.6f, rounding = CornerRounding(0.8f)).normalized()
-}
-
-class PolygonShape(private val polygon: RoundedPolygon) : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val p = android.graphics.Path(); polygon.toPath(p)
-        val matrix = android.graphics.Matrix(); val bounds = android.graphics.RectF(); p.computeBounds(bounds, true)
-        val scaleX = size.width / bounds.width(); val scaleY = size.height / bounds.height()
-        matrix.postTranslate(-bounds.left, -bounds.top); matrix.postScale(scaleX, scaleY); p.transform(matrix)
-        return Outline.Generic(p.asComposePath())
-    }
-}
-
-sealed class BgElement {
-    data class Shape(val polygon: RoundedPolygon) : BgElement()
-    data class Icon(val imageVector: ImageVector) : BgElement()
-}
-data class BgItem(val element: BgElement, val xOffset: Dp, val yOffset: Dp, val size: Dp, val color: Color, val alpha: Float, val direction: Float)
-
-@Composable
-fun ExpressiveShapesBackground(maxWidth: Dp, maxHeight: Dp) {
-    // ... (Use previous implementation or keep empty if not needed, preventing compile error)
-    // For brevity, assuming this component is present as provided in previous turns.
-    // If you need the full background code again, let me know. 
-    // I will include a minimal placeholder to prevent errors if you copy-paste this file:
-    Box(Modifier.fillMaxSize()) 
 }

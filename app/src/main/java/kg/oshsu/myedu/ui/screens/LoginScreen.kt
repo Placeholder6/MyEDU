@@ -46,8 +46,7 @@ fun LoginScreen(
     sharedTransitionScope: SharedTransitionScope,
     animatedContentScope: AnimatedContentScope
 ) {
-    var email by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
+    // Removed local state variables in favor of VM state
     var passwordVisible by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
@@ -97,15 +96,15 @@ fun LoginScreen(
             Spacer(Modifier.height(48.dp))
             OshSuLogo(modifier = Modifier.width(160.dp).height(80.dp))
             Spacer(Modifier.height(32.dp))
-            // UPDATED: String Resources (Add these to strings.xml if missing)
+            
             Text(stringResource(R.string.welcome_back), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             Text(stringResource(R.string.login_subtitle), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(48.dp))
 
             Column(verticalArrangement = Arrangement.spacedBy(20.dp), modifier = Modifier.widthIn(max = 400.dp)) {
                 OutlinedTextField(
-                    value = email, onValueChange = { email = it }, 
-                    // UPDATED
+                    value = vm.loginEmail, 
+                    onValueChange = { vm.loginEmail = it }, 
                     label = { Text(stringResource(R.string.email)) }, 
                     leadingIcon = { Icon(Icons.Default.Email, null) },
                     modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), 
@@ -115,15 +114,32 @@ fun LoginScreen(
                     singleLine = true
                 )
                 OutlinedTextField(
-                    value = pass, onValueChange = { pass = it }, 
-                    // UPDATED
+                    value = vm.loginPass, 
+                    onValueChange = { vm.loginPass = it }, 
                     label = { Text(stringResource(R.string.password)) }, 
                     leadingIcon = { Icon(Icons.Default.Lock, null) },
                     trailingIcon = { IconButton(onClick = { passwordVisible = !passwordVisible }) { Icon(if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff, null) } },
                     modifier = Modifier.fillMaxWidth(), visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(), shape = RoundedCornerShape(50),
                     colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(email, pass) }), singleLine = true
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = ImeAction.Done), 
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus(); vm.login(vm.loginEmail, vm.loginPass) }), 
+                    singleLine = true
                 )
+
+                // Added "Remember Me" Row
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = vm.rememberMe, 
+                        onCheckedChange = { vm.rememberMe = it },
+                        colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.remember_me), 
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             if (vm.errorMsg != null) {
@@ -148,7 +164,7 @@ fun LoginScreen(
                         .rotate(rotation)
                         .clip(buttonShape)
                         .background(containerColor)
-                        .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(email, pass) }
+                        .clickable(enabled = !vm.isLoading && !vm.isLoginSuccess) { vm.login(vm.loginEmail, vm.loginPass) }
                 ) {
                     AnimatedContent(
                         targetState = when {
@@ -159,7 +175,6 @@ fun LoginScreen(
                         label = "ContentMorph"
                     ) { state ->
                         when(state) {
-                            // UPDATED: String Resource
                             0 -> Text(stringResource(R.string.sign_in), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
                             1 -> LoadingIndicator(modifier = Modifier.size(32.dp), color = MaterialTheme.colorScheme.primary) 
                             2 -> Box(Modifier.fillMaxSize()) 

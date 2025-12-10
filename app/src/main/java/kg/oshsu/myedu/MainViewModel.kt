@@ -21,6 +21,7 @@ import java.util.Locale
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
+    // Helper to get strings in ViewModel
     private fun getString(resId: Int, vararg args: Any): String {
         return getApplication<Application>().getString(resId, *args)
     }
@@ -32,6 +33,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var isRefreshing by mutableStateOf(false)
     var isLoginSuccess by mutableStateOf(false) 
     var errorMsg by mutableStateOf<String?>(null)
+
+    // --- STATE: LOGIN CREDENTIALS ---
+    var loginEmail by mutableStateOf("")
+    var loginPass by mutableStateOf("")
+    var rememberMe by mutableStateOf(false)
 
     // --- STATE: USER DATA ---
     var userData by mutableStateOf<UserData?>(null)
@@ -57,7 +63,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
 
-    // --- STATE: SCHEDULE & GRADES ---
+    // --- STATE: SCHEDULE DATA ---
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var timeMap by mutableStateOf<Map<Int, String>>(emptyMap())
@@ -65,6 +71,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
+
+    // --- STATE: GRADES DATA ---
     var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
     var isGradesLoading by mutableStateOf(false)
 
@@ -79,7 +87,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- STATE: DICTIONARY ---
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
     
-    // Internal caches
     private var remoteDictionary: Map<String, String> = emptyMap()
     private var customDictionary: MutableMap<String, String> = mutableMapOf()
     
@@ -87,6 +94,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
     private var prefs: PrefsManager? = null
+
+    // --- RESOURCE CACHE ---
     private val jsFetcher = JsResourceFetcher()
     private val refFetcher = ReferenceJsFetcher()
     private val dictUtils = DictionaryUtils()
@@ -131,26 +140,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun updateCombinedDictionary() {
-        // Custom overrides Remote
         combinedDictionary = remoteDictionary + customDictionary
     }
 
     private suspend fun fetchDictionaryIfNeeded() {
-        // 1. Fetch Remote if empty
         if (remoteDictionary.isEmpty() && dictionaryUrl.isNotBlank()) {
             remoteDictionary = dictUtils.fetchDictionary(dictionaryUrl)
         }
-        // 2. Load Local if empty
         if (customDictionary.isEmpty()) {
             customDictionary = prefs?.getCustomDictionary()?.toMutableMap() ?: mutableMapOf()
         }
-        // 3. Merge
         withContext(Dispatchers.Main) {
             updateCombinedDictionary()
         }
     }
 
-    // --- INIT ---
+    // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
         viewModelScope.launch {
             if (prefs == null) {
@@ -162,9 +167,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 appTheme = p.getAppTheme()
                 notificationsEnabled = p.areNotificationsEnabled()
                 language = p.getAppLanguage()
-                
-                // Load Custom Dict immediately
                 customDictionary = p.getCustomDictionary().toMutableMap()
+                
+                // Load Saved Credentials
+                val isRemember = p.loadData("pref_remember_me", Boolean::class.java) ?: false
+                rememberMe = isRemember
+                if (isRemember) {
+                    loginEmail = p.loadData("pref_saved_email", String::class.java) ?: ""
+                    loginPass = p.loadData("pref_saved_pass", String::class.java) ?: ""
+                }
             }
 
             val token = prefs?.getToken()
@@ -182,8 +193,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 launch(Dispatchers.IO) {
                     try { 
-                        fetchAllDataSuspend() 
-                        fetchDictionaryIfNeeded() // Fetch dict in background
+                        fetchAllDataSuspend()
+                        fetchDictionaryIfNeeded()
                     } catch (_: Exception) {}
                 }
             } else {
@@ -192,8 +203,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ... [loadOfflineData, login, saveOnboardingSettings, logout, refresh, fetchAllDataSuspend, loadScheduleNetwork, processScheduleLocally, fetchSessionSuspend, fetchTranscript, getTimeString - NO CHANGES] ...
-    
     private fun loadOfflineData() {
         prefs?.let { p ->
             userData = p.loadData("user_data", UserData::class.java)
@@ -207,6 +216,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- AUTH: LOGIN LOGIC ---
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
@@ -214,6 +224,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             errorMsg = null
             NetworkClient.cookieJar.clear()
             NetworkClient.interceptor.authToken = null
+
+            // Save credentials if Remember Me is active
+            if (rememberMe) {
+                prefs?.saveData("pref_remember_me", true)
+                prefs?.saveData("pref_saved_email", email)
+                prefs?.saveData("pref_saved_pass", pass)
+            } else {
+                prefs?.saveData("pref_remember_me", false)
+                prefs?.saveData("pref_saved_email", "")
+                prefs?.saveData("pref_saved_pass", "")
+            }
 
             try {
                 val resp = withContext(Dispatchers.IO) { NetworkClient.api.login(LoginRequest(email.trim(), pass.trim())) }
@@ -251,6 +272,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // --- ONBOARDING ACTIONS ---
     fun saveOnboardingSettings(name: String, photo: String?, theme: String, notifications: Boolean) {
         customName = name
         customPhotoUri = photo
@@ -265,6 +287,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         appState = "LOGIN"
+        
+        // Preserve credentials if Remember Me was active
+        val wasRemember = rememberMe
+        val savedE = loginEmail
+        val savedP = loginPass
+
         currentTab = 0
         userData = null
         profileData = null
@@ -284,6 +312,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         appTheme = "system"
         notificationsEnabled = true
         showSettingsScreen = false
+        showDictionaryScreen = false
+
+        if (wasRemember) {
+            prefs?.saveData("pref_remember_me", true)
+            prefs?.saveData("pref_saved_email", savedE)
+            prefs?.saveData("pref_saved_pass", savedP)
+            loginEmail = savedE
+            loginPass = savedP
+            rememberMe = true
+        }
     }
 
     fun refresh() {
@@ -381,7 +419,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pdfStatusMessage = getString(R.string.status_preparing_transcript)
             try {
                 fetchDictionaryIfNeeded()
-                // Use combined dictionary
                 val dictToUse = combinedDictionary
                 
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
