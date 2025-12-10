@@ -36,8 +36,14 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     
@@ -52,6 +58,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        // Initialize background work for syncing grades
+        setupBackgroundWork()
+
         enableEdgeToEdge()
         vm.initSession(applicationContext)
 
@@ -68,6 +78,23 @@ class MainActivity : ComponentActivity() {
 
             MyEduTheme(themePreference = vm.appTheme) { AppContent(vm) } 
         }
+    }
+
+    private fun setupBackgroundWork() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .setRequiresBatteryNotLow(true)
+            .build()
+            
+        val syncRequest = PeriodicWorkRequestBuilder<BackgroundSyncWorker>(4, TimeUnit.HOURS)
+            .setConstraints(constraints)
+            .build()
+            
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            "MyEduGradeSync", 
+            ExistingPeriodicWorkPolicy.KEEP, 
+            syncRequest
+        )
     }
 }
 
