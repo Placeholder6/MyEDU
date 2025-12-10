@@ -29,9 +29,11 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource  // <--- ADDED THIS IMPORT
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
@@ -41,9 +43,8 @@ class MainActivity : ComponentActivity() {
     
     private val vm by viewModels<MainViewModel>()
 
-    // --- NEW: Apply Language Context ---
+    // --- Apply Language Context ---
     override fun attachBaseContext(newBase: Context) {
-        // FIXED: Use "myedu_offline_cache" to match PrefsManager
         val prefs = newBase.getSharedPreferences("myedu_offline_cache", Context.MODE_PRIVATE)
         val lang = prefs.getString("app_language", "en") ?: "en"
         super.attachBaseContext(LocaleHelper.setLocale(newBase, lang))
@@ -81,10 +82,13 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     }
 
     val context = LocalContext.current
-    val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    val targetScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
         if (useDarkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
     } else { if (useDarkTheme) darkColorScheme() else lightColorScheme() }
     
+    // SMOOTH THEME TRANSITION
+    val animatedScheme = rememberAnimatedColorScheme(targetScheme)
+
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
@@ -92,22 +96,69 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
             androidx.core.view.WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
         }
     }
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    MaterialTheme(colorScheme = animatedScheme, content = content)
+}
+
+/**
+ * Helper to smoothly animate between color schemes
+ */
+@Composable
+fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
+    val animationSpec = tween<Color>(durationMillis = 600)
+
+    val primary by animateColorAsState(targetColorScheme.primary, animationSpec, label = "primary")
+    val onPrimary by animateColorAsState(targetColorScheme.onPrimary, animationSpec, label = "onPrimary")
+    val primaryContainer by animateColorAsState(targetColorScheme.primaryContainer, animationSpec, label = "primaryContainer")
+    val onPrimaryContainer by animateColorAsState(targetColorScheme.onPrimaryContainer, animationSpec, label = "onPrimaryContainer")
+    val secondary by animateColorAsState(targetColorScheme.secondary, animationSpec, label = "secondary")
+    val onSecondary by animateColorAsState(targetColorScheme.onSecondary, animationSpec, label = "onSecondary")
+    val secondaryContainer by animateColorAsState(targetColorScheme.secondaryContainer, animationSpec, label = "secondaryContainer")
+    val onSecondaryContainer by animateColorAsState(targetColorScheme.onSecondaryContainer, animationSpec, label = "onSecondaryContainer")
+    val tertiary by animateColorAsState(targetColorScheme.tertiary, animationSpec, label = "tertiary")
+    val onTertiary by animateColorAsState(targetColorScheme.onTertiary, animationSpec, label = "onTertiary")
+    val tertiaryContainer by animateColorAsState(targetColorScheme.tertiaryContainer, animationSpec, label = "tertiaryContainer")
+    val onTertiaryContainer by animateColorAsState(targetColorScheme.onTertiaryContainer, animationSpec, label = "onTertiaryContainer")
+    val background by animateColorAsState(targetColorScheme.background, animationSpec, label = "background")
+    val onBackground by animateColorAsState(targetColorScheme.onBackground, animationSpec, label = "onBackground")
+    val surface by animateColorAsState(targetColorScheme.surface, animationSpec, label = "surface")
+    val onSurface by animateColorAsState(targetColorScheme.onSurface, animationSpec, label = "onSurface")
+    val surfaceVariant by animateColorAsState(targetColorScheme.surfaceVariant, animationSpec, label = "surfaceVariant")
+    val onSurfaceVariant by animateColorAsState(targetColorScheme.onSurfaceVariant, animationSpec, label = "onSurfaceVariant")
+    val outline by animateColorAsState(targetColorScheme.outline, animationSpec, label = "outline")
+    val outlineVariant by animateColorAsState(targetColorScheme.outlineVariant, animationSpec, label = "outlineVariant")
+    val error by animateColorAsState(targetColorScheme.error, animationSpec, label = "error")
+    val onError by animateColorAsState(targetColorScheme.onError, animationSpec, label = "onError")
+    val errorContainer by animateColorAsState(targetColorScheme.errorContainer, animationSpec, label = "errorContainer")
+    val onErrorContainer by animateColorAsState(targetColorScheme.onErrorContainer, animationSpec, label = "onErrorContainer")
+    
+    val surfaceContainerLowest by animateColorAsState(targetColorScheme.surfaceContainerLowest, animationSpec, label = "sCL")
+    val surfaceContainerLow by animateColorAsState(targetColorScheme.surfaceContainerLow, animationSpec, label = "sCLow")
+    val surfaceContainer by animateColorAsState(targetColorScheme.surfaceContainer, animationSpec, label = "sC")
+    val surfaceContainerHigh by animateColorAsState(targetColorScheme.surfaceContainerHigh, animationSpec, label = "sCH")
+    val surfaceContainerHighest by animateColorAsState(targetColorScheme.surfaceContainerHighest, animationSpec, label = "sCHH")
+
+    return targetColorScheme.copy(
+        primary = primary, onPrimary = onPrimary, primaryContainer = primaryContainer, onPrimaryContainer = onPrimaryContainer,
+        secondary = secondary, onSecondary = onSecondary, secondaryContainer = secondaryContainer, onSecondaryContainer = onSecondaryContainer,
+        tertiary = tertiary, onTertiary = onTertiary, tertiaryContainer = tertiaryContainer, onTertiaryContainer = onTertiaryContainer,
+        background = background, onBackground = onBackground,
+        surface = surface, onSurface = onSurface, surfaceVariant = surfaceVariant, onSurfaceVariant = onSurfaceVariant,
+        outline = outline, outlineVariant = outlineVariant,
+        error = error, onError = onError, errorContainer = errorContainer, onErrorContainer = onErrorContainer,
+        surfaceContainerLowest = surfaceContainerLowest, surfaceContainerLow = surfaceContainerLow,
+        surfaceContainer = surfaceContainer, surfaceContainerHigh = surfaceContainerHigh, surfaceContainerHighest = surfaceContainerHighest
+    )
 }
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun AppContent(vm: MainViewModel) {
-    // 1. Root Container to hold persistent background
     BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         
-        // 2. Persistent Background Layer
-        // Only show if in Login or Onboarding to avoid visual noise in the main app
         if (vm.appState == "LOGIN" || vm.appState == "ONBOARDING") {
             ExpressiveShapesBackground(maxWidth, maxHeight)
         }
 
-        // 3. Shared Transition Layout
         SharedTransitionLayout {
             AnimatedContent(
                 targetState = vm.appState, 
@@ -117,7 +168,6 @@ fun AppContent(vm: MainViewModel) {
                 }
             ) { state ->
                 when (state) {
-                    // Pass Shared scopes
                     "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
                     "ONBOARDING" -> OnboardingScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
                     "APP" -> MainAppStructure(vm)
@@ -135,21 +185,20 @@ data class NavItem(val label: String, val selectedIcon: ImageVector, val unselec
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    // --- UPDATED: Handle Back Press for Settings ---
     BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
             vm.showTranscriptScreen -> vm.showTranscriptScreen = false
             vm.showReferenceScreen -> vm.showReferenceScreen = false
-            vm.showSettingsScreen -> vm.showSettingsScreen = false // Close settings
+            vm.showSettingsScreen -> vm.showSettingsScreen = false 
         }
     }
 
     val navItems = listOf(
-        NavItem("Home", Icons.Filled.Home, Icons.Outlined.Home, 0),
-        NavItem("Schedule", Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
-        NavItem("Grades", Icons.Filled.Description, Icons.Outlined.Description, 2),
-        NavItem("Profile", Icons.Filled.Person, Icons.Outlined.Person, 3)
+        NavItem(stringResource(R.string.nav_home), Icons.Filled.Home, Icons.Outlined.Home, 0),
+        NavItem(stringResource(R.string.nav_schedule), Icons.Filled.DateRange, Icons.Outlined.DateRange, 1),
+        NavItem(stringResource(R.string.nav_grades), Icons.Filled.Description, Icons.Outlined.Description, 2),
+        NavItem(stringResource(R.string.nav_profile), Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -184,11 +233,9 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
         
-        // Full Screen Overlays
         AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
         AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
         
-        // --- ADDED: Settings Screen Overlay ---
         AnimatedVisibility(
             visible = vm.showSettingsScreen, 
             enter = slideInHorizontally(initialOffsetX = { it }), 

@@ -1,5 +1,6 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.app.Activity
 import android.content.pm.PackageManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -104,7 +105,7 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                         options.forEachIndexed { index, option ->
                             SegmentedButton(
                                 selected = vm.appTheme == option,
-                                onClick = { vm.setTheme(option) },
+                                onClick = { vm.setTheme(option) }, // Updates state, triggering smooth fade in MainActivity
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
                                 icon = { 
                                     SegmentedButtonDefaults.Icon(active = vm.appTheme == option) {
@@ -137,7 +138,8 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                                 onClick = { 
                                     if (vm.language != code) {
                                         vm.setAppLanguage(code)
-                                        (context as? MainActivity)?.recreate()
+                                        // Standard activity recreation to apply new Locale
+                                        (context as? Activity)?.recreate()
                                     }
                                 },
                                 shape = SegmentedButtonDefaults.itemShape(index = index, count = languages.size),
