@@ -196,7 +196,7 @@
     <string name="notif_tomorrow_title">Tomorrow\'s Schedule</string>
     <string name="notif_tomorrow_msg">You have %1$d classes tomorrow. First up: %2$s.</string>
     <string name="notif_class_title">Upcoming Class in 1 hr</string>
-    <string name="notif_class_msg">%1$s\nTime: %2$s • Room: %3$s</string>
+    <string name="notif_class_msg">%1$s\nTime: %2$s\nLocation: %3$s\nRoom: %4$s</string>
     <string name="class_default">Class</string>
     <string name="unknown_room_text">Unknown Room</string>
 

@@ -196,7 +196,7 @@
     <string name="notif_tomorrow_title">Эртеңки сабактар</string>
     <string name="notif_tomorrow_msg">Эртең сизде %1$d сабак бар. Биринчиси: %2$s.</string>
     <string name="notif_class_title">Сабак эскертүүсү (1 саат)</string>
-    <string name="notif_class_msg">%1$s\nУбакыт: %2$s • Ауд: %3$s</string>
+    <string name="notif_class_msg">%1$s\nУбакыт: %2$s\nДареги: %3$s\nАуд: %4$s</string>
     <string name="class_default">Сабак</string>
     <string name="unknown_room_text">Белгисиз ауд.</string>
 
