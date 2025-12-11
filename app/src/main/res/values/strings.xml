@@ -192,11 +192,14 @@
     <string name="notif_default_title">MyEDU Notification</string>
     <string name="notif_default_msg">You have a new message</string>
     <string name="notif_channel_name">MyEDU Alarms</string>
-    <string name="notif_tomorrow_title">Classes Tomorrow</string>
-    <string name="notif_tomorrow_msg">You have %1$d classes tomorrow. First: %2$s</string>
-    <string name="notif_class_title">Class Reminder</string>
-    <string name="notif_class_msg">%1$s\nTime: %2$s\nLocation: %3$s\nRoom: %4$s</string>
+    
+    <string name="notif_tomorrow_title">Tomorrow\'s Schedule</string>
+    <string name="notif_tomorrow_msg">You have %1$d classes tomorrow. First up: %2$s.</string>
+    <string name="notif_class_title">Upcoming Class in 1 hr</string>
+    <string name="notif_class_msg">%1$s\nTime: %2$s • Room: %3$s</string>
     <string name="class_default">Class</string>
+    <string name="unknown_room_text">Unknown Room</string>
+
     <string name="update_available_title">Update Available</string>
     <string name="update_available_msg">A new version (%1$s) is available.\n\n%2$s</string>
     <string name="update_btn_download">Download Update</string>

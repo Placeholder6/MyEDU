@@ -46,11 +46,11 @@ class ScheduleAlarmManager(private val context: Context) {
         
         if (nextDayClasses.isNotEmpty()) {
             val count = nextDayClasses.size
-            val firstClass = nextDayClasses.first().subject?.get() ?: "Class"
+            val firstClass = nextDayClasses.first().subject?.get() ?: context.getString(R.string.class_default)
             
             val intent = Intent(context, NotificationReceiver::class.java).apply {
-                putExtra("TITLE", "Tomorrow's Schedule")
-                putExtra("MESSAGE", "You have $count classes tomorrow. First up: $firstClass.")
+                putExtra("TITLE", context.getString(R.string.notif_tomorrow_title))
+                putExtra("MESSAGE", context.getString(R.string.notif_tomorrow_msg, count, firstClass))
                 putExtra("ID", 9999) // Unique ID for summary
             }
 
@@ -94,12 +94,14 @@ class ScheduleAlarmManager(private val context: Context) {
             }
 
             // Subject and Room info
-            val subjectName = item.subject?.get() ?: "Class"
-            val roomName = item.room?.name_en ?: "Unknown Room"
-            val msg = "$subjectName\nTime: $startTime • Room: $roomName"
+            val subjectName = item.subject?.get() ?: context.getString(R.string.class_default)
+            val roomName = item.room?.name_en ?: context.getString(R.string.unknown_room_text)
+            
+            // Format: Subject \n Time: 10:00 • Room: 205
+            val msg = context.getString(R.string.notif_class_msg, subjectName, startTime, roomName)
 
             val intent = Intent(context, NotificationReceiver::class.java).apply {
-                putExtra("TITLE", "Upcoming Class in 1 hr")
+                putExtra("TITLE", context.getString(R.string.notif_class_title))
                 putExtra("MESSAGE", msg)
                 // Unique ID based on Day (0-6) and LessonID (1-10) -> e.g. 502
                 putExtra("ID", item.day * 100 + item.id_lesson)

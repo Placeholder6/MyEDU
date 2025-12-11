@@ -192,11 +192,14 @@
     <string name="notif_default_title">Уведомление MyEDU</string>
     <string name="notif_default_msg">У вас новое сообщение</string>
     <string name="notif_channel_name">Будильники MyEDU</string>
-    <string name="notif_tomorrow_title">Занятия завтра</string>
-    <string name="notif_tomorrow_msg">Завтра %1$d пар. Первая: %2$s</string>
-    <string name="notif_class_title">Напоминание о занятии</string>
-    <string name="notif_class_msg">%1$s\nВремя: %2$s\nАдрес: %3$s\nКомната: %4$s</string>
+    
+    <string name="notif_tomorrow_title">Расписание на завтра</string>
+    <string name="notif_tomorrow_msg">Завтра у вас %1$d пар(ы). Первая: %2$s.</string>
+    <string name="notif_class_title">Скоро пара (через 1 ч)</string>
+    <string name="notif_class_msg">%1$s\nВремя: %2$s • Ауд: %3$s</string>
     <string name="class_default">Занятие</string>
+    <string name="unknown_room_text">Неизвестная ауд.</string>
+
     <string name="update_available_title">Доступно обновление</string>
     <string name="update_available_msg">Доступна новая версия (%1$s).\n\n%2$s</string>
     <string name="update_btn_download">Скачать</string>
