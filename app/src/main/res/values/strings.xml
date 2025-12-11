@@ -59,7 +59,7 @@
     <string name="subject_default">Subject</string>
     <string name="pair">Pair</string>
     <string name="type_lecture">Lecture</string>
-    <string name="type_practice">Practice</string>
+    <string name="type_practice">Practical Class</string>
     <string name="type_lab">Lab</string>
     <string name="unknown_room">Room ?</string>
     <string name="online">Online</string>

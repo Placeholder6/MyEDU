@@ -502,10 +502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- TRANSCRIPT & DOCS LOGIC ---
 
     fun fetchTranscript(forceRefresh: Boolean = false) {
-        // Cancel any previous fetch
         transcriptJob?.cancel()
         
-        // Mark loading immediately to avoid "No Data" flash
         isTranscriptLoading = true
         showTranscriptScreen = true
         
@@ -536,7 +534,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     
     fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "${getString(R.string.pair)} $lessonId"
 
-    // RESET FUNCTION - Cancels both PDF generation AND data fetching
     fun resetDocumentState() {
         generationJob?.cancel()
         generationJob = null
@@ -549,9 +546,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         pdfStatusMessage = null
         savedPdfUri = null
         savedPdfName = null
-        
-        // Note: We do NOT clear transcriptData here, so it doesn't vanish if the user just rotates screen
-        // But fetchTranscript(forceRefresh=true) will clear it when called explicitly.
     }
 
     fun openPdf(context: Context, uri: Uri) {
@@ -562,16 +556,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(intent)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
     // --- PDF GENERATION ---
 
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
-        resetDocumentState() // Cancel prev jobs
+        resetDocumentState()
         
         val studentId = userData?.id ?: return
         
@@ -617,7 +609,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 pdfProgress = 0.8f
                 pdfStatusMessage = getString(R.string.status_uploading)
-                
                 withContext(Dispatchers.IO) {
                     try {
                         uploadPdfOnly(linkId, studentId, bytes, "transcript_$language.pdf", true)
@@ -644,17 +635,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
-                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    var msg = getString(R.string.error_generic, e.message ?: "Unknown")
+                    // Check for HTTP 400 or "400" in text
+                    if (e.message?.contains("400") == true || (e is retrofit2.HttpException && e.code() == 400)) {
+                        msg += "\nPlease wait a few minutes and try again."
+                    }
+                    pdfStatusMessage = msg
                     e.printStackTrace()
-                    delay(3000)
-                    pdfStatusMessage = null
                 }
             } finally {
-                if (pdfStatusMessage != null && savedPdfUri == null) isPdfGenerating = false
-                else if (savedPdfUri != null) isPdfGenerating = false
+                // IMPORTANT: Stop generating so UI can switch to ERROR or SUCCESS state
+                isPdfGenerating = false
             }
         }
     }
@@ -694,7 +689,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     val licRaw = NetworkClient.api.getSpecialityLicense(specId, eduFormId).string()
                     val uRaw = NetworkClient.api.getUniversityInfo().string()
-                    
                     val linkRaw = NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string()
                     val linkObj = JSONObject(linkRaw)
                     
@@ -739,17 +733,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
-                    pdfStatusMessage = getString(R.string.error_generic, e.message ?: "Unknown")
+                    var msg = getString(R.string.error_generic, e.message ?: "Unknown")
+                    // Check for HTTP 400 or "400" in text
+                    if (e.message?.contains("400") == true || (e is retrofit2.HttpException && e.code() == 400)) {
+                        msg += "\nPlease wait a few minutes and try again."
+                    }
+                    pdfStatusMessage = msg
                     e.printStackTrace()
-                    delay(3000)
-                    pdfStatusMessage = null
                 }
             } finally {
-                if (pdfStatusMessage != null && savedPdfUri == null) isPdfGenerating = false
-                else if (savedPdfUri != null) isPdfGenerating = false
+                isPdfGenerating = false
             }
         }
     }
