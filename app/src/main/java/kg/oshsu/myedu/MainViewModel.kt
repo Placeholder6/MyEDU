@@ -2,13 +2,18 @@ package kg.oshsu.myedu
 
 import android.app.Application
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,7 +30,6 @@ import kotlin.math.max
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
-    // Helper to get strings in ViewModel
     private fun getString(resId: Int, vararg args: Any): String {
         return getApplication<Application>().getString(resId, *args)
     }
@@ -77,9 +81,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
     var timeMap by mutableStateOf<Map<Int, String>>(emptyMap())
-    var todayDayName by mutableStateOf("") 
     var determinedStream by mutableStateOf<Int?>(null)
     var determinedGroup by mutableStateOf<Int?>(null)
+    var todayDayName by mutableStateOf("") 
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
 
     // --- STATE: GRADES DATA ---
@@ -91,16 +95,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var isTranscriptLoading by mutableStateOf(false)
     var showTranscriptScreen by mutableStateOf(false)
     var showReferenceScreen by mutableStateOf(false)
+    
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
+    var pdfProgress by mutableStateOf(0f)
+
+    // NEW STATE for Downloaded PDF
+    var savedPdfUri by mutableStateOf<Uri?>(null)
+    var savedPdfName by mutableStateOf<String?>(null)
+
+    // JOB CONTROL
+    private var generationJob: Job? = null
+    private var transcriptJob: Job? = null
 
     // --- STATE: DICTIONARY ---
     var dictionaryUrl by mutableStateOf("https://gist.githubusercontent.com/Placeholder6/71c6a6638faf26c7858d55a1e73b7aef/raw/myedudictionary.json")
     
     private var remoteDictionary: Map<String, String> = emptyMap()
     private var customDictionary: MutableMap<String, String> = mutableMapOf()
-    
-    // Exposed merged dictionary for UI and Logic
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
     private var prefs: PrefsManager? = null
@@ -237,10 +249,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- NETWORK & UPDATES ---
     
-    fun onNetworkAvailable() {
-        // Deliberately empty to avoid auto-refresh spam. 
-        // Logic can be added here if needed (e.g. show a "Back Online" snackbar).
-    }
+    fun onNetworkAvailable() { }
 
     fun checkForUpdates(context: Context) {
         viewModelScope.launch {
@@ -490,37 +499,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
     }
 
-    fun fetchTranscript() {
-        viewModelScope.launch(Dispatchers.IO) {
+    // --- TRANSCRIPT & DOCS LOGIC ---
+
+    fun fetchTranscript(forceRefresh: Boolean = false) {
+        // Cancel any previous fetch
+        transcriptJob?.cancel()
+        
+        // Mark loading immediately to avoid "No Data" flash
+        isTranscriptLoading = true
+        showTranscriptScreen = true
+        
+        if (forceRefresh) {
+            transcriptData = emptyList()
+        } else {
+            transcriptData = prefs?.loadList<TranscriptYear>("transcript_list") ?: emptyList()
+        }
+
+        transcriptJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                withContext(Dispatchers.Main) { 
-                    isTranscriptLoading = true
-                    showTranscriptScreen = true
-                    transcriptData = prefs?.loadList<TranscriptYear>("transcript_list") ?: emptyList() 
-                }
                 val uid = userData?.id ?: return@launch
                 val movId = profileData?.studentMovement?.id ?: return@launch 
                 val transcript = NetworkClient.api.getTranscript(uid, movId)
-                withContext(Dispatchers.Main) { transcriptData = transcript; prefs?.saveList("transcript_list", transcript) }
+                withContext(Dispatchers.Main) { 
+                    transcriptData = transcript
+                    prefs?.saveList("transcript_list", transcript)
+                }
             } catch (e: Exception) {
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 }
-            } finally { withContext(Dispatchers.Main) { isTranscriptLoading = false } }
+            } finally { 
+                withContext(Dispatchers.Main) { isTranscriptLoading = false } 
+            }
         }
     }
     
     fun getTimeString(lessonId: Int) = timeMap[lessonId] ?: "${getString(R.string.pair)} $lessonId"
 
+    // RESET FUNCTION - Cancels both PDF generation AND data fetching
+    fun resetDocumentState() {
+        generationJob?.cancel()
+        generationJob = null
+        
+        transcriptJob?.cancel()
+        transcriptJob = null
+        
+        isPdfGenerating = false
+        pdfProgress = 0f
+        pdfStatusMessage = null
+        savedPdfUri = null
+        savedPdfName = null
+        
+        // Note: We do NOT clear transcriptData here, so it doesn't vanish if the user just rotates screen
+        // But fetchTranscript(forceRefresh=true) will clear it when called explicitly.
+    }
+
+    fun openPdf(context: Context, uri: Uri) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/pdf")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // --- PDF GENERATION ---
+
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
+        resetDocumentState() // Cancel prev jobs
+        
         val studentId = userData?.id ?: return
         
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             isPdfGenerating = true
+            pdfProgress = 0.1f
             pdfStatusMessage = getString(R.string.status_preparing_transcript)
             try {
-                fetchDictionaryIfNeeded()
+                withContext(Dispatchers.IO) { fetchDictionaryIfNeeded() }
+                pdfProgress = 0.2f
                 val dictToUse = combinedDictionary
                 
                 var resources = if (language == "en") cachedResourcesEn else cachedResourcesRu
@@ -529,33 +590,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     resources = jsFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedResourcesEn = resources else cachedResourcesRu = resources
                 }
+                pdfProgress = 0.4f
 
-                val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                val infoJson = JSONObject(infoRaw)
-                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
-                infoJson.put("fullName", fullName)
+                val (infoJsonString, transcriptRaw, linkId, qrUrl) = withContext(Dispatchers.IO) {
+                    val infoRaw = NetworkClient.api.getStudentInfoRaw(studentId).string()
+                    val infoJson = JSONObject(infoRaw)
+                    val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                    infoJson.put("fullName", fullName)
 
-                val movId = profileData?.studentMovement?.id ?: 0L
-                val transcriptRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptDataRaw(studentId, movId).string() }
+                    val movId = profileData?.studentMovement?.id ?: 0L
+                    val transRaw = NetworkClient.api.getTranscriptDataRaw(studentId, movId).string()
 
-                val keyRaw = withContext(Dispatchers.IO) { NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string() }
-                val keyObj = JSONObject(keyRaw)
-                val linkId = keyObj.optLong("id")
-                val qrUrl = keyObj.optString("url")
+                    val keyRaw = NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
+                    val keyObj = JSONObject(keyRaw)
+                    
+                    Quadruple(infoJson.toString(), transRaw, keyObj.optLong("id"), keyObj.optString("url"))
+                }
                 
                 pdfStatusMessage = getString(R.string.generating_pdf)
+                pdfProgress = 0.7f
+                
                 val generator = WebPdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), transcriptRaw, linkId, qrUrl, resources!!, language, dictToUse
+                    infoJsonString, transcriptRaw, linkId, qrUrl, resources!!, language, dictToUse
                 ) { println(it) }
 
-                val file = File(context.getExternalFilesDir(null), "transcript_$language.pdf")
-                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
-
+                pdfProgress = 0.8f
                 pdfStatusMessage = getString(R.string.status_uploading)
-                uploadAndOpen(context, linkId, studentId, file, "transcript_$language.pdf", keyObj.optString("key"), true)
+                
+                withContext(Dispatchers.IO) {
+                    try {
+                        uploadPdfOnly(linkId, studentId, bytes, "transcript_$language.pdf", true)
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+
+                pdfStatusMessage = "Saving to Downloads..."
+                pdfProgress = 0.9f
+                
+                val lName = userData?.last_name ?: "Student"
+                val fName = userData?.name ?: "Name"
+                val baseName = "${lName}_${fName}_Transcript_$language"
+                
+                val uri = saveToDownloads(context, bytes, baseName)
+                
+                pdfProgress = 1.0f
+                if (uri != null) {
+                    savedPdfUri = uri
+                    savedPdfName = getFileNameFromUri(context, uri) ?: "$baseName.pdf"
+                    pdfStatusMessage = null
+                } else {
+                    pdfStatusMessage = "Failed to save to Downloads"
+                }
 
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
@@ -565,20 +653,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pdfStatusMessage = null
                 }
             } finally {
-                isPdfGenerating = false
+                if (pdfStatusMessage != null && savedPdfUri == null) isPdfGenerating = false
+                else if (savedPdfUri != null) isPdfGenerating = false
             }
         }
     }
 
     fun generateReferencePdf(context: Context, language: String) {
         if (isPdfGenerating) return
+        resetDocumentState()
         val studentId = userData?.id ?: return
 
-        viewModelScope.launch {
+        generationJob = viewModelScope.launch {
             isPdfGenerating = true
+            pdfProgress = 0.1f
             pdfStatusMessage = getString(R.string.status_preparing_reference)
             try {
-                fetchDictionaryIfNeeded()
+                withContext(Dispatchers.IO) { fetchDictionaryIfNeeded() }
+                pdfProgress = 0.2f
                 val dictToUse = combinedDictionary
 
                 var resources = if (language == "en") cachedRefResourcesEn else cachedRefResourcesRu
@@ -587,41 +679,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     resources = refFetcher.fetchResources({ println(it) }, language, dictToUse)
                     if (language == "en") cachedRefResourcesEn = resources else cachedRefResourcesRu = resources
                 }
+                pdfProgress = 0.4f
                 
-                val infoRaw = withContext(Dispatchers.IO) { NetworkClient.api.getStudentInfoRaw(studentId).string() }
-                val infoJson = JSONObject(infoRaw)
-                val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
-                infoJson.put("fullName", fullName)
+                val (infoJsonString, licenseRaw, univRaw, linkId, qrUrl, key) = withContext(Dispatchers.IO) {
+                    val infoRaw = NetworkClient.api.getStudentInfoRaw(studentId).string()
+                    val infoJson = JSONObject(infoRaw)
+                    val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
+                    infoJson.put("fullName", fullName)
 
-                var specId = infoJson.optJSONObject("speciality")?.optInt("id") ?: 0
-                if (specId == 0) specId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
-                var eduFormId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
-                if (eduFormId == 0) eduFormId = infoJson.optJSONObject("edu_form")?.optInt("id") ?: 0
+                    var specId = infoJson.optJSONObject("speciality")?.optInt("id") ?: 0
+                    if (specId == 0) specId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("speciality")?.optInt("id") ?: 0
+                    var eduFormId = infoJson.optJSONObject("lastStudentMovement")?.optJSONObject("edu_form")?.optInt("id") ?: 0
+                    if (eduFormId == 0) eduFormId = infoJson.optJSONObject("edu_form")?.optInt("id") ?: 0
 
-                val licenseRaw = withContext(Dispatchers.IO) { NetworkClient.api.getSpecialityLicense(specId, eduFormId).string() }
-                val univRaw = withContext(Dispatchers.IO) { NetworkClient.api.getUniversityInfo().string() }
-                
-                val linkRaw = withContext(Dispatchers.IO) { NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string() }
-                val linkObj = JSONObject(linkRaw)
-                val linkId = linkObj.optLong("id")
-                val qrUrl = linkObj.optString("url")
-                val key = linkObj.optString("key")
+                    val licRaw = NetworkClient.api.getSpecialityLicense(specId, eduFormId).string()
+                    val uRaw = NetworkClient.api.getUniversityInfo().string()
+                    
+                    val linkRaw = NetworkClient.api.getReferenceLink(DocIdRequest(studentId)).string()
+                    val linkObj = JSONObject(linkRaw)
+                    
+                    QuintuplePlusOne(infoJson.toString(), licRaw, uRaw, linkObj.optLong("id"), linkObj.optString("url"), linkObj.optString("key"))
+                }
 
                 val token = prefs?.getToken() ?: ""
 
                 pdfStatusMessage = getString(R.string.generating_pdf)
+                pdfProgress = 0.7f
+                
                 val generator = ReferencePdfGenerator(context)
                 val bytes = generator.generatePdf(
-                    infoJson.toString(), licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, dictToUse
+                    infoJsonString, licenseRaw, univRaw, linkId, qrUrl, resources!!, token, language, dictToUse
                 ) { println(it) }
 
-                val file = File(context.getExternalFilesDir(null), "reference_$language.pdf")
-                withContext(Dispatchers.IO) { FileOutputStream(file).use { it.write(bytes) } }
-
+                pdfProgress = 0.8f
                 pdfStatusMessage = getString(R.string.status_uploading)
-                uploadAndOpen(context, linkId, studentId, file, "reference_$language.pdf", key, false)
+                withContext(Dispatchers.IO) {
+                    try {
+                        uploadPdfOnly(linkId, studentId, bytes, "reference_$language.pdf", false)
+                    } catch (e: Exception) { e.printStackTrace() }
+                }
+
+                pdfStatusMessage = "Saving to Downloads..."
+                pdfProgress = 0.9f
+                
+                val lName = userData?.last_name ?: "Student"
+                val fName = userData?.name ?: "Name"
+                val baseName = "${lName}_${fName}_Reference_$language"
+                
+                val uri = saveToDownloads(context, bytes, baseName)
+                
+                pdfProgress = 1.0f
+                if (uri != null) {
+                    savedPdfUri = uri
+                    savedPdfName = getFileNameFromUri(context, uri) ?: "$baseName.pdf"
+                    pdfStatusMessage = null
+                } else {
+                    pdfStatusMessage = "Failed to save to Downloads"
+                }
 
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
@@ -631,35 +748,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     pdfStatusMessage = null
                 }
             } finally {
-                isPdfGenerating = false
+                if (pdfStatusMessage != null && savedPdfUri == null) isPdfGenerating = false
+                else if (savedPdfUri != null) isPdfGenerating = false
             }
         }
     }
 
-    private suspend fun uploadAndOpen(context: Context, linkId: Long, studentId: Long, file: java.io.File, filename: String, key: String, isTranscript: Boolean) {
-        try {
-            val plain = "text/plain".toMediaTypeOrNull()
-            val pdfType = "application/pdf".toMediaTypeOrNull()
-            val bodyId = linkId.toString().toRequestBody(plain)
-            val bodyStudent = studentId.toString().toRequestBody(plain)
-            val filePart = MultipartBody.Part.createFormData("pdf", filename, file.asRequestBody(pdfType))
-            
-            withContext(Dispatchers.IO) { 
-                if (isTranscript) NetworkClient.api.uploadPdf(bodyId, bodyStudent, filePart).string() 
-                else NetworkClient.api.uploadReferencePdf(bodyId, bodyStudent, filePart).string() 
-            }
-            delay(1000)
-            val resRaw = withContext(Dispatchers.IO) { NetworkClient.api.resolveDocLink(DocKeyRequest(key)).string() }
-            val url = JSONObject(resRaw).optString("url")
-            if (url.isNotEmpty()) { 
-                val i = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply { addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK) }
-                context.startActivity(i) 
-                pdfStatusMessage = null 
-            } else {
-                pdfStatusMessage = getString(R.string.error_url_not_found)
-            }
-        } catch (e: Exception) {
-            pdfStatusMessage = getString(R.string.error_upload_failed, e.message ?: "Unknown")
+    private suspend fun uploadPdfOnly(linkId: Long, studentId: Long, bytes: ByteArray, filename: String, isTranscript: Boolean) {
+        val plain = "text/plain".toMediaTypeOrNull()
+        val pdfType = "application/pdf".toMediaTypeOrNull()
+        val bodyId = linkId.toString().toRequestBody(plain)
+        val bodyStudent = studentId.toString().toRequestBody(plain)
+        val filePart = MultipartBody.Part.createFormData("pdf", filename, bytes.toRequestBody(pdfType))
+        
+        withContext(Dispatchers.IO) { 
+            if (isTranscript) NetworkClient.api.uploadPdf(bodyId, bodyStudent, filePart).string() 
+            else NetworkClient.api.uploadReferencePdf(bodyId, bodyStudent, filePart).string() 
         }
     }
+
+    private suspend fun saveToDownloads(context: Context, bytes: ByteArray, baseName: String): Uri? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val resolver = context.contentResolver
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.MIME_TYPE, "application/pdf")
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+                        put(MediaStore.MediaColumns.IS_PENDING, 1)
+                    }
+                }
+                
+                var finalName = "$baseName.pdf"
+                var count = 0
+                while (checkFileExists(context, finalName)) {
+                    count++
+                    finalName = "${baseName}_($count).pdf"
+                }
+                contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
+
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                uri?.let {
+                    resolver.openOutputStream(it)?.use { os ->
+                        os.write(bytes)
+                    }
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        contentValues.clear()
+                        contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                        resolver.update(it, contentValues, null, null)
+                    }
+                }
+                uri
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+    }
+
+    private fun checkFileExists(context: Context, fileName: String): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val projection = arrayOf(MediaStore.MediaColumns.DISPLAY_NAME)
+            val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+            val args = arrayOf(fileName)
+            val queryUri = MediaStore.Downloads.EXTERNAL_CONTENT_URI
+            context.contentResolver.query(queryUri, projection, selection, args, null)?.use {
+                return it.count > 0
+            }
+        }
+        return false
+    }
+
+    private fun getFileNameFromUri(context: Context, uri: Uri): String? {
+        var name: String? = null
+        val cursor = context.contentResolver.query(uri, null, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val index = it.getColumnIndex(MediaStore.MediaColumns.DISPLAY_NAME)
+                if (index != -1) name = it.getString(index)
+            }
+        }
+        return name
+    }
+
+    data class Quadruple(val info: String, val transcript: String, val linkId: Long, val qr: String)
+    data class QuintuplePlusOne(val info: String, val license: String, val univ: String, val linkId: Long, val qr: String, val key: String)
 }
