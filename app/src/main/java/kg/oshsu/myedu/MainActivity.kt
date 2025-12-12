@@ -81,15 +81,7 @@ class MainActivity : ComponentActivity() {
                                 
                                 if (uriString != null) {
                                     val localFile = File(Uri.parse(uriString).path!!)
-                                    
-                                    // Get Secure URI via FileProvider
-                                    val contentUri = FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.provider",
-                                        localFile
-                                    )
-
-                                    // Launch Installer
+                                    val contentUri = FileProvider.getUriForFile(context, "${context.packageName}.provider", localFile)
                                     val installIntent = Intent(Intent.ACTION_VIEW).apply {
                                         setDataAndType(contentUri, "application/vnd.android.package-archive")
                                         flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -118,19 +110,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
-        
-        // Register Installer Receiver
         registerReceiver(installReceiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
-
-        // Initialize background work for syncing grades
         setupBackgroundWork()
-
         enableEdgeToEdge()
         vm.initSession(applicationContext)
-
-        splashScreen.setKeepOnScreenCondition {
-            vm.appState == "STARTUP"
-        }
+        splashScreen.setKeepOnScreenCondition { vm.appState == "STARTUP" }
 
         setContent { 
             LaunchedEffect(vm.fullSchedule, vm.timeMap, vm.notificationsEnabled) {
@@ -138,7 +122,6 @@ class MainActivity : ComponentActivity() {
                     ScheduleAlarmManager(applicationContext).scheduleNotifications(vm.fullSchedule, vm.timeMap)
                 }
             }
-
             MyEduTheme(themePreference = vm.appTheme) { AppContent(vm) } 
         }
     }
@@ -153,20 +136,14 @@ class MainActivity : ComponentActivity() {
             .setRequiredNetworkType(NetworkType.CONNECTED)
             .setRequiresBatteryNotLow(true)
             .build()
-            
         val syncRequest = PeriodicWorkRequestBuilder<BackgroundSyncWorker>(4, TimeUnit.HOURS)
             .setConstraints(constraints)
             .build()
-            
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "MyEduGradeSync", 
-            ExistingPeriodicWorkPolicy.KEEP, 
-            syncRequest
-        )
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork("MyEduGradeSync", ExistingPeriodicWorkPolicy.KEEP, syncRequest)
     }
 }
 
-// ... [MyEduTheme and rememberAnimatedColorScheme remain the same] ...
+// ... (MyEduTheme and rememberAnimatedColorScheme unchanged)
 @Composable
 fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
     val systemDark = isSystemInDarkTheme()
@@ -196,7 +173,6 @@ fun MyEduTheme(themePreference: String, content: @Composable () -> Unit) {
 @Composable
 fun rememberAnimatedColorScheme(targetColorScheme: ColorScheme): ColorScheme {
     val animationSpec = tween<Color>(durationMillis = 600)
-
     val primary by animateColorAsState(targetColorScheme.primary, animationSpec, label = "primary")
     val onPrimary by animateColorAsState(targetColorScheme.onPrimary, animationSpec, label = "onPrimary")
     val primaryContainer by animateColorAsState(targetColorScheme.primaryContainer, animationSpec, label = "primaryContainer")
@@ -252,9 +228,7 @@ fun AppContent(vm: MainViewModel) {
             AnimatedContent(
                 targetState = vm.appState, 
                 label = "Root",
-                transitionSpec = {
-                    fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600))
-                }
+                transitionSpec = { fadeIn(animationSpec = tween(600)) togetherWith fadeOut(animationSpec = tween(600)) }
             ) { state ->
                 when (state) {
                     "LOGIN" -> LoginScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
@@ -273,16 +247,8 @@ fun AppContent(vm: MainViewModel) {
                 onDismissRequest = { vm.updateAvailableRelease = null },
                 title = { Text(stringResource(R.string.update_available_title)) },
                 text = { Text(stringResource(R.string.update_available_msg, release.tagName, release.body)) },
-                confirmButton = {
-                    Button(onClick = { vm.downloadUpdate(context) }) {
-                        Text(stringResource(R.string.update_btn_download))
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { vm.updateAvailableRelease = null }) {
-                        Text(stringResource(R.string.update_btn_later))
-                    }
-                }
+                confirmButton = { Button(onClick = { vm.downloadUpdate(context) }) { Text(stringResource(R.string.update_btn_download)) } },
+                dismissButton = { TextButton(onClick = { vm.updateAvailableRelease = null }) { Text(stringResource(R.string.update_btn_later)) } }
             )
         }
     }
@@ -290,18 +256,19 @@ fun AppContent(vm: MainViewModel) {
 
 data class NavItem(val label: String, val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val index: Int)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    BackHandler(enabled = vm.selectedClass != null || vm.showTranscriptScreen || vm.showReferenceScreen || vm.showSettingsScreen || vm.showDictionaryScreen) { 
+    BackHandler(enabled = vm.selectedClass != null || vm.currentScreen != AppScreen.HOME && vm.currentScreen != AppScreen.SCHEDULE && vm.currentScreen != AppScreen.GRADES && vm.currentScreen != AppScreen.PROFILE || vm.showSettingsScreen || vm.showDictionaryScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
-            vm.showTranscriptScreen -> vm.showTranscriptScreen = false
-            vm.showReferenceScreen -> vm.showReferenceScreen = false
-            vm.showDictionaryScreen -> vm.showDictionaryScreen = false // Close Dict
+            vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT -> vm.currentScreen = AppScreen.PROFILE
+            vm.showDictionaryScreen -> vm.showDictionaryScreen = false 
             vm.showSettingsScreen -> vm.showSettingsScreen = false 
+            // Default back for tabs
+            vm.currentScreen != AppScreen.HOME -> vm.currentScreen = AppScreen.HOME
         }
     }
 
@@ -312,62 +279,76 @@ fun MainAppStructure(vm: MainViewModel) {
         NavItem(stringResource(R.string.nav_profile), Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Scaffold(
-            bottomBar = {
-                NavigationBar {
-                    navItems.forEach { item ->
-                        val isSelected = vm.currentTab == item.index
-                        NavigationBarItem(
-                            selected = isSelected,
-                            onClick = { vm.currentTab = item.index },
-                            icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
-                            label = { Text(item.label) }
-                        )
+    SharedTransitionLayout {
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+            // SINGLE SOURCE OF TRUTH ANIMATED CONTENT FOR ALL SCREENS
+            AnimatedContent(
+                targetState = vm.currentScreen,
+                label = "MainAppTransition",
+                transitionSpec = { fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400)) }
+            ) { targetScreen ->
+                
+                // Wrap tabs in Scaffold to show BottomBar
+                if (targetScreen in listOf(AppScreen.HOME, AppScreen.SCHEDULE, AppScreen.GRADES, AppScreen.PROFILE)) {
+                    Scaffold(
+                        bottomBar = {
+                            NavigationBar {
+                                navItems.forEach { item ->
+                                    val isSelected = vm.currentTab == item.index
+                                    NavigationBarItem(
+                                        selected = isSelected,
+                                        onClick = { vm.currentTab = item.index },
+                                        icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
+                                        label = { Text(item.label) }
+                                    )
+                                }
+                            }
+                        }
+                    ) { padding ->
+                        Box(Modifier.padding(padding)) {
+                            when(targetScreen) {
+                                AppScreen.HOME -> HomeScreen(vm)
+                                AppScreen.SCHEDULE -> ScheduleScreen(vm)
+                                AppScreen.GRADES -> GradesScreen(vm)
+                                AppScreen.PROFILE -> ProfileScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
+                                else -> {}
+                            }
+                        }
+                    }
+                } else {
+                    // FULL SCREEN DOCUMENTS (No BottomBar)
+                    Box(Modifier.fillMaxSize()) {
+                        when(targetScreen) {
+                            AppScreen.TRANSCRIPT -> TranscriptView(vm, { vm.currentScreen = AppScreen.PROFILE }, this@SharedTransitionLayout, this@AnimatedContent)
+                            AppScreen.REFERENCE -> ReferenceView(vm, { vm.currentScreen = AppScreen.PROFILE }, this@SharedTransitionLayout, this@AnimatedContent)
+                            else -> {}
+                        }
                     }
                 }
             }
-        ) { padding ->
-            Box(Modifier.padding(padding)) {
-                AnimatedContent(
-                    targetState = vm.currentTab,
-                    label = "TabTransition",
-                    transitionSpec = { fadeIn(animationSpec = tween(300)) togetherWith fadeOut(animationSpec = tween(300)) }
-                ) { targetTab ->
-                    when(targetTab) {
-                        0 -> HomeScreen(vm)
-                        1 -> ScheduleScreen(vm)
-                        2 -> GradesScreen(vm)
-                        3 -> ProfileScreen(vm)
-                    }
-                }
+            
+            // Overlays
+            AnimatedVisibility(
+                visible = vm.showSettingsScreen, 
+                enter = slideInHorizontally(initialOffsetX = { it }), 
+                exit = slideOutHorizontally(targetOffsetX = { it }), 
+                modifier = Modifier.fillMaxSize()
+            ) { 
+                SettingsScreen(vm) { vm.showSettingsScreen = false } 
             }
-        }
-        
-        AnimatedVisibility(visible = vm.showTranscriptScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { TranscriptView(vm) { vm.showTranscriptScreen = false } }
-        AnimatedVisibility(visible = vm.showReferenceScreen, enter = slideInHorizontally { it }, exit = slideOutHorizontally { it }, modifier = Modifier.fillMaxSize()) { ReferenceView(vm) { vm.showReferenceScreen = false } }
-        
-        AnimatedVisibility(
-            visible = vm.showSettingsScreen, 
-            enter = slideInHorizontally(initialOffsetX = { it }), 
-            exit = slideOutHorizontally(targetOffsetX = { it }), 
-            modifier = Modifier.fillMaxSize()
-        ) { 
-            SettingsScreen(vm) { vm.showSettingsScreen = false } 
-        }
 
-        // --- NEW: Dictionary Screen Overlay ---
-        AnimatedVisibility(
-            visible = vm.showDictionaryScreen, 
-            enter = slideInHorizontally(initialOffsetX = { it }), 
-            exit = slideOutHorizontally(targetOffsetX = { it }), 
-            modifier = Modifier.fillMaxSize()
-        ) { 
-            DictionaryScreen(vm) { vm.showDictionaryScreen = false } 
-        }
+            AnimatedVisibility(
+                visible = vm.showDictionaryScreen, 
+                enter = slideInHorizontally(initialOffsetX = { it }), 
+                exit = slideOutHorizontally(targetOffsetX = { it }), 
+                modifier = Modifier.fillMaxSize()
+            ) { 
+                DictionaryScreen(vm) { vm.showDictionaryScreen = false } 
+            }
 
-        if (vm.selectedClass != null) {
-            ModalBottomSheet(onDismissRequest = { vm.selectedClass = null }) { vm.selectedClass?.let { ClassDetailsSheet(vm, it) } }
+            if (vm.selectedClass != null) {
+                ModalBottomSheet(onDismissRequest = { vm.selectedClass = null }) { vm.selectedClass?.let { ClassDetailsSheet(vm, it) } }
+            }
         }
     }
 }

@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.OshSuLogo
-// IMPORT DATA MODELS
 import kg.oshsu.myedu.TranscriptYear
 import kg.oshsu.myedu.TranscriptSemester
 import kg.oshsu.myedu.TranscriptSubject
@@ -37,21 +36,24 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Enum to define the exact UI state for the buttons
 private enum class PdfUiState {
     IDLE, LOADING, SUCCESS, ERROR
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
+fun ReferenceView(
+    vm: MainViewModel, 
+    onClose: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
+) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
     val user = vm.userData
     val profile = vm.profileData
     val mov = profile?.studentMovement
     
-    // Cleanup on Exit
     DisposableEffect(Unit) {
         onDispose { vm.resetDocumentState() }
     }
@@ -61,7 +63,6 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     val facultyName = mov?.faculty?.let { it.name_en ?: it.name_ru } ?: mov?.speciality?.faculty?.let { it.name_en ?: it.name_ru } ?: "-"
     val datePattern = stringResource(R.string.config_date_format)
 
-    // Animation State for Progress Bar
     val progressAnim = remember { Animatable(0f) }
     LaunchedEffect(vm.pdfProgress) {
         progressAnim.animateTo(
@@ -70,11 +71,9 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
         )
     }
 
-    // Determine Current UI State
     val currentState = when {
         vm.savedPdfUri != null -> PdfUiState.SUCCESS
         vm.isPdfGenerating -> PdfUiState.LOADING
-        // If not generating, no success URI, but we have a status message => Error occurred
         vm.pdfStatusMessage != null -> PdfUiState.ERROR
         else -> PdfUiState.IDLE
     }
@@ -82,15 +81,23 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     Scaffold(
         topBar = { 
             TopAppBar(
-                title = { Text(stringResource(R.string.reference_title)) }, 
+                title = { 
+                    with(sharedTransitionScope) {
+                        Text(
+                            stringResource(R.string.reference_title),
+                            modifier = Modifier.sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "text_reference"),
+                                animatedVisibilityScope = animatedVisibilityScope
+                            )
+                        ) 
+                    }
+                }, 
                 navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
             ) 
         },
         bottomBar = {
             Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
                 Column(Modifier.padding(16.dp)) {
-                    
-                    // MORPHING CONTENT AREA
                     AnimatedContent(
                         targetState = currentState,
                         label = "pdf_state_morph",
@@ -100,10 +107,8 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                         }
                     ) { state ->
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                            
                             when (state) {
                                 PdfUiState.IDLE -> {
-                                    // STATE: IDLE (Language Selection)
                                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                         Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
                                             Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
@@ -115,14 +120,12 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                                         }
                                     }
                                 }
-
                                 PdfUiState.LOADING -> {
-                                    // STATE: LOADING (Progress + Cancel)
                                     LinearWavyProgressIndicator(
                                         progress = { progressAnim.value },
                                         modifier = Modifier.fillMaxWidth().height(10.dp),
-                                        color = MaterialTheme.colorScheme.primary, // Monet Primary
-                                        trackColor = MaterialTheme.colorScheme.secondaryContainer // Monet Track
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.secondaryContainer
                                     )
                                     Spacer(Modifier.height(12.dp))
                                     Text(
@@ -141,9 +144,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                                         Text(stringResource(android.R.string.cancel))
                                     }
                                 }
-
                                 PdfUiState.SUCCESS -> {
-                                    // STATE: SUCCESS (Open) - Uses Dynamic Primary Color
                                     Button(
                                         onClick = { vm.openPdf(context, vm.savedPdfUri!!) },
                                         modifier = Modifier.fillMaxWidth()
@@ -160,9 +161,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                                         textAlign = TextAlign.Center
                                     )
                                 }
-
                                 PdfUiState.ERROR -> {
-                                    // STATE: ERROR (Retry + Logs)
                                     Text(
                                         text = vm.pdfStatusMessage ?: "Unknown Error",
                                         style = MaterialTheme.typography.bodyMedium,
@@ -172,9 +171,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                                     )
                                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                         OutlinedButton(
-                                            onClick = { 
-                                                clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "No Error Msg"))
-                                            },
+                                            onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "No Error Msg")) },
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Icon(Icons.Default.ContentCopy, null)
@@ -182,7 +179,7 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
                                             Text("Copy Logs")
                                         }
                                         Button(
-                                            onClick = { vm.resetDocumentState() }, // Reset to IDLE
+                                            onClick = { vm.resetDocumentState() }, 
                                             modifier = Modifier.weight(1f)
                                         ) {
                                             Icon(Icons.Default.Refresh, null)
@@ -244,22 +241,16 @@ fun ReferenceView(vm: MainViewModel, onClose: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun RefDetailRow(label: String, value: String) { 
-    Column(Modifier.padding(bottom = 16.dp)) { 
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        Text(value, style = MaterialTheme.typography.bodyLarge) 
-    } 
-}
-
-// --- TRANSCRIPT VIEW ---
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
+fun TranscriptView(
+    vm: MainViewModel, 
+    onClose: () -> Unit,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
+) {
     val context = LocalContext.current
     val clipboardManager = LocalClipboardManager.current
-    
-    // UI State: Simulate transition delay
     val isTransitionComplete = remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
@@ -289,7 +280,17 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
     Scaffold(
         topBar = { 
             TopAppBar(
-                title = { Text(stringResource(R.string.transcript_title)) }, 
+                title = { 
+                    with(sharedTransitionScope) {
+                        Text(
+                            stringResource(R.string.transcript_title),
+                            modifier = Modifier.sharedElement(
+                                sharedContentState = rememberSharedContentState(key = "text_transcript"),
+                                animatedVisibilityScope = animatedVisibilityScope
+                            )
+                        ) 
+                    }
+                }, 
                 navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
             ) 
         },
@@ -334,7 +335,6 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
                                         }
                                     }
                                     PdfUiState.SUCCESS -> {
-                                        // Uses Dynamic Primary Color
                                         Button(onClick = { vm.openPdf(context, vm.savedPdfUri!!) }, modifier = Modifier.fillMaxWidth()) {
                                             Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Open PDF")
                                         }
@@ -403,4 +403,13 @@ fun TranscriptView(vm: MainViewModel, onClose: () -> Unit) {
             }
         }
     }
+}
+
+// --- ADDED HELPER ---
+@Composable
+fun RefDetailRow(label: String, value: String) { 
+    Column(Modifier.padding(bottom = 16.dp)) { 
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+        Text(value, style = MaterialTheme.typography.bodyLarge) 
+    } 
 }

@@ -1,6 +1,9 @@
 package kg.oshsu.myedu.ui.screens
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -39,12 +42,17 @@ import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.DetailCard
 import kg.oshsu.myedu.ui.components.InfoSection
+import kg.oshsu.myedu.AppScreen // Import AppScreen enum
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class)
 @Composable
-fun ProfileScreen(vm: MainViewModel) {
+fun ProfileScreen(
+    vm: MainViewModel,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedVisibilityScope: AnimatedVisibilityScope
+) {
     val user = vm.userData
     val profile = vm.profileData
     val pay = vm.payStatus
@@ -126,12 +134,31 @@ fun ProfileScreen(vm: MainViewModel) {
                 
                 InfoSection(stringResource(R.string.documents))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { vm.showReferenceScreen = true }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { 
-                        Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.reference)) 
+                    Button(onClick = { vm.currentScreen = AppScreen.REFERENCE }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { 
+                        Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        with(sharedTransitionScope) {
+                            Text(
+                                stringResource(R.string.reference),
+                                modifier = Modifier.sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "text_reference"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                            )
+                        } 
                     }
                     Button(onClick = { vm.fetchTranscript() }, modifier = Modifier.weight(1f), enabled = !vm.isTranscriptLoading) { 
                         if (vm.isTranscriptLoading) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.transcript)) 
+                        Spacer(Modifier.width(8.dp))
+                        with(sharedTransitionScope) {
+                            Text(
+                                stringResource(R.string.transcript),
+                                modifier = Modifier.sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "text_transcript"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                )
+                            )
+                        } 
                     }
                 }
 

@@ -19,14 +19,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
 import java.util.Calendar
 import java.util.Locale
 import kotlin.math.max
+
+// NAVIGATION ENUM
+enum class AppScreen {
+    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE
+}
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
@@ -36,7 +39,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
-    var currentTab by mutableStateOf(0)
+    
+    // Updated Navigation State
+    var currentScreen by mutableStateOf(AppScreen.HOME)
+    
+    // Helper to sync BottomBar tab index with Screen enum
+    var currentTab: Int
+        get() = when(currentScreen) {
+            AppScreen.HOME -> 0
+            AppScreen.SCHEDULE -> 1
+            AppScreen.GRADES -> 2
+            AppScreen.PROFILE -> 3
+            else -> 3 // Default to Profile for nested screens like Transcript/Reference
+        }
+        set(value) {
+            currentScreen = when(value) {
+                0 -> AppScreen.HOME
+                1 -> AppScreen.SCHEDULE
+                2 -> AppScreen.GRADES
+                3 -> AppScreen.PROFILE
+                else -> AppScreen.HOME
+            }
+        }
+
     var isLoading by mutableStateOf(false)
     var isRefreshing by mutableStateOf(false)
     var isLoginSuccess by mutableStateOf(false) 
@@ -93,18 +118,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- STATE: DOCUMENTS & PDF ---
     var transcriptData by mutableStateOf<List<TranscriptYear>>(emptyList())
     var isTranscriptLoading by mutableStateOf(false)
-    var showTranscriptScreen by mutableStateOf(false)
-    var showReferenceScreen by mutableStateOf(false)
+    // Removed old boolean flags in favor of AppScreen enum
     
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
     var pdfProgress by mutableStateOf(0f)
 
-    // NEW STATE for Downloaded PDF
     var savedPdfUri by mutableStateOf<Uri?>(null)
     var savedPdfName by mutableStateOf<String?>(null)
 
-    // JOB CONTROL
     private var generationJob: Job? = null
     private var transcriptJob: Job? = null
 
@@ -117,7 +139,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var prefs: PrefsManager? = null
 
-    // --- RESOURCE CACHE ---
     private val jsFetcher = JsResourceFetcher()
     private val refFetcher = ReferenceJsFetcher()
     private val dictUtils = DictionaryUtils()
@@ -191,7 +212,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 language = p.getAppLanguage()
                 customDictionary = p.getCustomDictionary().toMutableMap()
                 
-                // Load Saved Credentials
                 val isRemember = p.loadData("pref_remember_me", Boolean::class.java) ?: false
                 rememberMe = isRemember
                 if (isRemember) {
@@ -218,14 +238,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
                     } catch (e: Exception) {
-                        // Handle Token Expiry during init
                         if (e.toString().contains("401") || e.message?.contains("401") == true) {
                              withContext(Dispatchers.Main) { handleTokenExpiration() }
                         }
                     }
                 }
-                
-                // Check for updates in background
                 checkForUpdates(context)
                 
             } else {
@@ -247,16 +264,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- NETWORK & UPDATES ---
-    
     fun onNetworkAvailable() { }
 
     fun checkForUpdates(context: Context) {
         viewModelScope.launch {
             try {
-                // Ensure this string exists in strings.xml: repos/<USER>/<REPO>/releases/latest
                 val apiUrl = context.getString(R.string.update_repo_path) 
-                
                 val release = withContext(Dispatchers.IO) { NetworkClient.githubApi.getLatestRelease(apiUrl) }
                 val currentVer = BuildConfig.VERSION_NAME
                 
@@ -266,9 +279,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (remoteVer != localVer && isNewerVersion(remoteVer, localVer)) {
                     updateAvailableRelease = release
                 }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -290,7 +301,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun downloadUpdate(context: Context) {
         val release = updateAvailableRelease ?: return
         val apkAsset = release.assets.find { it.name.endsWith(".apk") } ?: return
-        
         try {
             val request = DownloadManager.Request(Uri.parse(apkAsset.downloadUrl))
                 .setTitle(getString(R.string.update_notif_title))
@@ -301,14 +311,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             downloadId = manager.enqueue(request)
-            
-            updateAvailableRelease = null // Close dialog
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+            updateAvailableRelease = null
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // --- AUTH: LOGIN LOGIC ---
     fun login(email: String, pass: String) {
         viewModelScope.launch {
             isLoading = true
@@ -335,11 +341,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    try {
-                        withContext(Dispatchers.IO) { fetchAllDataSuspend() }
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    try { withContext(Dispatchers.IO) { fetchAllDataSuspend() } } catch (e: Exception) { e.printStackTrace() }
 
                     isLoginSuccess = true
                     delay(200) 
@@ -363,27 +365,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- ONBOARDING ACTIONS ---
     fun saveOnboardingSettings(name: String, photo: String?, theme: String, notifications: Boolean) {
         customName = name
         customPhotoUri = photo
         appTheme = theme
         notificationsEnabled = notifications
-        
         prefs?.saveSettings(name, photo, theme, notifications)
         prefs?.setOnboardingComplete(true)
-        
         appState = "APP"
     }
 
     fun logout() {
         appState = "LOGIN"
-        
         val wasRemember = rememberMe
         val savedE = loginEmail
         val savedP = loginPass
 
-        currentTab = 0
+        currentScreen = AppScreen.HOME
         userData = null
         profileData = null
         payStatus = null
@@ -505,7 +503,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         transcriptJob?.cancel()
         
         isTranscriptLoading = true
-        showTranscriptScreen = true
+        currentScreen = AppScreen.TRANSCRIPT // NAVIGATE VIA SCREEN STATE
         
         if (forceRefresh) {
             transcriptData = emptyList()
@@ -537,10 +535,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun resetDocumentState() {
         generationJob?.cancel()
         generationJob = null
-        
         transcriptJob?.cancel()
         transcriptJob = null
-        
         isPdfGenerating = false
         pdfProgress = 0f
         pdfStatusMessage = null
@@ -559,12 +555,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) { e.printStackTrace() }
     }
 
-    // --- PDF GENERATION ---
-
     fun generateTranscriptPdf(context: Context, language: String) {
         if (isPdfGenerating) return
         resetDocumentState()
-        
         val studentId = userData?.id ?: return
         
         generationJob = viewModelScope.launch {
@@ -635,12 +628,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
                     var msg = getString(R.string.error_generic, e.message ?: "Unknown")
-                    // Check for HTTP 400 or "400" in text
                     if (e.message?.contains("400") == true || (e is retrofit2.HttpException && e.code() == 400)) {
                         msg += "\nPlease wait a few minutes and try again."
                     }
@@ -648,7 +639,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     e.printStackTrace()
                 }
             } finally {
-                // IMPORTANT: Stop generating so UI can switch to ERROR or SUCCESS state
                 isPdfGenerating = false
             }
         }
@@ -733,12 +723,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                
                 if (e.message?.contains("401") == true || e.toString().contains("401")) {
                      withContext(Dispatchers.Main) { handleTokenExpiration() }
                 } else {
                     var msg = getString(R.string.error_generic, e.message ?: "Unknown")
-                    // Check for HTTP 400 or "400" in text
                     if (e.message?.contains("400") == true || (e is retrofit2.HttpException && e.code() == 400)) {
                         msg += "\nPlease wait a few minutes and try again."
                     }
