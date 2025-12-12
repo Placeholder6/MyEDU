@@ -140,9 +140,10 @@ fun ProfileScreen(
                         with(sharedTransitionScope) {
                             Text(
                                 stringResource(R.string.reference),
-                                modifier = Modifier.sharedElement(
+                                modifier = Modifier.sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = "text_reference"),
-                                    animatedVisibilityScope = animatedVisibilityScope
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                                 )
                             )
                         } 
@@ -153,9 +154,10 @@ fun ProfileScreen(
                         with(sharedTransitionScope) {
                             Text(
                                 stringResource(R.string.transcript),
-                                modifier = Modifier.sharedElement(
+                                modifier = Modifier.sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = "text_transcript"),
-                                    animatedVisibilityScope = animatedVisibilityScope
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                                 )
                             )
                         } 

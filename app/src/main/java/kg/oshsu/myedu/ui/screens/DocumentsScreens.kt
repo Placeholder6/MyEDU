@@ -82,14 +82,23 @@ fun ReferenceView(
         topBar = { 
             TopAppBar(
                 title = { 
-                    with(sharedTransitionScope) {
-                        Text(
-                            stringResource(R.string.reference_title),
-                            modifier = Modifier.sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "text_reference"),
-                                animatedVisibilityScope = animatedVisibilityScope
-                            )
-                        ) 
+                    Column {
+                        with(sharedTransitionScope) {
+                            Text(
+                                stringResource(R.string.reference),
+                                modifier = Modifier.sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "text_reference"),
+                                    animatedVisibilityScope = animatedVisibilityScope,
+                                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                )
+                            ) 
+                        }
+                        AnimatedVisibility(
+                            visible = !vm.isPdfGenerating,
+                            enter = fadeIn(tween(delayMillis = 300))
+                        ) {
+                            Text("(Form 8)", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }, 
                 navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
@@ -284,9 +293,10 @@ fun TranscriptView(
                     with(sharedTransitionScope) {
                         Text(
                             stringResource(R.string.transcript_title),
-                            modifier = Modifier.sharedElement(
+                            modifier = Modifier.sharedBounds(
                                 sharedContentState = rememberSharedContentState(key = "text_transcript"),
-                                animatedVisibilityScope = animatedVisibilityScope
+                                animatedVisibilityScope = animatedVisibilityScope,
+                                resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                             )
                         ) 
                     }
