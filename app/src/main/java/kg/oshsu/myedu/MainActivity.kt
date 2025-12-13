@@ -13,13 +13,18 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.animation.core.ExperimentalTransitionApi
+import androidx.compose.animation.core.SeekableTransitionState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
@@ -50,6 +55,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.*
+import kotlinx.coroutines.CancellationException
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -256,19 +262,58 @@ fun AppContent(vm: MainViewModel) {
 
 data class NavItem(val label: String, val selectedIcon: ImageVector, val unselectedIcon: ImageVector, val index: Int)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalSharedTransitionApi::class, ExperimentalTransitionApi::class)
 @Composable
 fun MainAppStructure(vm: MainViewModel) {
     NotificationPermissionRequest()
 
-    BackHandler(enabled = vm.selectedClass != null || vm.currentScreen != AppScreen.HOME && vm.currentScreen != AppScreen.SCHEDULE && vm.currentScreen != AppScreen.GRADES && vm.currentScreen != AppScreen.PROFILE || vm.showSettingsScreen || vm.showDictionaryScreen) { 
+    // 1. Separate BackHandler for Overlays
+    BackHandler(enabled = vm.selectedClass != null || vm.showSettingsScreen || vm.showDictionaryScreen) { 
         when {
             vm.selectedClass != null -> vm.selectedClass = null
-            vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT -> vm.currentScreen = AppScreen.PROFILE
             vm.showDictionaryScreen -> vm.showDictionaryScreen = false 
             vm.showSettingsScreen -> vm.showSettingsScreen = false 
-            // Default back for tabs
-            vm.currentScreen != AppScreen.HOME -> vm.currentScreen = AppScreen.HOME
+        }
+    }
+
+    // 2. Predictive Back State with SeekableTransitionState
+    val transitionState = remember { SeekableTransitionState(vm.currentScreen) }
+    
+    // 3. Sync State: Whenever the ViewModel updates the screen (e.g. bottom bar tap), we animate to it
+    LaunchedEffect(vm.currentScreen) {
+        if (transitionState.targetState != vm.currentScreen) {
+            transitionState.animateTo(vm.currentScreen)
+        }
+    }
+
+    // 4. Handle Back Gesture (Documents -> Profile)
+    // Only active when no overlays are open and we are on a Document screen
+    val isOverlayOpen = vm.selectedClass != null || vm.showSettingsScreen || vm.showDictionaryScreen
+    if (!isOverlayOpen && (vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT)) {
+        PredictiveBackHandler { progress ->
+            try {
+                // Start gesture: seek towards Profile
+                transitionState.seekTo(0f, targetState = AppScreen.PROFILE)
+                
+                // Update progress based on gesture
+                progress.collect { backEvent ->
+                    transitionState.seekTo(backEvent.progress, targetState = AppScreen.PROFILE)
+                }
+                
+                // Commit navigation if gesture finishes
+                transitionState.animateTo(AppScreen.PROFILE)
+                vm.currentScreen = AppScreen.PROFILE
+            } catch (e: CancellationException) {
+                // Cancel gesture: snap back to original screen
+                transitionState.animateTo(transitionState.currentState)
+            }
+        }
+    } else {
+        // Fallback for standard back navigation (e.g., Schedule -> Home) when not on Document screens
+        if (vm.currentScreen != AppScreen.HOME) {
+            BackHandler {
+                vm.currentScreen = AppScreen.HOME
+            }
         }
     }
 
@@ -281,10 +326,11 @@ fun MainAppStructure(vm: MainViewModel) {
 
     SharedTransitionLayout {
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            // SINGLE SOURCE OF TRUTH ANIMATED CONTENT FOR ALL SCREENS
-            AnimatedContent(
-                targetState = vm.currentScreen,
-                label = "MainAppTransition",
+            
+            // --- FIXED: Create Transition and use Extension Function ---
+            val transition = rememberTransition(transitionState)
+            
+            transition.AnimatedContent(
                 transitionSpec = { fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400)) }
             ) { targetScreen ->
                 
