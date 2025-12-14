@@ -91,7 +91,8 @@ fun HomeScreen(vm: MainViewModel) {
                         icon = Icons.Outlined.CalendarToday, 
                         label = stringResource(R.string.semester), 
                         value = profile?.active_semester?.toString() ?: "-", 
-                        secondaryValue = vm.determinedStream?.let { "${stringResource(R.string.stream)} $it" },
+                        // FIXED: Always display "Stream ..." or "Stream -" to maintain card height consistency
+                        secondaryValue = "${stringResource(R.string.stream)} ${vm.determinedStream ?: "-"}",
                         bg = MaterialTheme.colorScheme.primaryContainer, 
                         modifier = Modifier.weight(1f)
                     )
