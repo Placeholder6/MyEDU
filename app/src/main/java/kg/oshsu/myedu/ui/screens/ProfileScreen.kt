@@ -134,10 +134,19 @@ fun ProfileScreen(
                 
                 InfoSection(stringResource(R.string.documents))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { vm.currentScreen = AppScreen.REFERENCE }, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { 
-                        Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        with(sharedTransitionScope) {
+                    with(sharedTransitionScope) {
+                        Button(
+                            onClick = { vm.currentScreen = AppScreen.REFERENCE }, 
+                            modifier = Modifier
+                                .weight(1f)
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "reference_card"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                ), 
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                        ) { 
+                            Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 stringResource(R.string.reference),
                                 modifier = Modifier.sharedBounds(
@@ -146,12 +155,20 @@ fun ProfileScreen(
                                     resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                                 )
                             )
-                        } 
-                    }
-                    Button(onClick = { vm.fetchTranscript() }, modifier = Modifier.weight(1f), enabled = !vm.isTranscriptLoading) { 
-                        if (vm.isTranscriptLoading) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        with(sharedTransitionScope) {
+                        }
+                        
+                        Button(
+                            onClick = { vm.fetchTranscript() }, 
+                            modifier = Modifier
+                                .weight(1f)
+                                .sharedBounds(
+                                    sharedContentState = rememberSharedContentState(key = "transcript_card"),
+                                    animatedVisibilityScope = animatedVisibilityScope
+                                ), 
+                            enabled = !vm.isTranscriptLoading
+                        ) { 
+                            if (vm.isTranscriptLoading) CircularProgressIndicator(Modifier.size(18.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp) else Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
                             Text(
                                 stringResource(R.string.transcript),
                                 modifier = Modifier.sharedBounds(
@@ -160,7 +177,7 @@ fun ProfileScreen(
                                     resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                                 )
                             )
-                        } 
+                        }
                     }
                 }
 

@@ -78,12 +78,16 @@ fun ReferenceView(
         else -> PdfUiState.IDLE
     }
 
-    Scaffold(
-        topBar = { 
-            TopAppBar(
-                title = { 
-                    Column {
-                        with(sharedTransitionScope) {
+    with(sharedTransitionScope) {
+        Scaffold(
+            modifier = Modifier.sharedBounds(
+                sharedContentState = rememberSharedContentState(key = "reference_card"),
+                animatedVisibilityScope = animatedVisibilityScope
+            ),
+            topBar = { 
+                TopAppBar(
+                    title = { 
+                        Column {
                             Text(
                                 stringResource(R.string.reference),
                                 modifier = Modifier.sharedBounds(
@@ -91,109 +95,109 @@ fun ReferenceView(
                                     animatedVisibilityScope = animatedVisibilityScope,
                                     resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                                 )
-                            ) 
+                            )
+                            AnimatedVisibility(
+                                visible = !vm.isPdfGenerating,
+                                enter = fadeIn(tween(delayMillis = 300))
+                            ) {
+                                Text("(Form 8)", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
-                        AnimatedVisibility(
-                            visible = !vm.isPdfGenerating,
-                            enter = fadeIn(tween(delayMillis = 300))
-                        ) {
-                            Text("(Form 8)", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }, 
-                navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
-            ) 
-        },
-        bottomBar = {
-            Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                Column(Modifier.padding(16.dp)) {
-                    AnimatedContent(
-                        targetState = currentState,
-                        label = "pdf_state_morph",
-                        transitionSpec = {
-                            fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) togetherWith 
-                            fadeOut(tween(300))
-                        }
-                    ) { state ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                            when (state) {
-                                PdfUiState.IDLE -> {
-                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                        Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                                            Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                            Text(stringResource(R.string.pdf_ru)) 
+                    }, 
+                    navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
+                ) 
+            },
+            bottomBar = {
+                Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                    Column(Modifier.padding(16.dp)) {
+                        AnimatedContent(
+                            targetState = currentState,
+                            label = "pdf_state_morph",
+                            transitionSpec = {
+                                fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) togetherWith 
+                                fadeOut(tween(300))
+                            }
+                        ) { state ->
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                when (state) {
+                                    PdfUiState.IDLE -> {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                            Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                Text(stringResource(R.string.pdf_ru)) 
+                                            }
+                                            Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                Text(stringResource(R.string.pdf_en)) 
+                                            }
                                         }
-                                        Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                                            Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                            Text(stringResource(R.string.pdf_en)) 
-                                        }
                                     }
-                                }
-                                PdfUiState.LOADING -> {
-                                    LinearWavyProgressIndicator(
-                                        progress = { progressAnim.value },
-                                        modifier = Modifier.fillMaxWidth().height(10.dp),
-                                        color = MaterialTheme.colorScheme.primary,
-                                        trackColor = MaterialTheme.colorScheme.secondaryContainer
-                                    )
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(
-                                        text = vm.pdfStatusMessage ?: stringResource(R.string.generating_pdf),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                    Spacer(Modifier.height(12.dp))
-                                    OutlinedButton(
-                                        onClick = { vm.resetDocumentState() },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Icon(Icons.Default.Close, null)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(stringResource(android.R.string.cancel))
-                                    }
-                                }
-                                PdfUiState.SUCCESS -> {
-                                    Button(
-                                        onClick = { vm.openPdf(context, vm.savedPdfUri!!) },
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Icon(Icons.Default.PictureAsPdf, null)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Open PDF")
-                                    }
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        text = "Saved to Downloads as ${vm.savedPdfName}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.outline,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
-                                PdfUiState.ERROR -> {
-                                    Text(
-                                        text = vm.pdfStatusMessage ?: "Unknown Error",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.error,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier.padding(bottom = 12.dp)
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    PdfUiState.LOADING -> {
+                                        LinearWavyProgressIndicator(
+                                            progress = { progressAnim.value },
+                                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                                            color = MaterialTheme.colorScheme.primary,
+                                            trackColor = MaterialTheme.colorScheme.secondaryContainer
+                                        )
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(
+                                            text = vm.pdfStatusMessage ?: stringResource(R.string.generating_pdf),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(Modifier.height(12.dp))
                                         OutlinedButton(
-                                            onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "No Error Msg")) },
-                                            modifier = Modifier.weight(1f)
+                                            onClick = { vm.resetDocumentState() },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                         ) {
-                                            Icon(Icons.Default.ContentCopy, null)
+                                            Icon(Icons.Default.Close, null)
                                             Spacer(Modifier.width(8.dp))
-                                            Text("Copy Logs")
+                                            Text(stringResource(android.R.string.cancel))
                                         }
+                                    }
+                                    PdfUiState.SUCCESS -> {
                                         Button(
-                                            onClick = { vm.resetDocumentState() }, 
-                                            modifier = Modifier.weight(1f)
+                                            onClick = { vm.openPdf(context, vm.savedPdfUri!!) },
+                                            modifier = Modifier.fillMaxWidth()
                                         ) {
-                                            Icon(Icons.Default.Refresh, null)
+                                            Icon(Icons.Default.PictureAsPdf, null)
                                             Spacer(Modifier.width(8.dp))
-                                            Text("Retry")
+                                            Text("Open PDF")
+                                        }
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = "Saved to Downloads as ${vm.savedPdfName}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                    PdfUiState.ERROR -> {
+                                        Text(
+                                            text = vm.pdfStatusMessage ?: "Unknown Error",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.error,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier.padding(bottom = 12.dp)
+                                        )
+                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                            OutlinedButton(
+                                                onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "No Error Msg")) },
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Default.ContentCopy, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Copy Logs")
+                                            }
+                                            Button(
+                                                onClick = { vm.resetDocumentState() }, 
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Icon(Icons.Default.Refresh, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text("Retry")
+                                            }
                                         }
                                     }
                                 }
@@ -202,49 +206,49 @@ fun ReferenceView(
                     }
                 }
             }
-        }
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-                    Column(Modifier.padding(24.dp)) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { 
-                            OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp))
-                            Spacer(Modifier.height(16.dp))
-                            Text(stringResource(R.string.cert_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center) 
-                        }
-                        Spacer(Modifier.height(24.dp))
-                        HorizontalDivider()
-                        Spacer(Modifier.height(24.dp))
-                        
-                        Text(stringResource(R.string.cert_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
-                        Text("${user?.last_name} ${user?.name}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        
-                        Spacer(Modifier.height(24.dp))
-                        
-                        RefDetailRow(stringResource(R.string.student_id), "${user?.id}")
-                        RefDetailRow(stringResource(R.string.faculty), facultyName)
-                        RefDetailRow(stringResource(R.string.speciality), mov?.speciality?.name_en ?: "-")
-                        RefDetailRow(stringResource(R.string.year_of_study), "$course ($activeSemester ${stringResource(R.string.semester)})")
-                        RefDetailRow(stringResource(R.string.edu_form), mov?.edu_form?.name_en ?: "-")
-                        
-                        val contractLabel = stringResource(R.string.contract)
-                        val budgetLabel = stringResource(R.string.budget)
-                        RefDetailRow(stringResource(R.string.payment), if (mov?.id_payment_form == 2) contractLabel else budgetLabel)
-                        
-                        Spacer(Modifier.height(32.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) { 
-                            Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "${stringResource(R.string.active_student)} • ${SimpleDateFormat(datePattern, Locale.getDefault()).format(Date())}", 
-                                style = MaterialTheme.typography.labelMedium, 
-                                color = Color(0xFF4CAF50)
-                            ) 
+        ) { padding ->
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.fillMaxSize().widthIn(max = 840.dp).verticalScroll(rememberScrollState()).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh), elevation = CardDefaults.cardElevation(defaultElevation = 4.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                        Column(Modifier.padding(24.dp)) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) { 
+                                OshSuLogo(modifier = Modifier.width(180.dp).height(60.dp))
+                                Spacer(Modifier.height(16.dp))
+                                Text(stringResource(R.string.cert_title), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center) 
+                            }
+                            Spacer(Modifier.height(24.dp))
+                            HorizontalDivider()
+                            Spacer(Modifier.height(24.dp))
+                            
+                            Text(stringResource(R.string.cert_intro), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline)
+                            Text("${user?.last_name} ${user?.name}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                            
+                            Spacer(Modifier.height(24.dp))
+                            
+                            RefDetailRow(stringResource(R.string.student_id), "${user?.id}")
+                            RefDetailRow(stringResource(R.string.faculty), facultyName)
+                            RefDetailRow(stringResource(R.string.speciality), mov?.speciality?.name_en ?: "-")
+                            RefDetailRow(stringResource(R.string.year_of_study), "$course ($activeSemester ${stringResource(R.string.semester)})")
+                            RefDetailRow(stringResource(R.string.edu_form), mov?.edu_form?.name_en ?: "-")
+                            
+                            val contractLabel = stringResource(R.string.contract)
+                            val budgetLabel = stringResource(R.string.budget)
+                            RefDetailRow(stringResource(R.string.payment), if (mov?.id_payment_form == 2) contractLabel else budgetLabel)
+                            
+                            Spacer(Modifier.height(32.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) { 
+                                Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "${stringResource(R.string.active_student)} • ${SimpleDateFormat(datePattern, Locale.getDefault()).format(Date())}", 
+                                    style = MaterialTheme.typography.labelMedium, 
+                                    color = Color(0xFF4CAF50)
+                                ) 
+                            }
                         }
                     }
+                    Spacer(Modifier.height(20.dp))
                 }
-                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -286,11 +290,15 @@ fun TranscriptView(
 
     val isDataLoading = vm.isTranscriptLoading || !isTransitionComplete.value
 
-    Scaffold(
-        topBar = { 
-            TopAppBar(
-                title = { 
-                    with(sharedTransitionScope) {
+    with(sharedTransitionScope) {
+        Scaffold(
+            modifier = Modifier.sharedBounds(
+                sharedContentState = rememberSharedContentState(key = "transcript_card"),
+                animatedVisibilityScope = animatedVisibilityScope
+            ),
+            topBar = { 
+                TopAppBar(
+                    title = { 
                         Text(
                             stringResource(R.string.transcript_title),
                             modifier = Modifier.sharedBounds(
@@ -299,66 +307,66 @@ fun TranscriptView(
                                 resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
                             )
                         ) 
-                    }
-                }, 
-                navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
-            ) 
-        },
-        bottomBar = {
-            if (!isDataLoading && (vm.transcriptData.isNotEmpty() || currentState != PdfUiState.IDLE)) {
-                Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
-                    Column(Modifier.padding(16.dp)) {
-                        AnimatedContent(
-                            targetState = currentState,
-                            label = "pdf_state_morph",
-                            transitionSpec = {
-                                fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) togetherWith 
-                                fadeOut(tween(300))
-                            }
-                        ) { state ->
-                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                when (state) {
-                                    PdfUiState.IDLE -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.pdf_ru)) 
-                                            }
-                                            Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.pdf_en)) 
+                    }, 
+                    navigationIcon = { IconButton(onClick = { onClose() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) } }
+                ) 
+            },
+            bottomBar = {
+                if (!isDataLoading && (vm.transcriptData.isNotEmpty() || currentState != PdfUiState.IDLE)) {
+                    Surface(tonalElevation = 3.dp, shadowElevation = 8.dp) {
+                        Column(Modifier.padding(16.dp)) {
+                            AnimatedContent(
+                                targetState = currentState,
+                                label = "pdf_state_morph",
+                                transitionSpec = {
+                                    fadeIn(tween(300)) + scaleIn(initialScale = 0.95f, animationSpec = tween(300)) togetherWith 
+                                    fadeOut(tween(300))
+                                }
+                            ) { state ->
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                    when (state) {
+                                        PdfUiState.IDLE -> {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.pdf_ru)) 
+                                                }
+                                                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.pdf_en)) 
+                                                }
                                             }
                                         }
-                                    }
-                                    PdfUiState.LOADING -> {
-                                        LinearWavyProgressIndicator(
-                                            progress = { progressAnim.value }, 
-                                            modifier = Modifier.fillMaxWidth().height(10.dp),
-                                            color = MaterialTheme.colorScheme.primary, // Monet Primary
-                                            trackColor = MaterialTheme.colorScheme.secondaryContainer // Monet Track
-                                        )
-                                        Spacer(Modifier.height(12.dp))
-                                        Text(text = vm.pdfStatusMessage ?: stringResource(R.string.generating_pdf), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-                                        Spacer(Modifier.height(12.dp))
-                                        OutlinedButton(onClick = { vm.resetDocumentState() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                                            Icon(Icons.Default.Close, null); Spacer(Modifier.width(8.dp)); Text(stringResource(android.R.string.cancel))
-                                        }
-                                    }
-                                    PdfUiState.SUCCESS -> {
-                                        Button(onClick = { vm.openPdf(context, vm.savedPdfUri!!) }, modifier = Modifier.fillMaxWidth()) {
-                                            Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Open PDF")
-                                        }
-                                        Spacer(Modifier.height(4.dp))
-                                        Text(text = "Saved to Downloads as ${vm.savedPdfName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, textAlign = TextAlign.Center)
-                                    }
-                                    PdfUiState.ERROR -> {
-                                        Text(text = vm.pdfStatusMessage ?: "Error", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            OutlinedButton(onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "")) }, modifier = Modifier.weight(1f)) {
-                                                Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Copy Logs")
+                                        PdfUiState.LOADING -> {
+                                            LinearWavyProgressIndicator(
+                                                progress = { progressAnim.value }, 
+                                                modifier = Modifier.fillMaxWidth().height(10.dp),
+                                                color = MaterialTheme.colorScheme.primary, // Monet Primary
+                                                trackColor = MaterialTheme.colorScheme.secondaryContainer // Monet Track
+                                            )
+                                            Spacer(Modifier.height(12.dp))
+                                            Text(text = vm.pdfStatusMessage ?: stringResource(R.string.generating_pdf), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                            Spacer(Modifier.height(12.dp))
+                                            OutlinedButton(onClick = { vm.resetDocumentState() }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
+                                                Icon(Icons.Default.Close, null); Spacer(Modifier.width(8.dp)); Text(stringResource(android.R.string.cancel))
                                             }
-                                            Button(onClick = { vm.resetDocumentState() }, modifier = Modifier.weight(1f)) {
-                                                Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Retry")
+                                        }
+                                        PdfUiState.SUCCESS -> {
+                                            Button(onClick = { vm.openPdf(context, vm.savedPdfUri!!) }, modifier = Modifier.fillMaxWidth()) {
+                                                Icon(Icons.Default.PictureAsPdf, null); Spacer(Modifier.width(8.dp)); Text("Open PDF")
+                                            }
+                                            Spacer(Modifier.height(4.dp))
+                                            Text(text = "Saved to Downloads as ${vm.savedPdfName}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, textAlign = TextAlign.Center)
+                                        }
+                                        PdfUiState.ERROR -> {
+                                            Text(text = vm.pdfStatusMessage ?: "Error", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
+                                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                OutlinedButton(onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: "")) }, modifier = Modifier.weight(1f)) {
+                                                    Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text("Copy Logs")
+                                                }
+                                                Button(onClick = { vm.resetDocumentState() }, modifier = Modifier.weight(1f)) {
+                                                    Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text("Retry")
+                                                }
                                             }
                                         }
                                     }
@@ -368,46 +376,46 @@ fun TranscriptView(
                     }
                 }
             }
-        }
-    ) { padding ->
-        Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            if (isDataLoading) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator(modifier = Modifier.size(48.dp)) }
-            } else if (vm.transcriptData.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_transcript_data)) }
-            } else {
-                AnimatedVisibility(visible = true, enter = fadeIn(animationSpec = tween(500))) {
-                    LazyColumn(Modifier.widthIn(max = 840.dp).padding(horizontal = 16.dp)) {
-                        vm.transcriptData.forEach { yearData ->
-                            item { 
-                                Spacer(Modifier.height(16.dp))
-                                Text(yearData.eduYear ?: stringResource(R.string.unknown_year), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
-                            }
-                            yearData.semesters?.forEach { sem ->
+        ) { padding ->
+            Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                if (isDataLoading) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { LoadingIndicator(modifier = Modifier.size(48.dp)) }
+                } else if (vm.transcriptData.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.no_transcript_data)) }
+                } else {
+                    AnimatedVisibility(visible = true, enter = fadeIn(animationSpec = tween(500))) {
+                        LazyColumn(Modifier.widthIn(max = 840.dp).padding(horizontal = 16.dp)) {
+                            vm.transcriptData.forEach { yearData ->
                                 item { 
-                                    Spacer(Modifier.height(12.dp))
-                                    Text(sem.semesterName ?: stringResource(R.string.semester), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
-                                    Spacer(Modifier.height(8.dp)) 
+                                    Spacer(Modifier.height(16.dp))
+                                    Text(yearData.eduYear ?: stringResource(R.string.unknown_year), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) 
                                 }
-                                items(sem.subjects ?: emptyList()) { sub ->
-                                    Card(Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-                                        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                                            Column(Modifier.weight(1f)) { 
-                                                Text(sub.subjectName ?: stringResource(R.string.subject_default), fontWeight = FontWeight.SemiBold)
-                                                val codeLabel = stringResource(R.string.code); val creditsLabel = stringResource(R.string.credits)
-                                                Text("$codeLabel: ${sub.code ?: "-"} • $creditsLabel: ${sub.credit?.toInt() ?: 0}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) 
-                                            }
-                                            Column(horizontalAlignment = Alignment.End) { 
-                                                val total = sub.markList?.total?.toInt() ?: 0
-                                                Text("$total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (total >= 50) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error)
-                                                Text(sub.examRule?.alphabetic ?: "-", style = MaterialTheme.typography.bodyMedium) 
+                                yearData.semesters?.forEach { sem ->
+                                    item { 
+                                        Spacer(Modifier.height(12.dp))
+                                        Text(sem.semesterName ?: stringResource(R.string.semester), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.secondary)
+                                        Spacer(Modifier.height(8.dp)) 
+                                    }
+                                    items(sem.subjects ?: emptyList()) { sub ->
+                                        Card(Modifier.fillMaxWidth().padding(bottom = 8.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
+                                            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) { 
+                                                    Text(sub.subjectName ?: stringResource(R.string.subject_default), fontWeight = FontWeight.SemiBold)
+                                                    val codeLabel = stringResource(R.string.code); val creditsLabel = stringResource(R.string.credits)
+                                                    Text("$codeLabel: ${sub.code ?: "-"} • $creditsLabel: ${sub.credit?.toInt() ?: 0}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) 
+                                                }
+                                                Column(horizontalAlignment = Alignment.End) { 
+                                                    val total = sub.markList?.total?.toInt() ?: 0
+                                                    Text("$total", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = if (total >= 50) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error)
+                                                    Text(sub.examRule?.alphabetic ?: "-", style = MaterialTheme.typography.bodyMedium) 
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
+                            item { Spacer(Modifier.height(20.dp)) }
                         }
-                        item { Spacer(Modifier.height(20.dp)) }
                     }
                 }
             }
