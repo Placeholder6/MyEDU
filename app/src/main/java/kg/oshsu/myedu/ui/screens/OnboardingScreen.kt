@@ -1,6 +1,8 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.app.Activity
 import android.graphics.Matrix
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
@@ -92,9 +95,21 @@ fun OnboardingScreen(
     animatedContentScope: AnimatedContentScope
 ) {
     val context = LocalContext.current
+    val activity = context as? Activity
     
     // Check if we are in "Edit Mode" (onboarding already completed previously)
     val isEditMode = remember { vm.isOnboardingComplete() }
+
+    // --- SYSTEM BACK BUTTON LOGIC ---
+    BackHandler {
+        if (isEditMode) {
+            // Profile Edit Mode: Go back to Profile (Cancel edits)
+            vm.appState = "APP"
+        } else {
+            // Login Entry Mode: Close App
+            activity?.finish()
+        }
+    }
 
     val apiPhoto = vm.profileData?.avatar
     val apiName = remember { vm.userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "" }
@@ -132,158 +147,177 @@ fun OnboardingScreen(
     val animatedShape = CustomRotatingShape(cookiePolygon, rotation)
 
     Scaffold(containerColor = Color.Transparent) { padding ->
-        Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 24.dp).verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Spacer(Modifier.height(48.dp))
-
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            // --- MAIN CONTENT ---
             Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 24.dp)
+                    .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() }
+                verticalArrangement = Arrangement.Center
             ) {
-                // UPDATED: String Resource
-                Text(stringResource(R.string.onboard_title), style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
-                Spacer(Modifier.height(8.dp))
-                // UPDATED: String Resource
-                Text(stringResource(R.string.onboard_subtitle), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+                Spacer(Modifier.height(48.dp))
 
-            Spacer(Modifier.height(48.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() }
+                ) {
+                    Text(stringResource(R.string.onboard_title), style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.onboard_subtitle), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
 
-            with(sharedTransitionScope) {
-                Box(contentAlignment = Alignment.Center, modifier = Modifier.size(160.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize().padding(8.dp)
-                            .sharedElement(
-                                sharedContentState = rememberSharedContentState(key = "cookie_transform"),
-                                animatedVisibilityScope = animatedContentScope,
-                                boundsTransform = { _, _ -> tween(durationMillis = 500, easing = LinearOutSlowInEasing) }
-                            )
-                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithCache {
-                                val buttonRadius = 20.dp.toPx(); val borderSize = 4.dp.toPx()
-                                val editCenter = Offset(size.width - 22.dp.toPx(), size.height - 22.dp.toPx())
-                                val editCutRadius = (buttonRadius + borderSize) * holeScale
-                                val revertCenter = Offset(22.dp.toPx(), size.height - 22.dp.toPx())
-                                val revertCutRadius = (buttonRadius + borderSize) * revertHoleScale
-                                onDrawWithContent {
-                                    drawContent()
-                                    if (holeScale > 0f) drawCircle(Color.Black, editCutRadius, editCenter, blendMode = BlendMode.Clear)
-                                    if (revertHoleScale > 0f) drawCircle(Color.Black, revertCutRadius, revertCenter, blendMode = BlendMode.Clear)
+                Spacer(Modifier.height(48.dp))
+
+                with(sharedTransitionScope) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.size(160.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize().padding(8.dp)
+                                .sharedElement(
+                                    sharedContentState = rememberSharedContentState(key = "cookie_transform"),
+                                    animatedVisibilityScope = animatedContentScope,
+                                    boundsTransform = { _, _ -> tween(durationMillis = 500, easing = LinearOutSlowInEasing) }
+                                )
+                                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                                .drawWithCache {
+                                    val buttonRadius = 20.dp.toPx(); val borderSize = 4.dp.toPx()
+                                    val editCenter = Offset(size.width - 22.dp.toPx(), size.height - 22.dp.toPx())
+                                    val editCutRadius = (buttonRadius + borderSize) * holeScale
+                                    val revertCenter = Offset(22.dp.toPx(), size.height - 22.dp.toPx())
+                                    val revertCutRadius = (buttonRadius + borderSize) * revertHoleScale
+                                    onDrawWithContent {
+                                        drawContent()
+                                        if (holeScale > 0f) drawCircle(Color.Black, editCutRadius, editCenter, blendMode = BlendMode.Clear)
+                                        if (revertHoleScale > 0f) drawCircle(Color.Black, revertCutRadius, revertCenter, blendMode = BlendMode.Clear)
+                                    }
                                 }
+                                .clip(animatedShape)
+                                .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (photoUri != null) {
+                                SubcomposeAsyncImage(
+                                    model = ImageRequest.Builder(LocalContext.current).data(photoUri).crossfade(true).build(),
+                                    contentDescription = "Profile Photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
+                                    loading = { Box(Modifier.fillMaxSize()) }
+                                )
                             }
-                            .clip(animatedShape)
-                            .clickable { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (photoUri != null) {
-                            SubcomposeAsyncImage(
-                                model = ImageRequest.Builder(LocalContext.current).data(photoUri).crossfade(true).build(),
-                                contentDescription = "Profile Photo", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize(),
-                                loading = { Box(Modifier.fillMaxSize()) }
-                            )
                         }
-                    }
-                    
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = isUiVisible && showRevertPhoto,
-                        enter = scaleIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)), exit = scaleOut(),
-                        modifier = Modifier.align(Alignment.BottomStart).offset(x = 10.dp, y = (-10).dp)
-                    ) {
-                        Surface(onClick = { photoUri = apiPhoto }, shape = CircleShape, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(40.dp)) {
-                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Restore, "Revert", tint = MaterialTheme.colorScheme.onSecondary, modifier = Modifier.size(20.dp)) }
+                        
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isUiVisible && showRevertPhoto,
+                            enter = scaleIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)), exit = scaleOut(),
+                            modifier = Modifier.align(Alignment.BottomStart).offset(x = 10.dp, y = (-10).dp)
+                        ) {
+                            Surface(onClick = { photoUri = apiPhoto }, shape = CircleShape, color = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(40.dp)) {
+                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Restore, "Revert", tint = MaterialTheme.colorScheme.onSecondary, modifier = Modifier.size(20.dp)) }
+                            }
                         }
-                    }
 
-                    androidx.compose.animation.AnimatedVisibility(
-                        visible = isUiVisible,
-                        enter = scaleIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)), exit = scaleOut(),
-                        modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-10).dp, y = (-10).dp)
-                    ) {
-                        Surface(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, shape = CircleShape, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) {
-                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Edit, "Edit", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp)) }
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = isUiVisible,
+                            enter = scaleIn(spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)), exit = scaleOut(),
+                            modifier = Modifier.align(Alignment.BottomEnd).offset(x = (-10).dp, y = (-10).dp)
+                        ) {
+                            Surface(onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, shape = CircleShape, color = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp)) {
+                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Filled.Edit, "Edit", tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp)) }
+                            }
                         }
                     }
                 }
-            }
-            
-            TextButton(
-                onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                modifier = Modifier.graphicsLayer { alpha = uiAlpha }
-            ) {
-                // UPDATED: String Resource
-                Text(if (photoUri == null) stringResource(R.string.onboard_add_photo) else stringResource(R.string.onboard_change_photo))
-            }
+                
+                TextButton(
+                    onClick = { photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.graphicsLayer { alpha = uiAlpha }
+                ) {
+                    Text(if (photoUri == null) stringResource(R.string.onboard_add_photo) else stringResource(R.string.onboard_change_photo))
+                }
 
-            Spacer(Modifier.height(24.dp))
+                Spacer(Modifier.height(24.dp))
 
-            Column(
-                modifier = Modifier.widthIn(max = 400.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() },
-                verticalArrangement = Arrangement.spacedBy(24.dp)
-            ) {
-                OutlinedTextField(
-                    value = name, onValueChange = { name = it }, 
-                    // UPDATED: String Resource
-                    label = { Text(stringResource(R.string.onboard_display_name)) }, 
-                    singleLine = true, shape = RoundedCornerShape(50), modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-                    trailingIcon = if (showRevertName) { { IconButton(onClick = { name = apiName }) { Icon(Icons.Default.Restore, "Revert", tint = MaterialTheme.colorScheme.primary) } } } else null
+                Column(
+                    modifier = Modifier.widthIn(max = 400.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() },
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it }, 
+                        label = { Text(stringResource(R.string.onboard_display_name)) }, 
+                        singleLine = true, shape = RoundedCornerShape(50), modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(focusedContainerColor = MaterialTheme.colorScheme.surface, unfocusedContainerColor = MaterialTheme.colorScheme.surface, focusedBorderColor = MaterialTheme.colorScheme.primary, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
+                        trailingIcon = if (showRevertName) { { IconButton(onClick = { name = apiName }) { Icon(Icons.Default.Restore, "Revert", tint = MaterialTheme.colorScheme.primary) } } } else null
+                    )
+
+                    // Only show Theme and Notification options if NOT in "Edit Mode"
+                    if (!isEditMode) {
+                        Column {
+                            Text(stringResource(R.string.onboard_theme), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ThemeOption(Icons.Default.SettingsSystemDaydream, stringResource(R.string.follow_system), theme == "system", { theme = "system" }, Modifier.weight(1f))
+                                ThemeOption(Icons.Default.LightMode, stringResource(R.string.light_mode), theme == "light", { theme = "light" }, Modifier.weight(1f))
+                                ThemeOption(Icons.Default.DarkMode, stringResource(R.string.dark_mode), theme == "dark", { theme = "dark" }, Modifier.weight(1f))
+                            }
+                        }
+
+                        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(24.dp), onClick = { notifications = !notifications }, modifier = Modifier.fillMaxWidth()) {
+                            ListItem(
+                                colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                                headlineContent = { Text(stringResource(R.string.onboard_notifications), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+                                supportingContent = { Text(stringResource(R.string.onboard_notif_desc), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                leadingContent = { Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                trailingContent = { Switch(checked = notifications, onCheckedChange = { notifications = it }, thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null) }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(48.dp))
+
+                Button(
+                    onClick = { vm.saveOnboardingSettings(name, photoUri, theme, notifications) },
+                    modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp).height(56.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(50)
+                ) {
+                    val btnText = if (isEditMode) stringResource(R.string.dict_btn_save) else stringResource(R.string.onboard_btn_finish)
+                    Text(btnText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (!isEditMode) {
+                        Spacer(Modifier.width(8.dp))
+                        Icon(Icons.Rounded.ArrowForward, null)
+                    }
+                }
+                
+                Spacer(Modifier.height(32.dp))
+
+                Text(
+                    text = stringResource(R.string.onboard_disclaimer),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 32.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() }
                 )
 
-                // Only show Theme and Notification options if NOT in "Edit Mode"
-                if (!isEditMode) {
-                    Column {
-                        // UPDATED: String Resource
-                        Text(stringResource(R.string.onboard_theme), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            // UPDATED: String Resources for System/Light/Dark
-                            ThemeOption(Icons.Default.SettingsSystemDaydream, stringResource(R.string.follow_system), theme == "system", { theme = "system" }, Modifier.weight(1f))
-                            ThemeOption(Icons.Default.LightMode, stringResource(R.string.light_mode), theme == "light", { theme = "light" }, Modifier.weight(1f))
-                            ThemeOption(Icons.Default.DarkMode, stringResource(R.string.dark_mode), theme == "dark", { theme = "dark" }, Modifier.weight(1f))
-                        }
-                    }
-
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(24.dp), onClick = { notifications = !notifications }, modifier = Modifier.fillMaxWidth()) {
-                        ListItem(
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            headlineContent = { Text(stringResource(R.string.onboard_notifications), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
-                            supportingContent = { Text(stringResource(R.string.onboard_notif_desc), color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            leadingContent = { Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                            trailingContent = { Switch(checked = notifications, onCheckedChange = { notifications = it }, thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null) }
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(48.dp))
-
-            Button(
-                onClick = { vm.saveOnboardingSettings(name, photoUri, theme, notifications) },
-                modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp).height(56.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(50)
-            ) {
-                // If in Edit Mode, show "Save", otherwise "All Set"
-                val btnText = if (isEditMode) stringResource(R.string.dict_btn_save) else stringResource(R.string.onboard_btn_finish)
-                Text(btnText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (!isEditMode) {
-                    Spacer(Modifier.width(8.dp))
-                    Icon(Icons.Rounded.ArrowForward, null)
-                }
+                Spacer(Modifier.height(32.dp))
             }
             
-            Spacer(Modifier.height(32.dp))
-
-            Text(
-                text = stringResource(R.string.onboard_disclaimer),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 32.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() }
-            )
-
-            Spacer(Modifier.height(32.dp))
+            // --- TOP LEFT BUTTON (BACK / LOGOUT) ---
+            IconButton(
+                onClick = {
+                    if (isEditMode) {
+                        vm.appState = "APP" // Cancel Edits
+                    } else {
+                        vm.logout() // Logout
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 16.dp, start = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = if (isEditMode) stringResource(R.string.dict_btn_cancel) else stringResource(R.string.log_out),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
         }
     }
 }
