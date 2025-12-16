@@ -93,6 +93,9 @@ fun OnboardingScreen(
 ) {
     val context = LocalContext.current
     
+    // Check if we are in "Edit Mode" (onboarding already completed previously)
+    val isEditMode = remember { vm.isOnboardingComplete() }
+
     val apiPhoto = vm.profileData?.avatar
     val apiName = remember { vm.userData?.let { "${it.last_name ?: ""} ${it.name ?: ""}".trim() } ?: "" }
     val startPhoto = remember { vm.customPhotoUri ?: apiPhoto }
@@ -231,25 +234,28 @@ fun OnboardingScreen(
                     trailingIcon = if (showRevertName) { { IconButton(onClick = { name = apiName }) { Icon(Icons.Default.Restore, "Revert", tint = MaterialTheme.colorScheme.primary) } } } else null
                 )
 
-                Column {
-                    // UPDATED: String Resource
-                    Text(stringResource(R.string.onboard_theme), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // UPDATED: String Resources for System/Light/Dark
-                        ThemeOption(Icons.Default.SettingsSystemDaydream, stringResource(R.string.follow_system), theme == "system", { theme = "system" }, Modifier.weight(1f))
-                        ThemeOption(Icons.Default.LightMode, stringResource(R.string.light_mode), theme == "light", { theme = "light" }, Modifier.weight(1f))
-                        ThemeOption(Icons.Default.DarkMode, stringResource(R.string.dark_mode), theme == "dark", { theme = "dark" }, Modifier.weight(1f))
+                // Only show Theme and Notification options if NOT in "Edit Mode"
+                if (!isEditMode) {
+                    Column {
+                        // UPDATED: String Resource
+                        Text(stringResource(R.string.onboard_theme), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 12.dp, bottom = 8.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            // UPDATED: String Resources for System/Light/Dark
+                            ThemeOption(Icons.Default.SettingsSystemDaydream, stringResource(R.string.follow_system), theme == "system", { theme = "system" }, Modifier.weight(1f))
+                            ThemeOption(Icons.Default.LightMode, stringResource(R.string.light_mode), theme == "light", { theme = "light" }, Modifier.weight(1f))
+                            ThemeOption(Icons.Default.DarkMode, stringResource(R.string.dark_mode), theme == "dark", { theme = "dark" }, Modifier.weight(1f))
+                        }
                     }
-                }
 
-                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(24.dp), onClick = { notifications = !notifications }, modifier = Modifier.fillMaxWidth()) {
-                    ListItem(
-                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                        headlineContent = { Text(stringResource(R.string.onboard_notifications), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
-                        supportingContent = { Text(stringResource(R.string.onboard_notif_desc), color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        leadingContent = { Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                        trailingContent = { Switch(checked = notifications, onCheckedChange = { notifications = it }, thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null) }
-                    )
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(24.dp), onClick = { notifications = !notifications }, modifier = Modifier.fillMaxWidth()) {
+                        ListItem(
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                            headlineContent = { Text(stringResource(R.string.onboard_notifications), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+                            supportingContent = { Text(stringResource(R.string.onboard_notif_desc), color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            leadingContent = { Icon(Icons.Default.Notifications, null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                            trailingContent = { Switch(checked = notifications, onCheckedChange = { notifications = it }, thumbContent = if (notifications) { { Icon(Icons.Default.Check, null, Modifier.size(12.dp)) } } else null) }
+                        )
+                    }
                 }
             }
 
@@ -260,9 +266,13 @@ fun OnboardingScreen(
                 modifier = Modifier.fillMaxWidth().widthIn(max = 400.dp).height(56.dp).graphicsLayer { alpha = uiAlpha; translationY = uiTranslationY.toPx() },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary), shape = RoundedCornerShape(50)
             ) {
-                Text(stringResource(R.string.onboard_btn_finish), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(8.dp))
-                Icon(Icons.Rounded.ArrowForward, null)
+                // If in Edit Mode, show "Save", otherwise "All Set"
+                val btnText = if (isEditMode) stringResource(R.string.dict_btn_save) else stringResource(R.string.onboard_btn_finish)
+                Text(btnText, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (!isEditMode) {
+                    Spacer(Modifier.width(8.dp))
+                    Icon(Icons.Rounded.ArrowForward, null)
+                }
             }
             
             Spacer(Modifier.height(32.dp))

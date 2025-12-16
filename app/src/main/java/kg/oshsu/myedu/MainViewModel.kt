@@ -102,6 +102,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
 
+    // Added trigger to force image reload even if URL string is identical
+    var avatarRefreshTrigger by mutableStateOf(0)
+
     // --- STATE: SCHEDULE DATA ---
     var fullSchedule by mutableStateOf<List<ScheduleItem>>(emptyList())
     var todayClasses by mutableStateOf<List<ScheduleItem>>(emptyList())
@@ -118,7 +121,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // --- STATE: DOCUMENTS & PDF ---
     var transcriptData by mutableStateOf<List<TranscriptYear>>(emptyList())
     var isTranscriptLoading by mutableStateOf(false)
-    // Removed old boolean flags in favor of AppScreen enum
     
     var isPdfGenerating by mutableStateOf(false)
     var pdfStatusMessage by mutableStateOf<String?>(null)
@@ -161,6 +163,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setAppLanguage(lang: String) {
         language = lang
         prefs?.saveAppLanguage(lang)
+    }
+
+    // --- HELPER: CHECK ONBOARDING STATUS ---
+    fun isOnboardingComplete(): Boolean {
+        return prefs?.isOnboardingComplete() == true
     }
 
     // --- DICTIONARY ACTIONS ---
@@ -428,6 +435,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // NEW: Function to refresh only the profile (e.g., when avatar URL expires)
+    fun refreshProfile() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val profile = NetworkClient.api.getProfile()
+                withContext(Dispatchers.Main) {
+                    profileData = profile
+                    prefs?.saveData("profile_data", profile)
+                    
+                    // NEW: Check for expired URL match
+                    validateAndSyncPhoto(profile)
+                    
+                    // INCREMENT TRIGGER TO FORCE COIL RELOAD
+                    avatarRefreshTrigger++ 
+                }
+            } catch (e: Exception) {
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                    withContext(Dispatchers.Main) { handleTokenExpiration() }
+                }
+            }
+        }
+    }
+
     fun debugForceTokenExpiry() {
         handleTokenExpiration()
     }
@@ -442,6 +472,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // NEW LOGIC: Checks if saved custom photo is actually an expired API URL
+    private fun validateAndSyncPhoto(profile: StudentInfoResponse?) {
+        val remote = profile?.avatar ?: return
+        val local = customPhotoUri
+        
+        // If the user has a "saved" photo that looks like a remote URL (starts with http),
+        // but it doesn't match the fresh one from the server,
+        // it likely means the saved one is an expired token URL (from when they saved onboarding settings).
+        // We should auto-update it to the fresh one.
+        if (local != null && local.startsWith("http") && local != remote) {
+            customPhotoUri = remote
+            prefs?.saveSettings(customName ?: "", remote, appTheme, notificationsEnabled)
+        }
+    }
+
     private suspend fun fetchAllDataSuspend() {
         val user = NetworkClient.api.getUser().user
         val profile = NetworkClient.api.getProfile()
@@ -451,6 +496,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             profileData = profile
             prefs?.saveData("user_data", user)
             prefs?.saveData("profile_data", profile)
+            
+            // NEW: Check for expired URL match on startup/refresh
+            validateAndSyncPhoto(profile)
         }
 
         try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}

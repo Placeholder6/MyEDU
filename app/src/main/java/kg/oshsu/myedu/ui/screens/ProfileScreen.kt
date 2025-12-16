@@ -4,6 +4,7 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -37,12 +38,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.graphics.shapes.CornerRounding
+import androidx.graphics.shapes.RoundedPolygon
+import androidx.graphics.shapes.star
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.DetailCard
 import kg.oshsu.myedu.ui.components.InfoSection
-import kg.oshsu.myedu.AppScreen // Import AppScreen enum
+import kg.oshsu.myedu.AppScreen
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -66,6 +71,14 @@ fun ProfileScreen(
     val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } ?: "-"
 
     val state = rememberPullToRefreshState()
+
+    // Animation for Cookie Shape
+    val cookiePolygon = remember { RoundedPolygon.star(12, innerRadius = 0.8f, rounding = CornerRounding(0.2f)) }
+    val infiniteTransition = rememberInfiniteTransition(label = "profile_rot")
+    val rotation by infiniteTransition.animateFloat(0f, 360f, infiniteRepeatable(tween(20000, easing = LinearEasing), RepeatMode.Restart))
+    
+    // We reuse the CustomRotatingShape class from OnboardingScreen.kt (same package)
+    val animatedShape = remember(rotation) { CustomRotatingShape(cookiePolygon, rotation) }
 
     PullToRefreshBox(
         isRefreshing = vm.isRefreshing,
@@ -91,11 +104,31 @@ fun ProfileScreen(
                      IconButton(onClick = { vm.showSettingsScreen = true }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
                 }
                 
+                // --- ANIMATED PROFILE PICTURE ---
                 Box(
                     contentAlignment = Alignment.Center, 
-                    modifier = Modifier.size(128.dp).background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.tertiary)), CircleShape).padding(3.dp).clip(CircleShape).background(MaterialTheme.colorScheme.background)
-                ) { 
-                    AsyncImage(model = displayPhoto, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize().clip(CircleShape)) 
+                    modifier = Modifier.size(136.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(animatedShape)
+                    ) {
+                        // Key triggers recomposition if photo URL or force-refresh index changes
+                        key(displayPhoto, vm.avatarRefreshTrigger) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(displayPhoto)
+                                    .crossfade(true)
+                                    // Forces Coil to see this as a new request if the trigger changes
+                                    .setParameter("retry_hash", vm.avatarRefreshTrigger)
+                                    .build(),
+                                contentDescription = null, 
+                                contentScale = ContentScale.Crop, 
+                                modifier = Modifier.fillMaxSize()
+                            ) 
+                        }
+                    }
                 }
                 
                 Spacer(Modifier.height(16.dp))
