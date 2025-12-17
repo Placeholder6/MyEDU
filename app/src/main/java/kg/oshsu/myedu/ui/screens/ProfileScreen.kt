@@ -18,7 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -112,15 +111,15 @@ fun ProfileScreen(
                      IconButton(onClick = { vm.showSettingsScreen = true }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
                 }
                 
-                // --- HEADER ROW (Photo Left, Info Middle, Edit Right) ---
-                Row(
+                // --- CENTERED HEADER SECTION ---
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    // 1. Profile Photo (Left) - Resized to 80dp for row layout
+                    // --- ANIMATED PROFILE PICTURE ---
                     Box(
                         contentAlignment = Alignment.Center, 
-                        modifier = Modifier.size(80.dp)
+                        modifier = Modifier.size(136.dp)
                     ) {
                         Box(
                             modifier = Modifier
@@ -141,57 +140,29 @@ fun ProfileScreen(
                             }
                         }
                     }
-
-                    Spacer(Modifier.width(16.dp))
-
-                    // 2. Name & Email (Middle)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = fullName, 
-                            style = MaterialTheme.typography.titleLarge, 
-                            fontWeight = FontWeight.Bold, 
-                            color = MaterialTheme.colorScheme.onBackground
-                        )
-                        Text(
-                            text = user?.email ?: "", 
-                            style = MaterialTheme.typography.bodyMedium, 
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Spacer(Modifier.width(8.dp))
-
-                    // 3. Edit Button (Right) - Compact Pill
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    // --- NAME & EMAIL ---
+                    Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                    Spacer(Modifier.height(4.dp))
+                    Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    
+                    Spacer(Modifier.height(16.dp))
+                    
+                    // --- EDIT PROFILE BUTTON (SMALLER) ---
                     ElevatedButton(
                         onClick = { vm.appState = "ONBOARDING" },
+                        // Using CircleShape for standard Stadium/Pill shape without hardcoded radius
                         shape = CircleShape,
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                        modifier = Modifier.height(32.dp)
+                        // Compact padding
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.height(36.dp)
                     ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text(stringResource(R.string.dict_edit_desc), style = MaterialTheme.typography.labelMedium) 
+                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.dict_edit_desc), style = MaterialTheme.typography.labelLarge) 
                     }
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                // --- PERSONAL INFO BUTTON (Placeholder) ---
-                Button(
-                    onClick = { 
-                        // Placeholder logic for now
-                        Toast.makeText(context, "Personal Info Feature Coming Soon", Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = CircleShape, // Fully rounded/pill to match other buttons
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        contentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.personal))
                 }
                 
                 Spacer(Modifier.height(32.dp))
@@ -281,6 +252,7 @@ fun ProfileScreen(
                                     animatedVisibilityScope = animatedVisibilityScope
                                 ), 
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                            // Using standard CircleShape for Pill/Stadium look
                             shape = CircleShape
                         ) { 
                             Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
@@ -304,8 +276,10 @@ fun ProfileScreen(
                                     animatedVisibilityScope = animatedVisibilityScope
                                 ),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+                            // Using standard CircleShape for Pill/Stadium look
                             shape = CircleShape
                         ) { 
+                            // Removed loading indicator logic
                             Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
