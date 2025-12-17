@@ -216,4 +216,154 @@
     <string name="gender">Gender</string>
     <string name="male">Male</string>
     <string name="female">Female</string>
+
+    <string name="personal_identity_bio">Identity &amp; Bio</string>
+    <string name="personal_profile_status">Profile Status</string>
+    <string name="personal_marital_status">Marital Status</string>
+    <string name="personal_is_ethnic">Is Ethnic?</string>
+    <string name="personal_residence_phone">Residence Phone</string>
+    <string name="personal_alt_email">Alt. Email</string>
+
+    <string name="personal_academic_status">Academic Status</string>
+    <string name="personal_faculty_short">Faculty Short</string>
+    <string name="personal_faculty_info">Faculty Info</string>
+    <string name="personal_spec_short">Spec. Short</string>
+    <string name="personal_spec_code">Spec. Code</string>
+    <string name="personal_spec_info">Spec. Info</string>
+    <string name="personal_group">Group</string>
+    <string name="personal_enrollment">Enrollment</string>
+    <string name="personal_edu_form">Education Form</string>
+    <string name="personal_edu_short">Edu Short</string>
+    <string name="personal_active_status">Active Status</string>
+    <string name="personal_payment">Payment</string>
+    <string name="personal_language">Language</string>
+    <string name="personal_lang_short">Lang. Short</string>
+    <string name="personal_current_semester">Current Semester</string>
+    <string name="personal_active_semesters_list">Active Semesters List:</string>
+    <string name="personal_sem">Sem</string>
+
+    <string name="personal_legal_citizenship">Legal &amp; Citizenship</string>
+    <string name="personal_citizenship">Citizenship</string>
+    <string name="personal_nationality">Nationality</string>
+    <string name="personal_pin">PIN</string>
+    <string name="personal_has_documents">Has Documents</string>
+    <string name="personal_passport">Passport</string>
+    <string name="personal_serial">Serial</string>
+    <string name="personal_authority">Authority</string>
+    <string name="personal_issued">Issued</string>
+    <string name="personal_pds_info">PDS Info</string>
+
+    <string name="personal_family_info">Family Information</string>
+    <string name="personal_father">Father</string>
+    <string name="personal_mother">Mother</string>
+    <string name="personal_name">Name</string>
+    <string name="personal_phone">Phone</string>
+    <string name="personal_info">Info</string>
+
+    <string name="personal_geography">Geography</string>
+    <string name="personal_main_address">Main Address</string>
+    <string name="personal_address">Address</string>
+    <string name="personal_country">Country</string>
+    <string name="personal_state">State</string>
+    <string name="personal_region">Region</string>
+    <string name="personal_birth_place">Birth Place</string>
+    <string name="personal_birth_addr">Birth Addr</string>
+    <string name="personal_b_country">B. Country</string>
+    <string name="personal_b_state">B. State</string>
+    <string name="personal_b_region">B. Region</string>
+    <string name="personal_residence_place">Residence Place</string>
+    <string name="personal_res_addr">Res. Addr</string>
+    <string name="personal_r_country">R. Country</string>
+    <string name="personal_r_state">R. State</string>
+    <string name="personal_r_region">R. Region</string>
+
+    <string name="personal_military_service">Military Service</string>
+    <string name="personal_service">Service</string>
+    <string name="personal_date">Date</string>
+    <string name="personal_record_created">Record Created</string>
+    <string name="personal_id">ID</string>
+    <string name="personal_student_id">Student ID</string>
+    <string name="personal_user_id">User ID</string>
+    <string name="personal_updated">Updated</string>
+
+    <string name="personal_movement_finance">Movement &amp; Finance</string>
+    <string name="personal_movement">Movement</string>
+    <string name="personal_type">Type</string>
+    <string name="personal_is_student">Is Student?</string>
+    <string name="personal_desc">Desc</string>
+    <string name="personal_period">Period</string>
+    <string name="personal_start_date">Start Date</string>
+    <string name="personal_period_active">Period Active</string>
+    <string name="personal_order">Order</string>
+    <string name="personal_itngyrg">ITNGYRG</string>
+    <string name="personal_state_lang_lvl">State Lang Lvl</string>
+    <string name="personal_mov_edu_year">Mov. Edu Year</string>
+    <string name="personal_archive_user_id">Archive User ID</string>
+    <string name="personal_mov_citizenship">Mov. Citizenship</string>
+    <string name="personal_mov_oo1_id">Mov OO1 ID</string>
+    <string name="personal_mov_zo1_id">Mov ZO1 ID</string>
+
+    <string name="personal_library_finance">Library &amp; Finance</string>
+    <string name="personal_library">Library</string>
+    <string name="personal_debt_credits">Debt Credits</string>
+    <string name="personal_lib_items">Lib Items</string>
+    <string name="personal_debt_trans">Debt Trans</string>
+    <string name="personal_total_price">Total Price</string>
+
+    <string name="personal_system_metadata">System Metadata</string>
+    <string name="personal_user_profile">User &amp; Profile</string>
+    <string name="personal_uni_id_user">Uni ID (User)</string>
+    <string name="personal_uni_id_mov">Uni ID (Mov)</string>
+    <string name="personal_pds_id">PDS ID</string>
+    <string name="personal_pds_user_id">PDS User ID</string>
+    <string name="personal_movement_id">Movement ID</string>
+    <string name="personal_legacy_avn_id">Legacy AVN ID</string>
+    <string name="personal_legacy_aryz_id">Legacy Aryz ID</string>
+
+    <string name="personal_timestamps">Timestamps</string>
+    <string name="personal_user_created">User Created</string>
+    <string name="personal_user_updated">User Updated</string>
+    <string name="personal_pds_created">PDS Created</string>
+    <string name="personal_pds_updated">PDS Updated</string>
+    <string name="personal_mov_created">Mov Created</string>
+    <string name="personal_mov_updated">Mov Updated</string>
+
+    <string name="personal_structure_ids">Structure IDs</string>
+    <string name="personal_fac_type_id">Fac Type ID</string>
+    <string name="personal_direction_id">Direction ID</string>
+    <string name="personal_group_edu_form">Group Edu Form</string>
+    <string name="personal_oo1_id">OO1 ID</string>
+    <string name="personal_zo1_id">ZO1 ID</string>
+    <string name="personal_exam_type_id">Exam Type ID</string>
+    <string name="personal_round_id">Round ID</string>
+    <string name="personal_tariff_type_id">Tariff Type ID</string>
+    <string name="personal_avn_group_id">AVN Group ID</string>
+
+    <string name="personal_registry_data">Registry Data</string>
+    <string name="personal_faculty_id">Faculty ID</string>
+    <string name="personal_fac_user_id">Fac User ID</string>
+    <string name="personal_fac_uni_id">Fac Uni ID</string>
+    <string name="personal_fac_created">Fac Created</string>
+    <string name="personal_spec_id">Spec ID</string>
+    <string name="personal_spec_user_id">Spec User ID</string>
+    <string name="personal_spec_uni_id">Spec Uni ID</string>
+    <string name="personal_spec_created">Spec Created</string>
+    <string name="personal_edu_id">Edu ID</string>
+    <string name="personal_edu_user_id">Edu User ID</string>
+    <string name="personal_edu_uni_id">Edu Uni ID</string>
+    <string name="personal_edu_created">Edu Created</string>
+    <string name="personal_pay_id">Pay ID</string>
+    <string name="personal_pay_user_id">Pay User ID</string>
+    <string name="personal_pay_uni_id">Pay Uni ID</string>
+    <string name="personal_pay_created">Pay Created</string>
+    <string name="personal_lang_id">Lang ID</string>
+    <string name="personal_lang_user_id">Lang User ID</string>
+    <string name="personal_lang_uni_id">Lang Uni ID</string>
+    <string name="personal_citizenship_id">Citizenship ID</string>
+    <string name="personal_nationality_id">Nationality ID</string>
+
+    <string name="personal_view_details">View Details</string>
+    <string name="personal_error_load">Failed to load personal info</string>
+    <string name="personal_retry">Retry</string>
+
 </resources>

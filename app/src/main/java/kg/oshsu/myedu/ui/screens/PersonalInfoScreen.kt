@@ -185,7 +185,7 @@ fun PersonalInfoScreen(
                     ) {
                         Icon(Icons.Default.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp))
                         Spacer(Modifier.height(16.dp))
-                        Text("Failed to load personal info", style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.personal_error_load), style = MaterialTheme.typography.titleMedium)
                         if (errorMessage != null) {
                             Text(errorMessage!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                         }
@@ -207,7 +207,7 @@ fun PersonalInfoScreen(
                                 }
                             }
                         }) {
-                            Text("Retry")
+                            Text(stringResource(R.string.personal_retry))
                         }
                     }
                 } else {
@@ -258,61 +258,61 @@ fun PersonalInfoScreen(
 
                             // --- 1. IDENTITY & BIO ---
                             item {
-                                SectionHeader("Identity & Bio", Icons.Default.Face)
+                                SectionHeader(stringResource(R.string.personal_identity_bio), Icons.Default.Face)
                                 InfoCard {
                                     DataRow(Icons.Default.Cake, stringResource(R.string.birthday), pds?.birthday)
                                     DataRow(Icons.Default.Face, stringResource(R.string.gender), genderDisplay)
                                     DataRow(Icons.Default.Phone, stringResource(R.string.phone), pds?.phone)
-                                    DataRow(Icons.Default.Phone, "Residence Phone", pds?.residence_phone)
-                                    DataRow(Icons.Default.Email, "Alt. Email", user?.email2)
-                                    DataRow(Icons.Default.Info, "Profile Status", profileStatus)
+                                    DataRow(Icons.Default.Phone, stringResource(R.string.personal_residence_phone), pds?.residence_phone)
+                                    DataRow(Icons.Default.Email, stringResource(R.string.personal_alt_email), user?.email2)
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_profile_status), profileStatus)
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                                    DataRow(Icons.Default.FamilyRestroom, "Marital Status ID", pds?.marital_status?.toString())
-                                    DataRow(Icons.Default.CheckCircle, "Is Ethnic?", pds?.is_ethnic?.toString())
+                                    DataRow(Icons.Default.FamilyRestroom, stringResource(R.string.personal_marital_status), pds?.marital_status?.toString())
+                                    DataRow(Icons.Default.CheckCircle, stringResource(R.string.personal_is_ethnic), pds?.is_ethnic?.toString())
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 2. ACADEMIC STATUS ---
                             item {
-                                SectionHeader("Academic Status", Icons.Outlined.School)
+                                SectionHeader(stringResource(R.string.personal_academic_status), Icons.Outlined.School)
                                 InfoCard {
                                     DataRow(Icons.Outlined.Apartment, stringResource(R.string.faculty), facultyName)
-                                    DataRow(Icons.Default.Info, "Faculty Short", facObj?.getShortName(currentLang))
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_faculty_short), facObj?.getShortName(currentLang))
                                     if (!facObj?.getInfo(currentLang).isNullOrBlank()) {
-                                        DataRow(Icons.Default.Info, "Faculty Info", facObj?.getInfo(currentLang))
+                                        DataRow(Icons.Default.Info, stringResource(R.string.personal_faculty_info), facObj?.getInfo(currentLang))
                                     }
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
                                     DataRow(Icons.Outlined.Class, stringResource(R.string.speciality), specialityName)
-                                    DataRow(Icons.Default.Info, "Spec. Short", specObj?.getShortName(currentLang))
-                                    DataRow(Icons.Default.Info, "Spec. Code", specObj?.code ?: mov?.id_speciality?.toString())
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_spec_short), specObj?.getShortName(currentLang))
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_spec_code), specObj?.code ?: mov?.id_speciality?.toString())
                                     if (!specObj?.getInfo(currentLang).isNullOrBlank()) {
-                                        DataRow(Icons.Default.Info, "Spec. Info", specObj?.getInfo(currentLang))
+                                        DataRow(Icons.Default.Info, stringResource(R.string.personal_spec_info), specObj?.getInfo(currentLang))
                                     }
 
-                                    DataRow(Icons.Outlined.Groups, "Group", mov?.avn_group_name)
-                                    DataRow(Icons.Default.DateRange, "Enrollment", mov?.date_movement)
+                                    DataRow(Icons.Outlined.Groups, stringResource(R.string.personal_group), mov?.avn_group_name)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_enrollment), mov?.date_movement)
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
                                     
-                                    DataRow(Icons.Default.School, "Education Form", eduFormName)
-                                    DataRow(Icons.Default.Info, "Edu Short", eduObj?.getShortName(currentLang))
-                                    DataRow(Icons.Default.CheckCircle, "Active Status", eduObj?.status?.toString())
+                                    DataRow(Icons.Default.School, stringResource(R.string.personal_edu_form), eduFormName)
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_edu_short), eduObj?.getShortName(currentLang))
+                                    DataRow(Icons.Default.CheckCircle, stringResource(R.string.personal_active_status), eduObj?.status?.toString())
                                     
-                                    DataRow(Icons.Outlined.Payments, "Payment", payFormName)
-                                    DataRow(Icons.Default.Translate, "Language", mov?.language?.name)
-                                    DataRow(Icons.Default.Translate, "Lang. Short", langObj?.short_name)
-                                    DataRow(Icons.Default.DateRange, "Current Semester", profile?.active_semester?.toString())
+                                    DataRow(Icons.Outlined.Payments, stringResource(R.string.personal_payment), payFormName)
+                                    DataRow(Icons.Default.Translate, stringResource(R.string.personal_language), mov?.language?.name)
+                                    DataRow(Icons.Default.Translate, stringResource(R.string.personal_lang_short), langObj?.short_name)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_current_semester), profile?.active_semester?.toString())
                                     
                                     if (!profile?.active_semesters.isNullOrEmpty()) {
                                         Spacer(Modifier.height(8.dp))
-                                        Text("Active Semesters List:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                        Text(stringResource(R.string.personal_active_semesters_list), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                         profile.active_semesters.forEach { sem ->
                                             val sName = sem.getName(currentLang)
                                             val displayName = if (sName.isNotBlank()) "$sName (ID: ${sem.id})" else "ID: ${sem.id}"
-                                            DataRow(Icons.Default.DateRange, "Sem ${sem.number_name}", displayName)
+                                            DataRow(Icons.Default.DateRange, "${stringResource(R.string.personal_sem)} ${sem.number_name}", displayName)
                                         }
                                     }
                                 }
@@ -321,190 +321,190 @@ fun PersonalInfoScreen(
 
                             // --- 3. LEGAL & CITIZENSHIP ---
                             item {
-                                SectionHeader("Legal & Citizenship", Icons.Outlined.AccountBalance)
+                                SectionHeader(stringResource(R.string.personal_legal_citizenship), Icons.Outlined.AccountBalance)
                                 InfoCard {
-                                    DataRow(Icons.Outlined.Flag, "Citizenship", citizenshipDisplay)
-                                    DataRow(Icons.Outlined.Flag, "Nationality", nationalityDisplay)
-                                    DataRow(Icons.Default.Fingerprint, "PIN", pds?.pin)
-                                    DataRow(Icons.Default.Description, "Has Documents", pds?.is_have_document?.toString())
+                                    DataRow(Icons.Outlined.Flag, stringResource(R.string.personal_citizenship), citizenshipDisplay)
+                                    DataRow(Icons.Outlined.Flag, stringResource(R.string.personal_nationality), nationalityDisplay)
+                                    DataRow(Icons.Default.Fingerprint, stringResource(R.string.personal_pin), pds?.pin)
+                                    DataRow(Icons.Default.Description, stringResource(R.string.personal_has_documents), pds?.is_have_document?.toString())
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
-                                    DataRow(Icons.Default.Book, "Passport", pds?.getFullPassport())
-                                    DataRow(Icons.Default.Business, "Authority", pds?.release_organ)
-                                    DataRow(Icons.Default.DateRange, "Issued", pds?.release_date)
-                                    DataRow(Icons.Default.Info, "PDS Info", pds?.info)
+                                    DataRow(Icons.Default.Book, stringResource(R.string.personal_passport), pds?.getFullPassport())
+                                    DataRow(Icons.Default.Business, stringResource(R.string.personal_authority), pds?.release_organ)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_issued), pds?.release_date)
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_pds_info), pds?.info)
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 4. FAMILY INFORMATION ---
                             item {
-                                SectionHeader("Family Information", Icons.Outlined.FamilyRestroom)
+                                SectionHeader(stringResource(R.string.personal_family_info), Icons.Outlined.FamilyRestroom)
                                 InfoCard {
-                                    Text("Father", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.Person, "Name", pds?.father_full_name)
-                                    DataRow(Icons.Default.Phone, "Phone", pds?.father_phone)
-                                    DataRow(Icons.Default.Info, "Info", pds?.father_info)
+                                    Text(stringResource(R.string.personal_father), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.Person, stringResource(R.string.personal_name), pds?.father_full_name)
+                                    DataRow(Icons.Default.Phone, stringResource(R.string.personal_phone), pds?.father_phone)
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_info), pds?.father_info)
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
                                     
-                                    Text("Mother", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.Person, "Name", pds?.mother_full_name)
-                                    DataRow(Icons.Default.Phone, "Phone", pds?.mother_phone)
-                                    DataRow(Icons.Default.Info, "Info", pds?.mother_info)
+                                    Text(stringResource(R.string.personal_mother), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.Person, stringResource(R.string.personal_name), pds?.mother_full_name)
+                                    DataRow(Icons.Default.Phone, stringResource(R.string.personal_phone), pds?.mother_phone)
+                                    DataRow(Icons.Default.Info, stringResource(R.string.personal_info), pds?.mother_info)
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 5. GEOGRAPHY ---
                             item {
-                                SectionHeader("Geography", Icons.Outlined.Place)
+                                SectionHeader(stringResource(R.string.personal_geography), Icons.Outlined.Place)
                                 InfoCard {
-                                    Text("Main Address", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.Home, "Address", pds?.address)
+                                    Text(stringResource(R.string.personal_main_address), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.Home, stringResource(R.string.personal_address), pds?.address)
                                     
                                     val country = IdDefinitions.getCountryName(pds?.id_country, currentLang)
                                     val oblast = IdDefinitions.getOblastName(pds?.id_oblast, currentLang)
                                     val region = IdDefinitions.getRegionName(pds?.id_region, currentLang)
                                     
-                                    DataRow(Icons.Default.Public, "Country", "$country (ID: ${pds?.id_country ?: "-"})")
-                                    DataRow(Icons.Default.Public, "State", "$oblast (ID: ${pds?.id_oblast ?: "-"})")
-                                    DataRow(Icons.Default.Public, "Region", "$region (ID: ${pds?.id_region ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_country), "$country (ID: ${pds?.id_country ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_state), "$oblast (ID: ${pds?.id_oblast ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_region), "$region (ID: ${pds?.id_region ?: "-"})")
 
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
                                     
-                                    Text("Birth Place", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.Home, "Birth Addr", pds?.birth_address)
+                                    Text(stringResource(R.string.personal_birth_place), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.Home, stringResource(R.string.personal_birth_addr), pds?.birth_address)
                                     val bCountry = IdDefinitions.getCountryName(pds?.id_birth_country, currentLang)
-                                    DataRow(Icons.Default.Public, "B. Country", "$bCountry (ID: ${pds?.id_birth_country ?: "-"})")
-                                    DataRow(Icons.Default.Public, "B. State", "ID: ${pds?.id_birth_oblast ?: "-"}")
-                                    DataRow(Icons.Default.Public, "B. Region", "ID: ${pds?.id_birth_region ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_country), "$bCountry (ID: ${pds?.id_birth_country ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_state), "ID: ${pds?.id_birth_oblast ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_region), "ID: ${pds?.id_birth_region ?: "-"}")
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
-                                    Text("Residence Place", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.Home, "Res. Addr", pds?.residence_address)
+                                    Text(stringResource(R.string.personal_residence_place), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.Home, stringResource(R.string.personal_res_addr), pds?.residence_address)
                                     val rCountry = IdDefinitions.getCountryName(pds?.id_residence_country, currentLang)
-                                    DataRow(Icons.Default.Public, "R. Country", "$rCountry (ID: ${pds?.id_residence_country ?: "-"})")
-                                    DataRow(Icons.Default.Public, "R. State", "ID: ${pds?.id_residence_oblast ?: "-"}")
-                                    DataRow(Icons.Default.Public, "R. Region", "ID: ${pds?.id_residence_region ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_country), "$rCountry (ID: ${pds?.id_residence_country ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_state), "ID: ${pds?.id_residence_oblast ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_region), "ID: ${pds?.id_residence_region ?: "-"}")
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 6. MILITARY SERVICE ---
                             item {
-                                SectionHeader("Military Service", Icons.Default.Shield)
+                                SectionHeader(stringResource(R.string.personal_military_service), Icons.Default.Shield)
                                 ExpandableCard {
-                                    DataRow(Icons.Default.Shield, "Service", military?.name_military)
-                                    DataRow(Icons.Default.Badge, "Name", military?.name)
-                                    DataRow(Icons.Default.Badge, "Serial", military?.serial_number)
-                                    DataRow(Icons.Default.DateRange, "Date", military?.date)
-                                    DataRow(Icons.Default.DateRange, "Record Created", military?.created_at)
-                                    DataRow(Icons.Default.Settings, "ID", military?.id?.toString())
-                                    DataRow(Icons.Default.Settings, "Student ID", military?.id_student?.toString())
-                                    DataRow(Icons.Default.Settings, "User ID", military?.id_user?.toString())
-                                    DataRow(Icons.Default.DateRange, "Updated", military?.updated_at)
+                                    DataRow(Icons.Default.Shield, stringResource(R.string.personal_service), military?.name_military)
+                                    DataRow(Icons.Default.Badge, stringResource(R.string.personal_name), military?.name)
+                                    DataRow(Icons.Default.Badge, stringResource(R.string.personal_serial), military?.serial_number)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_date), military?.date)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_record_created), military?.created_at)
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_id), military?.id?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_student_id), military?.id_student?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_user_id), military?.id_user?.toString())
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_updated), military?.updated_at)
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 7. MOVEMENT & FINANCE ---
                             item {
-                                SectionHeader("Movement & Finance", Icons.Outlined.History)
+                                SectionHeader(stringResource(R.string.personal_movement_finance), Icons.Outlined.History)
                                 ExpandableCard {
-                                    Text("Movement", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.ArrowForward, "Type", movTypeObj?.getName(currentLang))
-                                    DataRow(Icons.Default.CheckCircle, "Is Student?", movTypeObj?.is_student?.toString())
-                                    DataRow(Icons.Default.Description, "Desc", mov?.info_description)
-                                    DataRow(Icons.Default.DateRange, "Period", periodName)
-                                    DataRow(Icons.Default.DateRange, "Start Date", periodObj?.start)
-                                    DataRow(Icons.Default.CheckCircle, "Period Active", periodObj?.active?.toString())
-                                    DataRow(Icons.Default.DateRange, "Order", mov?.info)
-                                    DataRow(Icons.Default.Settings, "ITNGYRG", mov?.itngyrg?.toString())
-                                    DataRow(Icons.Default.Translate, "State Lang Lvl", mov?.id_state_language_level?.toString())
+                                    Text(stringResource(R.string.personal_movement), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                                    DataRow(Icons.Default.ArrowForward, stringResource(R.string.personal_type), movTypeObj?.getName(currentLang))
+                                    DataRow(Icons.Default.CheckCircle, stringResource(R.string.personal_is_student), movTypeObj?.is_student?.toString())
+                                    DataRow(Icons.Default.Description, stringResource(R.string.personal_desc), mov?.info_description)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_period), periodName)
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_start_date), periodObj?.start)
+                                    DataRow(Icons.Default.CheckCircle, stringResource(R.string.personal_period_active), periodObj?.active?.toString())
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_order), mov?.info)
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_itngyrg), mov?.itngyrg?.toString())
+                                    DataRow(Icons.Default.Translate, stringResource(R.string.personal_state_lang_lvl), mov?.id_state_language_level?.toString())
                                     
-                                    DataRow(Icons.Default.DateRange, "Mov. Edu Year", mov?.id_edu_year?.toString())
-                                    DataRow(Icons.Default.Settings, "Archive User ID", mov?.id_import_archive_user?.toString())
-                                    DataRow(Icons.Default.Settings, "Mov. Citizenship", mov?.citizenship?.toString())
-                                    DataRow(Icons.Default.Settings, "Mov OO1 ID", mov?.id_oo1?.toString())
-                                    DataRow(Icons.Default.Settings, "Mov ZO1 ID", mov?.id_zo1?.toString())
+                                    DataRow(Icons.Default.DateRange, stringResource(R.string.personal_mov_edu_year), mov?.id_edu_year?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_archive_user_id), mov?.id_import_archive_user?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_mov_citizenship), mov?.citizenship?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_mov_oo1_id), mov?.id_oo1?.toString())
+                                    DataRow(Icons.Default.Settings, stringResource(R.string.personal_mov_zo1_id), mov?.id_zo1?.toString())
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
                                     
-                                    Text("Library & Finance", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                                    Text(stringResource(R.string.personal_library_finance), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                                     val libStatus = if (profile?.is_library_debt == true) "Has Debt" else "Clean"
-                                    DataRow(Icons.Default.Book, "Library", libStatus)
-                                    DataRow(Icons.Default.Money, "Debt Credits", profile?.access_debt_credit_count?.toString())
+                                    DataRow(Icons.Default.Book, stringResource(R.string.personal_library), libStatus)
+                                    DataRow(Icons.Default.Money, stringResource(R.string.personal_debt_credits), profile?.access_debt_credit_count?.toString())
                                     
-                                    DataRow(Icons.Default.List, "Lib Items", "${profile?.studentlibrary?.size ?: 0}")
-                                    DataRow(Icons.Default.List, "Debt Trans", "${profile?.student_debt_transcript?.size ?: 0}")
-                                    DataRow(Icons.Default.List, "Total Price", "${profile?.total_price?.size ?: 0}")
+                                    DataRow(Icons.Default.List, stringResource(R.string.personal_lib_items), "${profile?.studentlibrary?.size ?: 0}")
+                                    DataRow(Icons.Default.List, stringResource(R.string.personal_debt_trans), "${profile?.student_debt_transcript?.size ?: 0}")
+                                    DataRow(Icons.Default.List, stringResource(R.string.personal_total_price), "${profile?.total_price?.size ?: 0}")
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
 
                             // --- 8. SYSTEM METADATA ---
                             item {
-                                SectionHeader("System Metadata", Icons.Outlined.Terminal)
+                                SectionHeader(stringResource(R.string.personal_system_metadata), Icons.Outlined.Terminal)
                                 ExpandableCard {
-                                    Text("User & Profile", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    MetaDataRow("User ID", user?.id_user)
-                                    MetaDataRow("Uni ID (User)", user?.id_university)
-                                    MetaDataRow("Uni ID (Mov)", mov?.id_university)
-                                    MetaDataRow("PDS ID", pds?.id)
-                                    MetaDataRow("PDS User ID", pds?.id_user)
-                                    MetaDataRow("Movement ID", mov?.id_movement ?: mov?.id)
-                                    MetaDataRow("Legacy AVN ID", user?.id_avn)
-                                    MetaDataRow("Legacy Aryz ID", user?.id_aryz)
+                                    Text(stringResource(R.string.personal_user_profile), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    MetaDataRow(stringResource(R.string.personal_user_id), user?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_uni_id_user), user?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_uni_id_mov), mov?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_pds_id), pds?.id)
+                                    MetaDataRow(stringResource(R.string.personal_pds_user_id), pds?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_movement_id), mov?.id_movement ?: mov?.id)
+                                    MetaDataRow(stringResource(R.string.personal_legacy_avn_id), user?.id_avn)
+                                    MetaDataRow(stringResource(R.string.personal_legacy_aryz_id), user?.id_aryz)
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                     
-                                    Text("Timestamps", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    MetaDataRow("User Created", user?.created_at)
-                                    MetaDataRow("User Updated", user?.updated_at)
-                                    MetaDataRow("PDS Created", pds?.created_at)
-                                    MetaDataRow("PDS Updated", pds?.updated_at)
-                                    MetaDataRow("Mov Created", mov?.created_at)
-                                    MetaDataRow("Mov Updated", mov?.updated_at)
+                                    Text(stringResource(R.string.personal_timestamps), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    MetaDataRow(stringResource(R.string.personal_user_created), user?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_user_updated), user?.updated_at)
+                                    MetaDataRow(stringResource(R.string.personal_pds_created), pds?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_pds_updated), pds?.updated_at)
+                                    MetaDataRow(stringResource(R.string.personal_mov_created), mov?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_mov_updated), mov?.updated_at)
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                     
-                                    Text("Structure IDs", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    MetaDataRow("Fac Type ID", facObj?.id_faculty_type)
-                                    MetaDataRow("Direction ID", specObj?.id_direction)
-                                    MetaDataRow("Group Edu Form", eduObj?.id_group_edu_form)
-                                    MetaDataRow("OO1 ID", specObj?.id_oo1)
-                                    MetaDataRow("ZO1 ID", specObj?.id_zo1)
-                                    MetaDataRow("Exam Type ID", pds?.id_exam_type)
-                                    MetaDataRow("Round ID", pds?.id_round)
-                                    MetaDataRow("Tariff Type ID", mov?.id_tariff_type)
-                                    MetaDataRow("AVN Group ID", mov?.id_avn_group)
+                                    Text(stringResource(R.string.personal_structure_ids), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    MetaDataRow(stringResource(R.string.personal_fac_type_id), facObj?.id_faculty_type)
+                                    MetaDataRow(stringResource(R.string.personal_direction_id), specObj?.id_direction)
+                                    MetaDataRow(stringResource(R.string.personal_group_edu_form), eduObj?.id_group_edu_form)
+                                    MetaDataRow(stringResource(R.string.personal_oo1_id), specObj?.id_oo1)
+                                    MetaDataRow(stringResource(R.string.personal_zo1_id), specObj?.id_zo1)
+                                    MetaDataRow(stringResource(R.string.personal_exam_type_id), pds?.id_exam_type)
+                                    MetaDataRow(stringResource(R.string.personal_round_id), pds?.id_round)
+                                    MetaDataRow(stringResource(R.string.personal_tariff_type_id), mov?.id_tariff_type)
+                                    MetaDataRow(stringResource(R.string.personal_avn_group_id), mov?.id_avn_group)
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                                     
-                                    Text("Registry Data (Deep)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                                    MetaDataRow("Faculty ID", facObj?.id)
-                                    MetaDataRow("Fac User ID", facObj?.id_user)
-                                    MetaDataRow("Fac Uni ID", facObj?.id_university)
-                                    MetaDataRow("Fac Created", facObj?.created_at)
-                                    MetaDataRow("Spec ID", specObj?.id)
-                                    MetaDataRow("Spec User ID", specObj?.id_user)
-                                    MetaDataRow("Spec Uni ID", specObj?.id_university)
-                                    MetaDataRow("Spec Created", specObj?.created_at)
-                                    MetaDataRow("Edu ID", eduObj?.id)
-                                    MetaDataRow("Edu User ID", eduObj?.id_user)
-                                    MetaDataRow("Edu Uni ID", eduObj?.id_university)
-                                    MetaDataRow("Edu Created", eduObj?.created_at)
-                                    MetaDataRow("Pay ID", payObj?.id)
-                                    MetaDataRow("Pay User ID", payObj?.id_user)
-                                    MetaDataRow("Pay Uni ID", payObj?.id_university)
-                                    MetaDataRow("Pay Created", payObj?.created_at)
-                                    MetaDataRow("Lang ID", langObj?.id)
-                                    MetaDataRow("Lang User ID", langObj?.id_user)
-                                    MetaDataRow("Lang Uni ID", langObj?.id_university)
-                                    MetaDataRow("Citizenship ID", pds?.id_citizenship)
-                                    MetaDataRow("Nationality ID", pds?.id_nationality)
+                                    Text(stringResource(R.string.personal_registry_data), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    MetaDataRow(stringResource(R.string.personal_faculty_id), facObj?.id)
+                                    MetaDataRow(stringResource(R.string.personal_fac_user_id), facObj?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_fac_uni_id), facObj?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_fac_created), facObj?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_spec_id), specObj?.id)
+                                    MetaDataRow(stringResource(R.string.personal_spec_user_id), specObj?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_spec_uni_id), specObj?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_spec_created), specObj?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_edu_id), eduObj?.id)
+                                    MetaDataRow(stringResource(R.string.personal_edu_user_id), eduObj?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_edu_uni_id), eduObj?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_edu_created), eduObj?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_pay_id), payObj?.id)
+                                    MetaDataRow(stringResource(R.string.personal_pay_user_id), payObj?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_pay_uni_id), payObj?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_pay_created), payObj?.created_at)
+                                    MetaDataRow(stringResource(R.string.personal_lang_id), langObj?.id)
+                                    MetaDataRow(stringResource(R.string.personal_lang_user_id), langObj?.id_user)
+                                    MetaDataRow(stringResource(R.string.personal_lang_uni_id), langObj?.id_university)
+                                    MetaDataRow(stringResource(R.string.personal_citizenship_id), pds?.id_citizenship)
+                                    MetaDataRow(stringResource(R.string.personal_nationality_id), pds?.id_nationality)
                                 }
                                 Spacer(Modifier.height(32.dp))
                             }
@@ -580,7 +580,7 @@ fun ExpandableCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "View Details",
+                    text = stringResource(R.string.personal_view_details),
                     style = MaterialTheme.typography.labelLarge, 
                     fontWeight = FontWeight.Medium, 
                     color = MaterialTheme.colorScheme.primary
