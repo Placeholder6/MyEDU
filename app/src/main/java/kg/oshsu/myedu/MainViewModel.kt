@@ -238,7 +238,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
-                        // NEW: Load Dictionaries
                         IdDefinitions.loadAll()
                         withContext(Dispatchers.Main) { areDictionariesLoaded = true }
                     } catch (e: Exception) {
@@ -348,7 +347,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         withContext(Dispatchers.IO) { 
                             fetchAllDataSuspend() 
-                            // NEW: Load dictionaries
                             IdDefinitions.loadAll()
                         } 
                         areDictionariesLoaded = true
@@ -439,6 +437,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) { isRefreshing = false }
             }
         }
+    }
+
+    // --- NEW: FETCH FRESH PERSONAL INFO (Bypasses Cache Retrieval) ---
+    // Returns fresh objects directly to the caller, ensuring UI doesn't use stale cached data.
+    suspend fun getFreshPersonalInfo(): Pair<UserData, StudentInfoResponse> {
+        // We throw exceptions here so the UI can catch them and show an error state
+        val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user } ?: throw Exception("User data is null")
+        val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() } ?: throw Exception("Profile data is null")
+        
+        withContext(Dispatchers.Main) {
+            // Update global state and cache for *next* time/other screens
+            userData = user
+            profileData = profile
+            prefs?.saveData("user_data", user)
+            prefs?.saveData("profile_data", profile)
+            
+            validateAndSyncPhoto(profile)
+            avatarRefreshTrigger++
+        }
+        return Pair(user, profile)
     }
 
     fun refreshProfile() {
