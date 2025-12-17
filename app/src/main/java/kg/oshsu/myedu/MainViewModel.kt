@@ -4,7 +4,7 @@ import android.app.Application
 import android.app.DownloadManager
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent
+import android.content.Intent // <--- IMPORT FIXED HERE
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -28,7 +28,7 @@ import kotlin.math.max
 
 // NAVIGATION ENUM
 enum class AppScreen {
-    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE
+    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -50,7 +50,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppScreen.SCHEDULE -> 1
             AppScreen.GRADES -> 2
             AppScreen.PROFILE -> 3
-            else -> 3 // Default to Profile for nested screens like Transcript/Reference
+            else -> 3 // Default to Profile for nested screens
         }
         set(value) {
             currentScreen = when(value) {
@@ -102,7 +102,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val uiPhoto: Any?
         get() = customPhotoUri ?: profileData?.avatar
 
-    // Added trigger to force image reload even if URL string is identical
     var avatarRefreshTrigger by mutableStateOf(0)
 
     // --- STATE: SCHEDULE DATA ---
@@ -150,7 +149,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var cachedRefResourcesRu: ReferenceResources? = null
     private var cachedRefResourcesEn: ReferenceResources? = null
 
-    // --- SETTINGS ACTIONS ---
     fun setTheme(theme: String) {
         appTheme = theme
         prefs?.saveSettings(customName ?: "", customPhotoUri, theme, notificationsEnabled)
@@ -165,12 +163,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs?.saveAppLanguage(lang)
     }
 
-    // --- HELPER: CHECK ONBOARDING STATUS ---
     fun isOnboardingComplete(): Boolean {
         return prefs?.isOnboardingComplete() == true
     }
 
-    // --- DICTIONARY ACTIONS ---
     fun addOrUpdateDictionaryEntry(original: String, translation: String) {
         customDictionary[original] = translation
         updateCombinedDictionary()
@@ -205,7 +201,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- INIT: CHECK SESSION ---
     fun initSession(context: Context) {
         viewModelScope.launch {
             if (prefs == null) {
@@ -435,7 +430,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // NEW: Function to refresh only the profile (e.g., when avatar URL expires)
     fun refreshProfile() {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -443,11 +437,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     profileData = profile
                     prefs?.saveData("profile_data", profile)
-                    
-                    // NEW: Check for expired URL match
                     validateAndSyncPhoto(profile)
-                    
-                    // INCREMENT TRIGGER TO FORCE COIL RELOAD
                     avatarRefreshTrigger++ 
                 }
             } catch (e: Exception) {
@@ -472,15 +462,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // NEW LOGIC: Checks if saved custom photo is actually an expired API URL
     private fun validateAndSyncPhoto(profile: StudentInfoResponse?) {
         val remote = profile?.avatar ?: return
         val local = customPhotoUri
-        
-        // If the user has a "saved" photo that looks like a remote URL (starts with http),
-        // but it doesn't match the fresh one from the server,
-        // it likely means the saved one is an expired token URL (from when they saved onboarding settings).
-        // We should auto-update it to the fresh one.
         if (local != null && local.startsWith("http") && local != remote) {
             customPhotoUri = remote
             prefs?.saveSettings(customName ?: "", remote, appTheme, notificationsEnabled)
@@ -496,8 +480,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             profileData = profile
             prefs?.saveData("user_data", user)
             prefs?.saveData("profile_data", profile)
-            
-            // NEW: Check for expired URL match on startup/refresh
             validateAndSyncPhoto(profile)
         }
 
@@ -549,9 +531,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun fetchTranscript(forceRefresh: Boolean = false) {
         transcriptJob?.cancel()
-        
         isTranscriptLoading = true
-        currentScreen = AppScreen.TRANSCRIPT // NAVIGATE VIA SCREEN STATE
+        currentScreen = AppScreen.TRANSCRIPT
         
         if (forceRefresh) {
             transcriptData = emptyList()

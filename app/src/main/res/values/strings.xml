@@ -210,4 +210,10 @@
     <string name="update_error_download">Download failed: %1$s</string>
     <string name="install_prompt">Install Update</string>
     <string name="update_repo_path">repos/placeholder6/myedu/releases/latest</string>
+    
+    <string name="full_name">Full Name</string>
+    <string name="birthday">Date of Birth</string>
+    <string name="gender">Gender</string>
+    <string name="male">Male</string>
+    <string name="female">Female</string>
 </resources>

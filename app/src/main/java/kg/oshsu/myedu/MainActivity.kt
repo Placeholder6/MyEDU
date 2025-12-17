@@ -21,9 +21,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.ExperimentalTransitionApi
@@ -100,10 +102,12 @@ import androidx.work.WorkManager
 import kg.oshsu.myedu.ui.components.ExpressiveShapesBackground
 import kg.oshsu.myedu.ui.screens.ClassDetailsSheet
 import kg.oshsu.myedu.ui.screens.DictionaryScreen
+import kg.oshsu.myedu.ui.screens.EditProfileScreen
 import kg.oshsu.myedu.ui.screens.GradesScreen
 import kg.oshsu.myedu.ui.screens.HomeScreen
 import kg.oshsu.myedu.ui.screens.LoginScreen
 import kg.oshsu.myedu.ui.screens.OnboardingScreen
+import kg.oshsu.myedu.ui.screens.PersonalInfoScreen
 import kg.oshsu.myedu.ui.screens.ProfileScreen
 import kg.oshsu.myedu.ui.screens.ReferenceView
 import kg.oshsu.myedu.ui.screens.ScheduleScreen
@@ -439,8 +443,8 @@ fun AppContent(vm: MainViewModel) {
                         this@SharedTransitionLayout,
                         this@AnimatedContent
                     )
-
-                    "APP" -> MainAppStructure(vm)
+                    // Updated call to pass the shared scopes
+                    "APP" -> MainAppStructure(vm, this@SharedTransitionLayout, this@AnimatedContent)
                     else -> Box(Modifier.fillMaxSize())
                 }
             }
@@ -493,7 +497,11 @@ data class NavItem(
     ExperimentalTransitionApi::class
 )
 @Composable
-fun MainAppStructure(vm: MainViewModel) {
+fun MainAppStructure(
+    vm: MainViewModel,
+    sharedTransitionScope: SharedTransitionScope,
+    animatedContentScope: AnimatedContentScope
+) {
     NotificationPermissionRequest()
 
     // 1. Navigation State (Main Content)
@@ -561,8 +569,9 @@ fun MainAppStructure(vm: MainViewModel) {
             }
         }
     }
-    // Priority 4: Documents (Transcript/Reference -> Profile)
-    else if (vm.selectedClass == null && (vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT)) {
+    // Priority 4: Documents (Transcript/Reference/EditProfile/PersonalInfo -> Profile)
+    else if (vm.selectedClass == null && (vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT || vm.currentScreen == AppScreen.EDIT_PROFILE || vm.currentScreen == AppScreen.PERSONAL_INFO)) {
+        // !!! ADDED PERSONAL_INFO to condition above !!!
         PredictiveBackHandler { progress ->
             try {
                 progress.collect { backEvent ->
@@ -588,161 +597,172 @@ fun MainAppStructure(vm: MainViewModel) {
         NavItem(stringResource(R.string.nav_profile), Icons.Filled.Person, Icons.Outlined.Person, 3)
     )
 
-    SharedTransitionLayout {
-        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // REMOVED: SharedTransitionLayout {} wrapper. We now use the scope passed from AppContent.
+    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
-            val transition = rememberTransition(transitionState)
-            val settingsTransition = rememberTransition(settingsState)
-            val dictTransition = rememberTransition(dictState)
+        val transition = rememberTransition(transitionState)
+        val settingsTransition = rememberTransition(settingsState)
+        val dictTransition = rememberTransition(dictState)
 
-            // --- Background Scaling Logic ---
-            val settingScale by settingsTransition.animateFloat(label = "settingsScale") { if (it) 0.95f else 1f }
-            val dictScale by dictTransition.animateFloat(label = "dictScale") { if (it) 0.95f else 1f }
-            val mainContentScale = min(settingScale, dictScale)
+        // --- Background Scaling Logic ---
+        val settingScale by settingsTransition.animateFloat(label = "settingsScale") { if (it) 0.95f else 1f }
+        val dictScale by dictTransition.animateFloat(label = "dictScale") { if (it) 0.95f else 1f }
+        val mainContentScale = min(settingScale, dictScale)
 
-            // --- MAIN APP CONTENT ---
-            Box(Modifier.fillMaxSize().graphicsLayer {
-                scaleX = mainContentScale
-                scaleY = mainContentScale
-            }) {
-                transition.AnimatedContent(
-                    transitionSpec = {
-                        val isBack = (initialState == AppScreen.TRANSCRIPT || initialState == AppScreen.REFERENCE) && targetState == AppScreen.PROFILE
-                        val isOpen = (targetState == AppScreen.TRANSCRIPT || targetState == AppScreen.REFERENCE) && initialState == AppScreen.PROFILE
+        // --- MAIN APP CONTENT ---
+        Box(Modifier.fillMaxSize().graphicsLayer {
+            scaleX = mainContentScale
+            scaleY = mainContentScale
+        }) {
+            transition.AnimatedContent(
+                transitionSpec = {
+                    // DEFINE LIST OF SCREENS THAT OPEN FROM PROFILE
+                    val subScreens = listOf(AppScreen.TRANSCRIPT, AppScreen.REFERENCE, AppScreen.EDIT_PROFILE, AppScreen.PERSONAL_INFO)
+                    
+                    val isBack = (initialState in subScreens) && targetState == AppScreen.PROFILE
+                    val isOpen = (targetState in subScreens) && initialState == AppScreen.PROFILE
 
-                        if (isBack) {
-                            val slideDirection = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
-                            val exit = slideOutHorizontally(animationSpec = tween(400)) { width -> (width * 0.05f * slideDirection).toInt() } + 
-                                    scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + 
-                                    fadeOut(animationSpec = tween(400))
-                            val enter = fadeIn(animationSpec = tween(400)) + 
-                                        scaleIn(initialScale = 0.9f, animationSpec = tween(400))
-                            (enter togetherWith exit).apply { targetContentZIndex = -1f }
-                        } else if (isOpen) {
-                            val enter = slideInHorizontally(animationSpec = tween(400)) { it } + 
-                                        scaleIn(initialScale = 0.85f, animationSpec = tween(400)) + 
-                                        fadeIn(animationSpec = tween(400))
-                            val exit = fadeOut(animationSpec = tween(400)) + 
-                                    scaleOut(targetScale = 0.95f, animationSpec = tween(400))
-                            enter togetherWith exit
-                        } else {
-                            fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
-                        }
-                    }
-                ) { targetScreen ->
-                    if (targetScreen in listOf(AppScreen.HOME, AppScreen.SCHEDULE, AppScreen.GRADES, AppScreen.PROFILE)) {
-                        Scaffold(
-                            bottomBar = {
-                                NavigationBar {
-                                    navItems.forEach { item ->
-                                        val isSelected = vm.currentTab == item.index
-                                        NavigationBarItem(
-                                            selected = isSelected,
-                                            onClick = { vm.currentTab = item.index },
-                                            icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
-                                            label = { Text(item.label) }
-                                        )
-                                    }
-                                }
-                            }
-                        ) { padding ->
-                            Box(Modifier.padding(padding)) {
-                                when (targetScreen) {
-                                    AppScreen.HOME -> HomeScreen(vm)
-                                    AppScreen.SCHEDULE -> ScheduleScreen(vm)
-                                    AppScreen.GRADES -> GradesScreen(vm)
-                                    AppScreen.PROFILE -> ProfileScreen(vm, this@SharedTransitionLayout, this@AnimatedContent)
-                                    else -> {}
-                                }
-                            }
-                        }
+                    if (isBack) {
+                        val slideDirection = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
+                        val exit = slideOutHorizontally(animationSpec = tween(400)) { width -> (width * 0.05f * slideDirection).toInt() } + 
+                                scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + 
+                                fadeOut(animationSpec = tween(400))
+                        val enter = fadeIn(animationSpec = tween(400)) + 
+                                    scaleIn(initialScale = 0.9f, animationSpec = tween(400))
+                        (enter togetherWith exit).apply { targetContentZIndex = -1f }
+                    } else if (isOpen) {
+                        val enter = slideInHorizontally(animationSpec = tween(400)) { it } + 
+                                    scaleIn(initialScale = 0.85f, animationSpec = tween(400)) + 
+                                    fadeIn(animationSpec = tween(400))
+                        val exit = fadeOut(animationSpec = tween(400)) + 
+                                scaleOut(targetScale = 0.95f, animationSpec = tween(400))
+                        enter togetherWith exit
                     } else {
-                        Box(Modifier.fillMaxSize()) {
+                        fadeIn(animationSpec = tween(400)) togetherWith fadeOut(animationSpec = tween(400))
+                    }
+                }
+            ) { targetScreen ->
+                if (targetScreen in listOf(AppScreen.HOME, AppScreen.SCHEDULE, AppScreen.GRADES, AppScreen.PROFILE)) {
+                    Scaffold(
+                        bottomBar = {
+                            NavigationBar {
+                                navItems.forEach { item ->
+                                    val isSelected = vm.currentTab == item.index
+                                    NavigationBarItem(
+                                        selected = isSelected,
+                                        onClick = { vm.currentTab = item.index },
+                                        icon = { Icon(if (isSelected) item.selectedIcon else item.unselectedIcon, item.label) },
+                                        label = { Text(item.label) }
+                                    )
+                                }
+                            }
+                        }
+                    ) { padding ->
+                        Box(Modifier.padding(padding)) {
                             when (targetScreen) {
-                                AppScreen.TRANSCRIPT -> TranscriptView(vm, { vm.currentScreen = AppScreen.PROFILE }, this@SharedTransitionLayout, this@AnimatedContent)
-                                AppScreen.REFERENCE -> ReferenceView(vm, { vm.currentScreen = AppScreen.PROFILE }, this@SharedTransitionLayout, this@AnimatedContent)
+                                AppScreen.HOME -> HomeScreen(vm)
+                                AppScreen.SCHEDULE -> ScheduleScreen(vm)
+                                AppScreen.GRADES -> GradesScreen(vm)
+                                // Passes the outer sharedTransitionScope
+                                AppScreen.PROFILE -> ProfileScreen(vm, sharedTransitionScope, this@AnimatedContent)
                                 else -> {}
                             }
                         }
                     }
-                }
-            }
-
-            // --- SETTINGS OVERLAY ---
-            settingsTransition.AnimatedVisibility(
-                visible = { it },
-                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-                exit = slideOutHorizontally(animationSpec = tween(400)) { width -> 
-                    val direction = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
-                    (width * 0.05f * direction).toInt() 
-                } + scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(animationSpec = tween(400)),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                SettingsScreen(vm) { vm.showSettingsScreen = false }
-            }
-
-            // --- DICTIONARY OVERLAY ---
-            dictTransition.AnimatedVisibility(
-                visible = { it },
-                enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
-                exit = slideOutHorizontally(animationSpec = tween(400)) { width -> 
-                     val direction = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
-                    (width * 0.05f * direction).toInt() 
-                } + scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(animationSpec = tween(400)),
-                modifier = Modifier.fillMaxSize()
-            ) {
-                DictionaryScreen(vm) { vm.showDictionaryScreen = false }
-            }
-
-            // --- BOTTOM SHEET (Class Details) ---
-            if (vm.selectedClass != null) {
-                ModalBottomSheet(
-                    onDismissRequest = { vm.selectedClass = null },
-                    containerColor = Color.Transparent, 
-                    dragHandle = null 
-                ) {
-                    
-                    val swipeProgress = remember { Animatable(0f) }
-                    
-                    PredictiveBackHandler { progress ->
-                        try {
-                            progress.collect { backEvent ->
-                                swipeProgress.snapTo(backEvent.progress)
-                            }
-                            // Commit: Animate to full exit state THEN set null
-                            swipeProgress.animateTo(1f)
-                            vm.selectedClass = null
-                        } catch (e: CancellationException) {
-                            // Cancel: Animate back to open state
-                            swipeProgress.animateTo(0f)
+                } else {
+                    Box(Modifier.fillMaxSize()) {
+                        when (targetScreen) {
+                            // Passes the outer sharedTransitionScope
+                            AppScreen.TRANSCRIPT -> TranscriptView(vm, { vm.currentScreen = AppScreen.PROFILE }, sharedTransitionScope, this@AnimatedContent)
+                            // Passes the outer sharedTransitionScope
+                            AppScreen.REFERENCE -> ReferenceView(vm, { vm.currentScreen = AppScreen.PROFILE }, sharedTransitionScope, this@AnimatedContent)
+                            // Passes the outer sharedTransitionScope
+                            AppScreen.EDIT_PROFILE -> EditProfileScreen(vm, { vm.currentScreen = AppScreen.PROFILE }, sharedTransitionScope, this@AnimatedContent)
+                            
+                            // ADDED PERSONAL INFO SCREEN
+                            AppScreen.PERSONAL_INFO -> PersonalInfoScreen(vm, { vm.currentScreen = AppScreen.PROFILE }, sharedTransitionScope, this@AnimatedContent)
+                            
+                            else -> {}
                         }
                     }
-                    
-                    // This SURFACE now acts as the real bottom sheet container
-                    Surface(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .graphicsLayer {
-                                val progress = swipeProgress.value
-                                val scale = 1f - (progress * 0.1f)
-                                scaleX = scale
-                                scaleY = scale
-                                
-                                // FIX: Move down by full height + 20% buffer to ensure it clears screen even if scrolled
-                                translationY = progress * (size.height * 1.2f)
-                                
-                                transformOrigin = TransformOrigin(0.5f, 1f)
-                            },
-                        shape = BottomSheetDefaults.ExpandedShape,
-                        color = BottomSheetDefaults.ContainerColor
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            // Re-add standard Drag Handle inside our animated surface
-                            BottomSheetDefaults.DragHandle()
-                            
-                            // The actual content
-                            vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
+                }
+            }
+        }
+
+        // --- SETTINGS OVERLAY ---
+        settingsTransition.AnimatedVisibility(
+            visible = { it },
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(animationSpec = tween(400)) { width -> 
+                val direction = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
+                (width * 0.05f * direction).toInt() 
+            } + scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(animationSpec = tween(400)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            SettingsScreen(vm) { vm.showSettingsScreen = false }
+        }
+
+        // --- DICTIONARY OVERLAY ---
+        dictTransition.AnimatedVisibility(
+            visible = { it },
+            enter = slideInHorizontally(initialOffsetX = { it }) + fadeIn(),
+            exit = slideOutHorizontally(animationSpec = tween(400)) { width -> 
+                    val direction = if (backSwipeEdge == BackEventCompat.EDGE_RIGHT) -1 else 1
+                (width * 0.05f * direction).toInt() 
+            } + scaleOut(targetScale = 0.8f, animationSpec = tween(400)) + fadeOut(animationSpec = tween(400)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            DictionaryScreen(vm) { vm.showDictionaryScreen = false }
+        }
+
+        // --- BOTTOM SHEET (Class Details) ---
+        if (vm.selectedClass != null) {
+            ModalBottomSheet(
+                onDismissRequest = { vm.selectedClass = null },
+                containerColor = Color.Transparent, 
+                dragHandle = null 
+            ) {
+                
+                val swipeProgress = remember { Animatable(0f) }
+                
+                PredictiveBackHandler { progress ->
+                    try {
+                        progress.collect { backEvent ->
+                            swipeProgress.snapTo(backEvent.progress)
                         }
+                        // Commit: Animate to full exit state THEN set null
+                        swipeProgress.animateTo(1f)
+                        vm.selectedClass = null
+                    } catch (e: CancellationException) {
+                        // Cancel: Animate back to open state
+                        swipeProgress.animateTo(0f)
+                    }
+                }
+                
+                // This SURFACE now acts as the real bottom sheet container
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .graphicsLayer {
+                            val progress = swipeProgress.value
+                            val scale = 1f - (progress * 0.1f)
+                            scaleX = scale
+                            scaleY = scale
+                            
+                            // FIX: Move down by full height + 20% buffer to ensure it clears screen even if scrolled
+                            translationY = progress * (size.height * 1.2f)
+                            
+                            transformOrigin = TransformOrigin(0.5f, 1f)
+                        },
+                    shape = BottomSheetDefaults.ExpandedShape,
+                    color = BottomSheetDefaults.ContainerColor
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        // Re-add standard Drag Handle inside our animated surface
+                        BottomSheetDefaults.DragHandle()
+                        
+                        // The actual content
+                        vm.selectedClass?.let { ClassDetailsSheet(vm, it) }
                     }
                 }
             }

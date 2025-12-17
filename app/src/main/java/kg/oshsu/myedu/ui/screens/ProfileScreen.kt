@@ -18,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -150,18 +151,62 @@ fun ProfileScreen(
                     
                     Spacer(Modifier.height(16.dp))
                     
-                    // --- EDIT PROFILE BUTTON (SMALLER) ---
-                    ElevatedButton(
-                        onClick = { vm.appState = "ONBOARDING" },
-                        // Using CircleShape for standard Stadium/Pill shape without hardcoded radius
-                        shape = CircleShape,
-                        // Compact padding
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        modifier = Modifier.height(36.dp)
-                    ) {
-                        Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.dict_edit_desc), style = MaterialTheme.typography.labelLarge) 
+                    // --- EDIT PROFILE & PERSONAL INFO BUTTONS ---
+                    with(sharedTransitionScope) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Personal Info Button
+                            ElevatedButton(
+                                onClick = { vm.currentScreen = AppScreen.PERSONAL_INFO },
+                                shape = CircleShape,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "personal_card"),
+                                        animatedVisibilityScope = animatedVisibilityScope
+                                    )
+                            ) {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.personal),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "text_personal"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                    )
+                                )
+                            }
+
+                            // Edit Profile Button
+                            ElevatedButton(
+                                onClick = { vm.currentScreen = AppScreen.EDIT_PROFILE },
+                                shape = CircleShape,
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .height(36.dp)
+                                    .sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "edit_profile_card"),
+                                        animatedVisibilityScope = animatedVisibilityScope
+                                    )
+                            ) {
+                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Edit Profile",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    modifier = Modifier.sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "text_edit_profile"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                    )
+                                )
+                            }
+                        }
                     }
                 }
                 
