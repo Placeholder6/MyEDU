@@ -15,19 +15,13 @@ import okhttp3.Response
 import okhttp3.ResponseBody
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
-import retrofit2.http.Body
-import retrofit2.http.GET
-import retrofit2.http.Multipart
-import retrofit2.http.POST
-import retrofit2.http.Part
-import retrofit2.http.Query
-import retrofit2.http.Url
+import retrofit2.http.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-// --- EXISTING DATA MODELS ---
+// --- EXISTING DATA MODELS (KEPT INTACT) ---
 data class LoginRequest(val email: String, val password: String)
 data class LoginResponse(val status: String?, val authorisation: AuthData?)
 data class AuthData(val token: String?, val is_student: Boolean?)
@@ -46,8 +40,6 @@ data class UserData(
     @SerializedName("is_pds_approval") val is_pds_approval: Boolean?,
     @SerializedName("id_university") val id_university: Int?,
     @SerializedName("id_user") val id_user: Long?,
-    
-    // Extra fields found in user.txt
     @SerializedName("email_verified_at") val email_verified_at: String?,
     @SerializedName("is_working") val is_working: Boolean?,
     @SerializedName("is_student") val is_student: Boolean?,
@@ -59,7 +51,8 @@ data class UserData(
     @SerializedName("date_prikaz") val date_prikaz: String?,
     @SerializedName("birthday") val birthday: String?,
     @SerializedName("is_reset_password") val is_reset_password: Boolean?,
-    @SerializedName("reset_password_updated_at") val reset_password_updated_at: String?
+    @SerializedName("reset_password_updated_at") val reset_password_updated_at: String?,
+    @SerializedName("avatar") val avatar: String?
 )
 
 data class StudentInfoResponse(
@@ -70,8 +63,6 @@ data class StudentInfoResponse(
     @SerializedName("active_semester") val active_semester: Int?,
     @SerializedName("is_library_debt") val is_library_debt: Boolean?,
     @SerializedName("access_debt_credit_count") val access_debt_credit_count: Double?,
-    
-    // Extra fields found in studentinfo.txt
     @SerializedName("is_have_image") val is_have_image: Boolean?,
     @SerializedName("studentlibrary") val studentlibrary: List<Any>?,
     @SerializedName("student_debt_transcript") val student_debt_transcript: List<Any>?,
@@ -107,8 +98,6 @@ data class PdsInfo(
     @SerializedName("residence_phone") val residence_phone: String?,
     @SerializedName("is_ethnic") val is_ethnic: Boolean?,
     @SerializedName("is_have_document") val is_have_document: Boolean?,
-    
-    // Geographic IDs
     @SerializedName("id_country") val id_country: Int?,
     @SerializedName("id_oblast") val id_oblast: Int?,
     @SerializedName("id_region") val id_region: Int?,
@@ -118,13 +107,9 @@ data class PdsInfo(
     @SerializedName("id_residence_country") val id_residence_country: Int?,
     @SerializedName("id_residence_oblast") val id_residence_oblast: Int?,
     @SerializedName("id_residence_region") val id_residence_region: Int?,
-    
-    // Misc
     @SerializedName("info") val info: String?,
     @SerializedName("id_round") val id_round: Int?,
     @SerializedName("id_exam_type") val id_exam_type: Int?,
-    
-    // Parents Info
     @SerializedName("father_full_name") val father_full_name: String?,
     @SerializedName("father_phone") val father_phone: String?,
     @SerializedName("father_info") val father_info: String?,
@@ -157,13 +142,11 @@ data class MovementInfo(
     @SerializedName("faculty") val faculty: NameObj?, 
     @SerializedName("edu_form") val edu_form: NameObj?,
     @SerializedName("payment_form") val payment_form: NameObj?,
-    @SerializedName("movement_info") val movement_info: NameObj?, // Status: "Zachislenie"
+    @SerializedName("movement_info") val movement_info: NameObj?,
     @SerializedName("language") val language: LanguageObj?,
     @SerializedName("id_payment_form") val id_payment_form: Int?,
     @SerializedName("info") val info: String?, 
     @SerializedName("date_movement") val date_movement: String?,
-    
-    // Deep Extra Fields
     @SerializedName("id_university") val id_university: Int?,
     @SerializedName("id_user") val id_user: Long?,
     @SerializedName("id_period") val id_period: Int?,
@@ -203,6 +186,8 @@ data class NameObj(
         }
     }
 }
+
+// --- SCHEDULE ---
 data class EduYear(val id: Int, val name_en: String?, val active: Boolean)
 data class ScheduleWrapper(val schedule_items: List<ScheduleItem>?)
 data class ScheduleItem(val day: Int, val id_lesson: Int, val subject: NameObj?, val teacher: TeacherObj?, val room: RoomObj?, val subject_type: NameObj?, val classroom: ClassroomObj?, val stream: StreamObj?)
@@ -216,8 +201,12 @@ data class TeacherObj(val name: String?, val last_name: String?) { fun get(): St
 data class RoomObj(val name_en: String?)
 data class LessonTimeResponse(val id_lesson: Int, val begin_time: String?, val end_time: String?, val lesson: LessonNum?)
 data class LessonNum(val num: Int)
+
+// --- PAYMENTS & NEWS ---
 data class PayStatusResponse(val paid_summa: Double?, val need_summa: Double?, val access_message: List<String>?) { fun getDebt(): Double = (need_summa ?: 0.0) - (paid_summa ?: 0.0) }
 data class NewsItem(val id: Int, val title: String?, val message: String?, val created_at: String?)
+
+// --- SESSION / GRADES ---
 data class SessionResponse(val semester: SemesterObj?, val subjects: List<SessionSubjectWrapper>?)
 data class SemesterObj(val id: Int, val name_en: String?)
 data class SessionSubjectWrapper(val subject: NameObj?, val marklist: MarkList?)
@@ -241,6 +230,29 @@ data class GitHubAsset(
     @SerializedName("browser_download_url") val downloadUrl: String,
     @SerializedName("name") val name: String,
     @SerializedName("content_type") val contentType: String
+)
+
+// --- NEW: DICTIONARY MODELS (ADDED) ---
+data class DictionaryItem(
+    val id: Int,
+    val name_kg: String?,
+    val name_ru: String?,
+    val name_en: String?
+) {
+    fun getName(lang: String): String = when (lang) {
+        "ky" -> name_kg ?: name_ru ?: name_en ?: ""
+        "en" -> name_en ?: name_ru ?: name_kg ?: ""
+        else -> name_ru ?: name_kg ?: name_en ?: ""
+    }
+}
+
+data class PeriodItem(
+    val id: Int,
+    val name_kg: String?,
+    val name_ru: String?,
+    val name_en: String?,
+    val start: String?,
+    val active: Int?
 )
 
 // --- API INTERFACE ---
@@ -279,6 +291,22 @@ interface OshSuApi {
 
     // DOCS: Shared
     @POST("public/api/open/doc/showlink") suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
+
+    // --- NEW: DICTIONARY ENDPOINTS ---
+    @GET("public/api/open/pdscountry")
+    suspend fun getCountries(): List<DictionaryItem>
+    @GET("public/api/open/pdsoblast")
+    suspend fun getOblasts(): List<DictionaryItem>
+    @GET("public/api/open/pdsregion")
+    suspend fun getRegions(): List<DictionaryItem>
+    @GET("public/api/open/pdsnational")
+    suspend fun getNationalities(): List<DictionaryItem>
+    @GET("public/api/open/pdsschool")
+    suspend fun getSchools(): List<DictionaryItem>
+    @GET("public/api/open/pdsmale")
+    suspend fun getGenders(): List<DictionaryItem>
+    @GET("public/api/control/regulations/period")
+    suspend fun getPeriods(): List<PeriodItem>
 }
 
 // --- GITHUB API INTERFACE ---

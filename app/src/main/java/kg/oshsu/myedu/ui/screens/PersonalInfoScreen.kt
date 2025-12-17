@@ -26,9 +26,8 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Money
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Settings // <--- Missing import added
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kg.oshsu.myedu.IdDefinitions
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 
@@ -55,13 +55,16 @@ fun PersonalInfoScreen(
     val mov = profile?.studentMovement
     val military = profile?.pdsstudentmilitary
     
+    // Current App Language for Dictionary Lookups
+    val currentLang = vm.language
+
     // --- 1. BASIC IDENTIFICATION ---
     val studentId = user?.id_avn_student?.toString() ?: user?.id?.toString() ?: "-"
     val email = user?.email ?: "-"
     val email2 = user?.email2 
     
     val baseName = vm.uiName
-    val fullName = if (!user?.father_name.isNullOrBlank() && !baseName.contains(user!!.father_name!!)) {
+    val fullName = if (!user?.father_name.isNullOrBlank() && !baseName.contains(user.father_name!!)) {
         "$baseName ${user.father_name}"
     } else {
         baseName
@@ -70,14 +73,18 @@ fun PersonalInfoScreen(
     val phone = pds?.phone ?: "-"
     val birthday = pds?.birthday ?: "-"
     
+    // Resolve Gender using Dictionary
     val genderCode = pds?.id_male
-    val gender = when (genderCode) {
-        1 -> stringResource(R.string.male)
-        2 -> stringResource(R.string.female)
-        else -> "Code: $genderCode"
-    }
+    val gender = if (genderCode != null) {
+        IdDefinitions.genders[genderCode]?.getName(currentLang) ?: when (genderCode) {
+            1 -> stringResource(R.string.male)
+            2 -> stringResource(R.string.female)
+            else -> "Code: $genderCode"
+        }
+    } else "-"
 
     // --- 2. PASSPORT & LEGAL ---
+    // FIXED: Added () to function call
     val passport = pds?.getFullPassport() ?: "-"
     val pin = pds?.pin ?: "-"
     val authority = pds?.release_organ ?: "-"
@@ -86,8 +93,17 @@ fun PersonalInfoScreen(
     val address = pds?.address ?: "-"
     val birthAddress = pds?.birth_address
     val residenceAddress = pds?.residence_address
-    val citizenshipId = pds?.id_citizenship?.toString() ?: "-"
-    val nationalityId = pds?.id_nationality?.toString() ?: "-"
+    
+    // Resolve Citizenship & Nationality
+    val citizenshipId = pds?.id_citizenship
+    val citizenship = if (citizenshipId != null) {
+        IdDefinitions.countries[citizenshipId]?.getName(currentLang) ?: citizenshipId.toString()
+    } else "-"
+
+    val nationalityId = pds?.id_nationality
+    val nationality = if (nationalityId != null) {
+        IdDefinitions.nationalities[nationalityId]?.getName(currentLang) ?: nationalityId.toString()
+    } else "-"
 
     // --- 3. ACADEMIC & MOVEMENT ---
     val enrollDate = mov?.date_movement ?: "-"
@@ -171,8 +187,8 @@ fun PersonalInfoScreen(
                 InfoItem(Icons.Default.AccountBalance, stringResource(R.string.passport), passport)
                 InfoItem(Icons.Default.AccountBalance, "Authority", authority)
                 InfoItem(Icons.Default.DateRange, "Date of Issue", dateIssue)
-                InfoItem(Icons.Default.Flag, "Citizenship ID", citizenshipId)
-                InfoItem(Icons.Default.Flag, "Nationality ID", nationalityId)
+                InfoItem(Icons.Default.Flag, "Citizenship", citizenship)
+                InfoItem(Icons.Default.Flag, "Nationality", nationality)
                 InfoItem(Icons.Default.Home, "Main Address", address)
                 if (!birthAddress.isNullOrBlank()) InfoItem(Icons.Default.Home, "Birth Address", birthAddress)
                 if (!residenceAddress.isNullOrBlank()) InfoItem(Icons.Default.Home, "Residence", residenceAddress)
@@ -228,26 +244,27 @@ fun PersonalInfoScreen(
 
                 // --- FLAGS & RAW IDs (The "Deep Dive") ---
                 Spacer(Modifier.height(24.dp))
-                SectionHeader("Technical Flags & IDs")
+                SectionHeader("Resolved Technical IDs")
                 
-                InfoItem(Icons.Default.Lock, "Check Code", user?.check?.toString() ?: "null")
-                InfoItem(Icons.Default.Lock, "Is Working", user?.is_working?.toString() ?: "null")
-                InfoItem(Icons.Default.Lock, "Is Student", user?.is_student?.toString() ?: "null")
-                InfoItem(Icons.Default.Lock, "Reset Password", user?.is_reset_password?.toString() ?: "null")
-                InfoItem(Icons.Default.Flag, "Ethnic", pds?.is_ethnic?.toString() ?: "null")
-                InfoItem(Icons.Default.Flag, "Have Document", pds?.is_have_document?.toString() ?: "null")
+                // Resolved using IdDefinitions
+                val periodName = IdDefinitions.getPeriodName(mov?.id_period, currentLang)
+                InfoItem(Icons.Default.Settings, "Period", periodName)
                 
-                InfoItem(Icons.Default.Settings, "ID Period", mov?.id_period?.toString() ?: "null")
                 InfoItem(Icons.Default.Settings, "ID Tariff", mov?.id_tariff_type?.toString() ?: "null")
                 InfoItem(Icons.Default.Settings, "ITNGYRG", mov?.itngyrg?.toString() ?: "null")
                 InfoItem(Icons.Default.Settings, "ID Payment Form", mov?.id_payment_form?.toString() ?: "null")
+                
+                // Resolved Geography
+                val countryName = IdDefinitions.getCountryName(pds?.id_country, currentLang)
+                val regionName = IdDefinitions.getRegionName(pds?.id_region, currentLang)
+                val oblastName = IdDefinitions.getOblastName(pds?.id_oblast, currentLang)
+                
+                InfoItem(Icons.Default.Home, "Country", countryName)
+                InfoItem(Icons.Default.Home, "Oblast", oblastName)
+                InfoItem(Icons.Default.Home, "Region", regionName)
+                
                 InfoItem(Icons.Default.Settings, "ID AVN", user?.id_avn?.toString() ?: "null")
                 InfoItem(Icons.Default.Settings, "ID Aryz", user?.id_aryz?.toString() ?: "null")
-                
-                // Geo IDs
-                InfoItem(Icons.Default.Home, "ID Country", pds?.id_country?.toString() ?: "null")
-                InfoItem(Icons.Default.Home, "ID Region", pds?.id_region?.toString() ?: "null")
-                InfoItem(Icons.Default.Home, "ID Oblast", pds?.id_oblast?.toString() ?: "null")
                 
                 Spacer(Modifier.height(48.dp))
             }

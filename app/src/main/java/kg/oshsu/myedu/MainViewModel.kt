@@ -4,7 +4,7 @@ import android.app.Application
 import android.app.DownloadManager
 import android.content.ContentValues
 import android.content.Context
-import android.content.Intent // <--- IMPORT FIXED HERE
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -26,7 +26,6 @@ import java.util.Calendar
 import java.util.Locale
 import kotlin.math.max
 
-// NAVIGATION ENUM
 enum class AppScreen {
     HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO
 }
@@ -39,18 +38,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
-    
-    // Updated Navigation State
     var currentScreen by mutableStateOf(AppScreen.HOME)
     
-    // Helper to sync BottomBar tab index with Screen enum
     var currentTab: Int
         get() = when(currentScreen) {
             AppScreen.HOME -> 0
             AppScreen.SCHEDULE -> 1
             AppScreen.GRADES -> 2
             AppScreen.PROFILE -> 3
-            else -> 3 // Default to Profile for nested screens
+            else -> 3 
         }
         set(value) {
             currentScreen = when(value) {
@@ -137,6 +133,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var remoteDictionary: Map<String, String> = emptyMap()
     private var customDictionary: MutableMap<String, String> = mutableMapOf()
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
+
+    // --- NEW: DICTIONARY LOADING STATE ---
+    var areDictionariesLoaded by mutableStateOf(false)
 
     private var prefs: PrefsManager? = null
 
@@ -239,6 +238,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     try { 
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
+                        // NEW: Load Dictionaries
+                        IdDefinitions.loadAll()
+                        withContext(Dispatchers.Main) { areDictionariesLoaded = true }
                     } catch (e: Exception) {
                         if (e.toString().contains("401") || e.message?.contains("401") == true) {
                              withContext(Dispatchers.Main) { handleTokenExpiration() }
@@ -343,7 +345,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     NetworkClient.interceptor.authToken = token
                     NetworkClient.cookieJar.injectSessionCookies(token)
 
-                    try { withContext(Dispatchers.IO) { fetchAllDataSuspend() } } catch (e: Exception) { e.printStackTrace() }
+                    try { 
+                        withContext(Dispatchers.IO) { 
+                            fetchAllDataSuspend() 
+                            // NEW: Load dictionaries
+                            IdDefinitions.loadAll()
+                        } 
+                        areDictionariesLoaded = true
+                    } catch (e: Exception) { e.printStackTrace() }
 
                     isLoginSuccess = true
                     delay(200) 
@@ -403,6 +412,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notificationsEnabled = true
         showSettingsScreen = false
         showDictionaryScreen = false
+        
+        areDictionariesLoaded = false
 
         if (wasRemember) {
             prefs?.saveData("pref_remember_me", true)
@@ -510,8 +521,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun processScheduleLocally() {
         if (fullSchedule.isEmpty()) return
-        determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
-        determinedGroup = fullSchedule.asSequence().filter { it.subject_type?.get() == "Practical Class" }.mapNotNull { it.stream?.numeric }.firstOrNull()
+        determinedStream = fullSchedule.asSequence().filter { it.subject_type?.get() == "Lection" || it.subject_type?.get() == "Lecture" }.mapNotNull { it.stream?.numeric }.firstOrNull()
+        determinedGroup = fullSchedule.asSequence().filter { it.subject_type?.get() == "Practical lessons" || it.subject_type?.get() == "Practical Class" }.mapNotNull { it.stream?.numeric }.firstOrNull()
         
         val cal = Calendar.getInstance()
         todayDayName = cal.getDisplayName(Calendar.DAY_OF_WEEK, Calendar.LONG, Locale.getDefault()) ?: getString(R.string.today)
@@ -543,7 +554,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         transcriptJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val uid = userData?.id ?: return@launch
-                val movId = profileData?.studentMovement?.id ?: return@launch 
+                val movId = profileData?.studentMovement?.id?.toLong() ?: 0L
                 val transcript = NetworkClient.api.getTranscript(uid, movId)
                 withContext(Dispatchers.Main) { 
                     transcriptData = transcript
@@ -612,7 +623,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val fullName = "${infoJson.optString("last_name")} ${infoJson.optString("name")} ${infoJson.optString("father_name")}".replace("null", "").trim()
                     infoJson.put("fullName", fullName)
 
-                    val movId = profileData?.studentMovement?.id ?: 0L
+                    val movId = profileData?.studentMovement?.id?.toLong() ?: 0L
                     val transRaw = NetworkClient.api.getTranscriptDataRaw(studentId, movId).string()
 
                     val keyRaw = NetworkClient.api.getTranscriptLink(DocIdRequest(studentId)).string()
