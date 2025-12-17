@@ -32,20 +32,105 @@ data class LoginRequest(val email: String, val password: String)
 data class LoginResponse(val status: String?, val authorisation: AuthData?)
 data class AuthData(val token: String?, val is_student: Boolean?)
 data class UserResponse(val user: UserData?)
-data class UserData(val id: Long, val name: String?, val last_name: String?, val email: String?)
+
+data class UserData(
+    val id: Long, 
+    val name: String?, 
+    val last_name: String?, 
+    val email: String?,
+    @SerializedName("father_name") val father_name: String?,
+    @SerializedName("id_avn_student") val id_avn_student: Long?,
+    @SerializedName("email2") val email2: String?,
+    @SerializedName("created_at") val created_at: String?,
+    @SerializedName("updated_at") val updated_at: String?,
+    @SerializedName("is_pds_approval") val is_pds_approval: Boolean?,
+    @SerializedName("id_university") val id_university: Int?,
+    @SerializedName("id_user") val id_user: Long?,
+    
+    // Extra fields found in user.txt
+    @SerializedName("email_verified_at") val email_verified_at: String?,
+    @SerializedName("is_working") val is_working: Boolean?,
+    @SerializedName("is_student") val is_student: Boolean?,
+    @SerializedName("pin") val pin: String?,
+    @SerializedName("id_avn") val id_avn: Long?,
+    @SerializedName("id_aryz") val id_aryz: Long?,
+    @SerializedName("check") val check: Int?,
+    @SerializedName("old_fio") val old_fio: String?,
+    @SerializedName("date_prikaz") val date_prikaz: String?,
+    @SerializedName("birthday") val birthday: String?,
+    @SerializedName("is_reset_password") val is_reset_password: Boolean?,
+    @SerializedName("reset_password_updated_at") val reset_password_updated_at: String?
+)
 
 data class StudentInfoResponse(
     @SerializedName("pdsstudentinfo") val pdsstudentinfo: PdsInfo?,
     @SerializedName("studentMovement") val studentMovement: MovementInfo?,
+    @SerializedName("pdsstudentmilitary") val pdsstudentmilitary: PdsMilitary?,
     @SerializedName("avatar") val avatar: String?,
-    @SerializedName("active_semester") val active_semester: Int?
+    @SerializedName("active_semester") val active_semester: Int?,
+    @SerializedName("is_library_debt") val is_library_debt: Boolean?,
+    @SerializedName("access_debt_credit_count") val access_debt_credit_count: Double?,
+    
+    // Extra fields found in studentinfo.txt
+    @SerializedName("is_have_image") val is_have_image: Boolean?,
+    @SerializedName("studentlibrary") val studentlibrary: List<Any>?,
+    @SerializedName("student_debt_transcript") val student_debt_transcript: List<Any>?,
+    @SerializedName("total_price") val total_price: List<Any>?,
+    @SerializedName("active_semesters") val active_semesters: List<ActiveSemester>?
 )
+
+data class ActiveSemester(
+    val id: Int,
+    val name_kg: String?,
+    val name_ru: String?,
+    val name_en: String?,
+    val number_name: Int?
+)
+
 data class PdsInfo(
+    @SerializedName("id") val id: Long,
+    @SerializedName("id_student") val id_student: Long?,
     @SerializedName("passport_number") val passport_number: String?, 
     @SerializedName("serial") val serial: String?,
     @SerializedName("birthday") val birthday: String?, 
     @SerializedName("phone") val phone: String?,
-    @SerializedName("address") val address: String?
+    @SerializedName("address") val address: String?,
+    @SerializedName("id_male") val id_male: Int?,
+    @SerializedName("pin") val pin: String?,
+    @SerializedName("release_organ") val release_organ: String?,
+    @SerializedName("release_date") val release_date: String?,
+    @SerializedName("id_citizenship") val id_citizenship: Int?,
+    @SerializedName("id_nationality") val id_nationality: Int?,
+    @SerializedName("marital_status") val marital_status: Int?,
+    @SerializedName("birth_address") val birth_address: String?,
+    @SerializedName("residence_address") val residence_address: String?,
+    @SerializedName("residence_phone") val residence_phone: String?,
+    @SerializedName("is_ethnic") val is_ethnic: Boolean?,
+    @SerializedName("is_have_document") val is_have_document: Boolean?,
+    
+    // Geographic IDs
+    @SerializedName("id_country") val id_country: Int?,
+    @SerializedName("id_oblast") val id_oblast: Int?,
+    @SerializedName("id_region") val id_region: Int?,
+    @SerializedName("id_birth_country") val id_birth_country: Int?,
+    @SerializedName("id_birth_oblast") val id_birth_oblast: Int?,
+    @SerializedName("id_birth_region") val id_birth_region: Int?,
+    @SerializedName("id_residence_country") val id_residence_country: Int?,
+    @SerializedName("id_residence_oblast") val id_residence_oblast: Int?,
+    @SerializedName("id_residence_region") val id_residence_region: Int?,
+    
+    // Misc
+    @SerializedName("info") val info: String?,
+    @SerializedName("id_round") val id_round: Int?,
+    @SerializedName("id_exam_type") val id_exam_type: Int?,
+    
+    // Parents Info
+    @SerializedName("father_full_name") val father_full_name: String?,
+    @SerializedName("father_phone") val father_phone: String?,
+    @SerializedName("father_info") val father_info: String?,
+    @SerializedName("mother_full_name") val mother_full_name: String?,
+    @SerializedName("mother_phone") val mother_phone: String?,
+    @SerializedName("mother_info") val mother_info: String?
 ) {
     fun getFullPassport(): String {
         val s = (serial ?: "").trim()
@@ -56,6 +141,13 @@ data class PdsInfo(
         return "$s$n"
     }
 }
+
+data class PdsMilitary(
+    @SerializedName("name_military") val name_military: String?,
+    @SerializedName("serial_number") val serial_number: String?,
+    @SerializedName("date") val date: String?
+)
+
 data class MovementInfo(
     @SerializedName("id") val id: Long?,
     @SerializedName("id_speciality") val id_speciality: Int?, 
@@ -64,8 +156,34 @@ data class MovementInfo(
     @SerializedName("speciality") val speciality: NameObj?, 
     @SerializedName("faculty") val faculty: NameObj?, 
     @SerializedName("edu_form") val edu_form: NameObj?,
-    @SerializedName("id_payment_form") val id_payment_form: Int?
+    @SerializedName("payment_form") val payment_form: NameObj?,
+    @SerializedName("movement_info") val movement_info: NameObj?, // Status: "Zachislenie"
+    @SerializedName("language") val language: LanguageObj?,
+    @SerializedName("id_payment_form") val id_payment_form: Int?,
+    @SerializedName("info") val info: String?, 
+    @SerializedName("date_movement") val date_movement: String?,
+    
+    // Deep Extra Fields
+    @SerializedName("id_university") val id_university: Int?,
+    @SerializedName("id_user") val id_user: Long?,
+    @SerializedName("id_period") val id_period: Int?,
+    @SerializedName("id_tariff_type") val id_tariff_type: Int?,
+    @SerializedName("id_avn_group") val id_avn_group: Int?,
+    @SerializedName("itngyrg") val itngyrg: Int?,
+    @SerializedName("citizenship") val citizenship: Int?,
+    @SerializedName("id_state_language_level") val id_state_language_level: Int?,
+    @SerializedName("id_import_archive_user") val id_import_archive_user: Long?,
+    @SerializedName("info_description") val info_description: String?,
+    @SerializedName("id_oo1") val id_oo1: Int?,
+    @SerializedName("id_zo1") val id_zo1: Int?
 )
+
+data class LanguageObj(
+    @SerializedName("id") val id: Int,
+    @SerializedName("name") val name: String?,
+    @SerializedName("short_name") val short_name: String?
+)
+
 data class NameObj(
     @SerializedName("name_en") val name_en: String?, 
     @SerializedName("name_ru") val name_ru: String?, 
