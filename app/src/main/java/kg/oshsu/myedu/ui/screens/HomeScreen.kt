@@ -91,7 +91,8 @@ fun HomeScreen(vm: MainViewModel) {
                         icon = Icons.Outlined.CalendarToday, 
                         label = stringResource(R.string.semester), 
                         value = profile?.active_semester?.toString() ?: "-", 
-                        secondaryValue = vm.determinedStream?.let { "${stringResource(R.string.stream)} $it" },
+                        // FIXED: Always display "Stream ..." or "Stream -" to maintain card height consistency
+                        secondaryValue = "${stringResource(R.string.stream)} ${vm.determinedStream ?: "-"}",
                         bg = MaterialTheme.colorScheme.primaryContainer, 
                         modifier = Modifier.weight(1f)
                     )
@@ -111,9 +112,6 @@ fun HomeScreen(vm: MainViewModel) {
                 
                 // Title Logic
                 val todayString = stringResource(R.string.today)
-                // If vm.todayDayName is empty (init), use "Today". 
-                // If it equals localized "Today", use generic title.
-                // Else use "Monday's Classes" format.
                 val displayDay = vm.todayDayName.ifEmpty { todayString }
                 val title = if (displayDay == todayString) {
                     stringResource(R.string.todays_classes)

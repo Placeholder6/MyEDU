@@ -192,11 +192,14 @@
     <string name="notif_default_title">MyEDU Билдирүүсү</string>
     <string name="notif_default_msg">Сизде жаңы билдирүү бар</string>
     <string name="notif_channel_name">MyEDU Ойготкучтар</string>
+    
     <string name="notif_tomorrow_title">Эртеңки сабактар</string>
-    <string name="notif_tomorrow_msg">Эртең %1$d сабак бар. Биринчиси: %2$s</string>
-    <string name="notif_class_title">Сабак эскертүүсү</string>
-    <string name="notif_class_msg">%1$s\nУбакыт: %2$s\nЛокация: %3$s\nАудитория: %4$s</string>
+    <string name="notif_tomorrow_msg">Эртең сизде %1$d сабак бар. Биринчиси: %2$s.</string>
+    <string name="notif_class_title">Сабак эскертүүсү (1 саат)</string>
+    <string name="notif_class_msg">%1$s\nУбакыт: %2$s\nДареги: %3$s\nАуд: %4$s</string>
     <string name="class_default">Сабак</string>
+    <string name="unknown_room_text">Белгисиз ауд.</string>
+
     <string name="update_available_title">Жаңыртуу жеткиликтүү</string>
     <string name="update_available_msg">Жаңы версия (%1$s) жеткиликтүү.\n\n%2$s</string>
     <string name="update_btn_download">Жүктөө</string>
@@ -206,4 +209,160 @@
     <string name="update_status_downloading">Жүктөлүүдө %1$s...</string>
     <string name="update_error_download">Жүктөө катасы: %1$s</string>
     <string name="install_prompt">Жаңыртууну орнотуу</string>
+
+    <string name="full_name">Аты-жөнү</string>
+    <string name="birthday">Туулган күнү</string>
+    <string name="gender">Жынысы</string>
+    <string name="male">Эркек</string>
+    <string name="female">Аял</string>
+
+    <string name="personal_identity_bio">Өздүк маалымат</string>
+    <string name="personal_profile_status">Профиль абалы</string>
+    <string name="personal_marital_status">Үй-бүлөлүк абалы</string>
+    <string name="personal_is_ethnic">Этникалык кыргыз?</string>
+    <string name="personal_residence_phone">Жашаган тел.</string>
+    <string name="personal_alt_email">Кош. Email</string>
+
+    <string name="personal_academic_status">Окуу статусу</string>
+    <string name="personal_faculty_short">Фак. (кыска)</string>
+    <string name="personal_faculty_info">Фак. маалымат</string>
+    <string name="personal_spec_short">Адис. (кыска)</string>
+    <string name="personal_spec_code">Адис. коду</string>
+    <string name="personal_spec_info">Адис. маалымат</string>
+    <string name="personal_group">Тайпа</string>
+    <string name="personal_enrollment">Кабыл алуу</string>
+    <string name="personal_edu_form">Окуу формасы</string>
+    <string name="personal_edu_short">Окуу ф. (кыска)</string>
+    <string name="personal_active_status">Активдүү статус</string>
+    <string name="personal_payment">Төлөм</string>
+    <string name="personal_language">Тил</string>
+    <string name="personal_lang_short">Тил (кыска)</string>
+    <string name="personal_current_semester">Учурдагы семестр</string>
+    <string name="personal_active_semesters_list">Активдүү семестрлер:</string>
+    <string name="personal_sem">Сем</string>
+
+    <string name="personal_legal_citizenship">Документтер жана Жарандык</string>
+    <string name="personal_citizenship">Жарандыгы</string>
+    <string name="personal_nationality">Улуту</string>
+    <string name="personal_pin">ПИН</string>
+    <string name="personal_has_documents">Документтери бар</string>
+    <string name="personal_passport">Паспорт</string>
+    <string name="personal_serial">Сериясы</string>
+    <string name="personal_authority">Берген орган</string>
+    <string name="personal_issued">Берилген күнү</string>
+    <string name="personal_pds_info">PDS маалымат</string>
+
+    <string name="personal_family_info">Үй-бүлө маалыматы</string>
+    <string name="personal_father">Атасы</string>
+    <string name="personal_mother">Энеси</string>
+    <string name="personal_name">Аты</string>
+    <string name="personal_phone">Тел</string>
+    <string name="personal_info">Маалымат</string>
+
+    <string name="personal_geography">География</string>
+    <string name="personal_main_address">Негизги дарек</string>
+    <string name="personal_address">Дарек</string>
+    <string name="personal_country">Өлкө</string>
+    <string name="personal_state">Облус</string>
+    <string name="personal_region">Район</string>
+    <string name="personal_birth_place">Туулган жери</string>
+    <string name="personal_birth_addr">Туулган дареги</string>
+    <string name="personal_b_country">Т. Өлкө</string>
+    <string name="personal_b_state">Т. Облус</string>
+    <string name="personal_b_region">Т. Район</string>
+    <string name="personal_residence_place">Жашаган жери</string>
+    <string name="personal_res_addr">Жашаган дарек</string>
+    <string name="personal_r_country">Ж. Өлкө</string>
+    <string name="personal_r_state">Ж. Облус</string>
+    <string name="personal_r_region">Ж. Район</string>
+
+    <string name="personal_military_service">Аскердик кызмат</string>
+    <string name="personal_service">Кызмат</string>
+    <string name="personal_date">Дата</string>
+    <string name="personal_record_created">Жазуу түзүлдү</string>
+    <string name="personal_id">ID</string>
+    <string name="personal_student_id">Студент ID</string>
+    <string name="personal_user_id">Колд. ID</string>
+    <string name="personal_updated">Жаңыртылган</string>
+
+    <string name="personal_movement_finance">Кыймыл жана Финансы</string>
+    <string name="personal_movement">Кыймыл</string>
+    <string name="personal_type">Түрү</string>
+    <string name="personal_is_student">Студентпи?</string>
+    <string name="personal_desc">Сүрөттөмө</string>
+    <string name="personal_period">Мезгил</string>
+    <string name="personal_start_date">Башталган күнү</string>
+    <string name="personal_period_active">Мезгил активдүү</string>
+    <string name="personal_order">Буйрук</string>
+    <string name="personal_itngyrg">ITNGYRG</string>
+    <string name="personal_state_lang_lvl">Мам. тил деңгээли</string>
+    <string name="personal_mov_edu_year">Окуу жылы (Кыймыл)</string>
+    <string name="personal_archive_user_id">Архив Кол-чу ID</string>
+    <string name="personal_mov_citizenship">Жарандык (Кыймыл)</string>
+    <string name="personal_mov_oo1_id">Mov OO1 ID</string>
+    <string name="personal_mov_zo1_id">Mov ZO1 ID</string>
+
+    <string name="personal_library_finance">Китепкана жана Финансы</string>
+    <string name="personal_library">Китепкана</string>
+    <string name="personal_debt_credits">Карыз (кредит)</string>
+    <string name="personal_lib_items">Китептер</string>
+    <string name="personal_debt_trans">Карыз (транскр.)</string>
+    <string name="personal_total_price">Жалпы баа</string>
+
+    <string name="personal_system_metadata">Системалык метадайындар</string>
+    <string name="personal_user_profile">Колдонуучу жана Профиль</string>
+    <string name="personal_uni_id_user">Универ ID (Колд.)</string>
+    <string name="personal_uni_id_mov">Универ ID (Кыймыл)</string>
+    <string name="personal_pds_id">PDS ID</string>
+    <string name="personal_pds_user_id">PDS Колд. ID</string>
+    <string name="personal_movement_id">Кыймыл ID</string>
+    <string name="personal_legacy_avn_id">Эски AVN ID</string>
+    <string name="personal_legacy_aryz_id">Эски Aryz ID</string>
+
+    <string name="personal_timestamps">Убакыт белгилери</string>
+    <string name="personal_user_created">Колд. түзүлдү</string>
+    <string name="personal_user_updated">Колд. жаңыртылды</string>
+    <string name="personal_pds_created">PDS түзүлдү</string>
+    <string name="personal_pds_updated">PDS жаңыртылды</string>
+    <string name="personal_mov_created">Кыймыл түзүлдү</string>
+    <string name="personal_mov_updated">Кыймыл жаңыртылды</string>
+
+    <string name="personal_structure_ids">Түзүм ID-лери</string>
+    <string name="personal_fac_type_id">Фак. Түрүнүн ID</string>
+    <string name="personal_direction_id">Багыт ID</string>
+    <string name="personal_group_edu_form">Тайпанын окуу формасы</string>
+    <string name="personal_oo1_id">OO1 ID</string>
+    <string name="personal_zo1_id">ZO1 ID</string>
+    <string name="personal_exam_type_id">Экзамен түрүнүн ID</string>
+    <string name="personal_round_id">Раунд ID</string>
+    <string name="personal_tariff_type_id">Тариф түрүнүн ID</string>
+    <string name="personal_avn_group_id">AVN Тайпа ID</string>
+
+    <string name="personal_registry_data">Реестр маалыматтары</string>
+    <string name="personal_faculty_id">Факультет ID</string>
+    <string name="personal_fac_user_id">Фак. Колд. ID</string>
+    <string name="personal_fac_uni_id">Фак. Универ ID</string>
+    <string name="personal_fac_created">Фак. Түзүлгөн</string>
+    <string name="personal_spec_id">Адис. ID</string>
+    <string name="personal_spec_user_id">Адис. Колд. ID</string>
+    <string name="personal_spec_uni_id">Адис. Универ ID</string>
+    <string name="personal_spec_created">Адис. Түзүлгөн</string>
+    <string name="personal_edu_id">Окуу ID</string>
+    <string name="personal_edu_user_id">Окуу Колд. ID</string>
+    <string name="personal_edu_uni_id">Окуу Универ ID</string>
+    <string name="personal_edu_created">Окуу Түзүлгөн</string>
+    <string name="personal_pay_id">Төлөм ID</string>
+    <string name="personal_pay_user_id">Төлөм Колд. ID</string>
+    <string name="personal_pay_uni_id">Төлөм Универ ID</string>
+    <string name="personal_pay_created">Төлөм Түзүлгөн</string>
+    <string name="personal_lang_id">Тил ID</string>
+    <string name="personal_lang_user_id">Тил Колд. ID</string>
+    <string name="personal_lang_uni_id">Тил Универ ID</string>
+    <string name="personal_citizenship_id">Жарандык ID</string>
+    <string name="personal_nationality_id">Улут ID</string>
+
+    <string name="personal_view_details">Кененирээк</string>
+    <string name="personal_error_load">Маалыматты жүктөө мүмкүн болбоду</string>
+    <string name="personal_retry">Кайталоо</string>
+
 </resources>
