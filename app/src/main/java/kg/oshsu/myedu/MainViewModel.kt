@@ -515,10 +515,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         try { val news = NetworkClient.api.getNews(); withContext(Dispatchers.Main) { newsList = news; prefs?.saveList("news_list", news) } } catch (_: Exception) {}
         try { val pay = NetworkClient.api.getPayStatus(); withContext(Dispatchers.Main) { payStatus = pay; prefs?.saveData("pay_status", pay) } } catch (_: Exception) {}
 
-        if (profile != null) {
-            loadScheduleNetwork(profile)
-            fetchSessionSuspend(profile)
-        }
+        loadScheduleNetwork(profile)
+        fetchSessionSuspend(profile)
     }
 
     private suspend fun loadScheduleNetwork(profile: StudentInfoResponse) {

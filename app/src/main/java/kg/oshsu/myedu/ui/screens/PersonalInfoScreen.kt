@@ -12,6 +12,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -418,7 +420,7 @@ fun PersonalInfoScreen(
                                 SectionHeader(stringResource(R.string.personal_movement_finance), Icons.Outlined.History)
                                 ExpandableCard {
                                     Text(stringResource(R.string.personal_movement), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-                                    DataRow(Icons.Default.ArrowForward, stringResource(R.string.personal_type), movTypeObj?.getName(currentLang))
+                                    DataRow(Icons.AutoMirrored.Filled.ArrowForward, stringResource(R.string.personal_type), movTypeObj?.getName(currentLang))
                                     DataRow(Icons.Default.CheckCircle, stringResource(R.string.personal_is_student), movTypeObj?.is_student?.toString())
                                     DataRow(Icons.Default.Description, stringResource(R.string.personal_desc), mov?.info_description)
                                     DataRow(Icons.Default.DateRange, stringResource(R.string.personal_period), periodName)
@@ -441,9 +443,9 @@ fun PersonalInfoScreen(
                                     DataRow(Icons.Default.Book, stringResource(R.string.personal_library), libStatus)
                                     DataRow(Icons.Default.Money, stringResource(R.string.personal_debt_credits), profile?.access_debt_credit_count?.toString())
                                     
-                                    DataRow(Icons.Default.List, stringResource(R.string.personal_lib_items), "${profile?.studentlibrary?.size ?: 0}")
-                                    DataRow(Icons.Default.List, stringResource(R.string.personal_debt_trans), "${profile?.student_debt_transcript?.size ?: 0}")
-                                    DataRow(Icons.Default.List, stringResource(R.string.personal_total_price), "${profile?.total_price?.size ?: 0}")
+                                    DataRow(Icons.AutoMirrored.Filled.List, stringResource(R.string.personal_lib_items), "${profile?.studentlibrary?.size ?: 0}")
+                                    DataRow(Icons.AutoMirrored.Filled.List, stringResource(R.string.personal_debt_trans), "${profile?.student_debt_transcript?.size ?: 0}")
+                                    DataRow(Icons.AutoMirrored.Filled.List, stringResource(R.string.personal_total_price), "${profile?.total_price?.size ?: 0}")
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }

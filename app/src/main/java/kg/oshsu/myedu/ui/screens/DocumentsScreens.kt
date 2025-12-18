@@ -1,5 +1,6 @@
 package kg.oshsu.myedu.ui.screens
 
+import android.content.ClipData
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -16,10 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,6 +33,7 @@ import kg.oshsu.myedu.TranscriptSubject
 import kg.oshsu.myedu.MarkList
 import kg.oshsu.myedu.ExamRule
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -49,14 +51,15 @@ fun ReferenceView(
     animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current // Updated to LocalClipboard
+    val scope = rememberCoroutineScope() // Needed for suspend clipboard calls
     val user = vm.userData
     val profile = vm.profileData
     val mov = profile?.studentMovement
     
     // Get current language for data localization
     val currentLang = vm.language
-    
+
     DisposableEffect(Unit) {
         onDispose { vm.resetDocumentState() }
     }
@@ -191,8 +194,15 @@ fun ReferenceView(
                                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                             // FIX: Pre-fetch string resource outside the lambda
                                             val noErrorMsg = stringResource(R.string.no_error_msg)
+                                            val errorMessage = vm.pdfStatusMessage ?: noErrorMsg
+                                            
                                             OutlinedButton(
-                                                onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: noErrorMsg)) },
+                                                onClick = { 
+                                                    scope.launch {
+                                                        val clipData = ClipData.newPlainText("Error Logs", errorMessage)
+                                                        clipboard.setClipEntry(ClipEntry(clipData))
+                                                    }
+                                                },
                                                 modifier = Modifier.weight(1f)
                                             ) {
                                                 Icon(Icons.Default.ContentCopy, null)
@@ -272,7 +282,8 @@ fun TranscriptView(
     animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val context = LocalContext.current
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current // Updated
+    val scope = rememberCoroutineScope() // Added
     val isTransitionComplete = remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
@@ -372,7 +383,14 @@ fun TranscriptView(
                                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                                                 // FIX: Pre-fetch string resource outside the lambda
                                                 val noErrorMsg = stringResource(R.string.no_error_msg)
-                                                OutlinedButton(onClick = { clipboardManager.setText(AnnotatedString(vm.pdfStatusMessage ?: noErrorMsg)) }, modifier = Modifier.weight(1f)) {
+                                                val errorMessage = vm.pdfStatusMessage ?: noErrorMsg
+                                                
+                                                OutlinedButton(onClick = { 
+                                                    scope.launch {
+                                                        val clipData = ClipData.newPlainText("Error Logs", errorMessage)
+                                                        clipboard.setClipEntry(ClipEntry(clipData))
+                                                    }
+                                                }, modifier = Modifier.weight(1f)) {
                                                     Icon(Icons.Default.ContentCopy, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.copy_logs))
                                                 }
                                                 Button(onClick = { vm.resetDocumentState() }, modifier = Modifier.weight(1f)) {

@@ -68,7 +68,7 @@ fun SettingsScreen(vm: MainViewModel, onClose: () -> Unit) {
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors( // Updated to non-deprecated
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer
                 )
