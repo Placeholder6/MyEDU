@@ -262,7 +262,7 @@ fun PersonalInfoScreen(
                                 InfoCard {
                                     DataRow(Icons.Default.Cake, stringResource(R.string.birthday), pds?.birthday)
                                     DataRow(Icons.Default.Face, stringResource(R.string.gender), genderDisplay)
-                                    DataRow(Icons.Default.Phone, stringResource(R.string.phone), pds?.phone)
+                                    DataRow(Icons.Default.Phone, stringResource(R.string.personal_phone), pds?.phone)
                                     DataRow(Icons.Default.Phone, stringResource(R.string.personal_residence_phone), pds?.residence_phone)
                                     DataRow(Icons.Default.Email, stringResource(R.string.personal_alt_email), user?.email2)
                                     DataRow(Icons.Default.Info, stringResource(R.string.personal_profile_status), profileStatus)
@@ -376,18 +376,22 @@ fun PersonalInfoScreen(
                                     Text(stringResource(R.string.personal_birth_place), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                     DataRow(Icons.Default.Home, stringResource(R.string.personal_birth_addr), pds?.birth_address)
                                     val bCountry = IdDefinitions.getCountryName(pds?.id_birth_country, currentLang)
+                                    val bOblast = IdDefinitions.getOblastName(pds?.id_birth_oblast, currentLang)
+                                    val bRegion = IdDefinitions.getRegionName(pds?.id_birth_region, currentLang)
                                     DataRow(Icons.Default.Public, stringResource(R.string.personal_b_country), "$bCountry (ID: ${pds?.id_birth_country ?: "-"})")
-                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_state), "ID: ${pds?.id_birth_oblast ?: "-"}")
-                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_region), "ID: ${pds?.id_birth_region ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_state), "$bOblast (ID: ${pds?.id_birth_oblast ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_b_region), "$bRegion (ID: ${pds?.id_birth_region ?: "-"})")
                                     
                                     HorizontalDivider(Modifier.padding(vertical = 12.dp), color = MaterialTheme.colorScheme.outlineVariant)
 
                                     Text(stringResource(R.string.personal_residence_place), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                                     DataRow(Icons.Default.Home, stringResource(R.string.personal_res_addr), pds?.residence_address)
                                     val rCountry = IdDefinitions.getCountryName(pds?.id_residence_country, currentLang)
+                                    val rOblast = IdDefinitions.getOblastName(pds?.id_residence_oblast, currentLang)
+                                    val rRegion = IdDefinitions.getRegionName(pds?.id_residence_region, currentLang)
                                     DataRow(Icons.Default.Public, stringResource(R.string.personal_r_country), "$rCountry (ID: ${pds?.id_residence_country ?: "-"})")
-                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_state), "ID: ${pds?.id_residence_oblast ?: "-"}")
-                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_region), "ID: ${pds?.id_residence_region ?: "-"}")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_state), "$rOblast (ID: ${pds?.id_residence_oblast ?: "-"})")
+                                    DataRow(Icons.Default.Public, stringResource(R.string.personal_r_region), "$rRegion (ID: ${pds?.id_residence_region ?: "-"})")
                                 }
                                 Spacer(Modifier.height(24.dp))
                             }
