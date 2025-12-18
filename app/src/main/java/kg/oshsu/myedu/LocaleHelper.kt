@@ -6,7 +6,7 @@ import java.util.Locale
 
 object LocaleHelper {
     fun setLocale(context: Context, languageCode: String): ContextWrapper {
-        val locale = Locale(languageCode)
+        val locale = Locale.forLanguageTag(languageCode) // Replaced deprecated constructor
         Locale.setDefault(locale)
         val config = context.resources.configuration
         config.setLocale(locale)

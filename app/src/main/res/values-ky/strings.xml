@@ -98,6 +98,9 @@
     <string name="passport">Паспорт</string>
     <string name="phone">Телефон</string>
     <string name="log_out">Чыгуу</string>
+    <string name="edit_profile">Профильди оңдоо</string>
+    <string name="last_updated">Акыркы жаңыртуу: %s</string>
+    <string name="session_active">Сессия: Активдүү</string>
     <string name="config_date_format">dd.MM.yyyy</string>
     <string name="settings">Орнотуулар</string>
     <string name="appearance">Көрүнүш</string>
@@ -145,6 +148,13 @@
     <string name="generating_pdf">PDF даярдалууда...</string>
     <string name="pdf_ru">PDF (ru)</string>
     <string name="pdf_en">PDF (en)</string>
+    <string name="open_pdf">PDF ачуу</string>
+    <string name="saved_to_downloads">Жүктөлмөлөргө сакталды: %s</string>
+    <string name="copy_logs">Логдорду көчүрүү</string>
+    <string name="retry">Кайталоо</string>
+    <string name="error_unknown">Белгисиз ката</string>
+    <string name="no_error_msg">Ката билдирүүсү жок</string>
+
     <string name="cert_header">ИЛИМ ЖАНА БИЛИМ БЕРҮҮ МИНИСТРЛИГИ\nОШ МАМЛЕКЕТТИК УНИВЕРСИТЕТИ</string>
     <string name="cert_intro">Бул маалымкат тастыктайт: </string>
     <string name="cert_title">ОКУУ ЖАЙДАН МААЛЫМКАТ</string>

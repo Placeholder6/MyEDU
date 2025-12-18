@@ -130,7 +130,7 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
     private fun getLocalizedContext(context: Context, prefs: PrefsManager): Context {
         // Updated to use "app_language" key from your PrefsManager
         val lang = prefs.getAppLanguage()
-        val locale = Locale(lang)
+        val locale = Locale.forLanguageTag(lang) // Replaced deprecated constructor
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)

@@ -98,6 +98,9 @@
     <string name="passport">Passport</string>
     <string name="phone">Phone</string>
     <string name="log_out">Log Out</string>
+    <string name="edit_profile">Edit Profile</string>
+    <string name="last_updated">Last updated: %s</string>
+    <string name="session_active">Session: Active</string>
     <string name="config_date_format">dd.MM.yyyy</string>
     <string name="settings">Settings</string>
     <string name="appearance">Appearance</string>
@@ -145,6 +148,13 @@
     <string name="generating_pdf">Generating PDF...</string>
     <string name="pdf_ru">PDF (ru)</string>
     <string name="pdf_en">PDF (en)</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="saved_to_downloads">Saved to Downloads as %s</string>
+    <string name="copy_logs">Copy Logs</string>
+    <string name="retry">Retry</string>
+    <string name="error_unknown">Unknown Error</string>
+    <string name="no_error_msg">No Error Message</string>
+
     <string name="cert_header">MINISTRY OF SCIENCE AND EDUCATION\nOSH STATE UNIVERSITY</string>
     <string name="cert_intro">This reference is given to</string>
     <string name="cert_title">CERTIFICATE OF STUDY</string>
