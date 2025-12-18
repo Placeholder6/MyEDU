@@ -98,6 +98,9 @@
     <string name="passport">Паспорт</string>
     <string name="phone">Телефон</string>
     <string name="log_out">Выйти</string>
+    <string name="edit_profile">Редактировать профиль</string>
+    <string name="last_updated">Обновлено: %s</string>
+    <string name="session_active">Сессия: Активна</string>
     <string name="config_date_format">dd.MM.yyyy</string>
     <string name="settings">Настройки</string>
     <string name="appearance">Оформление</string>
@@ -145,6 +148,13 @@
     <string name="generating_pdf">Создание PDF...</string>
     <string name="pdf_ru">PDF (ru)</string>
     <string name="pdf_en">PDF (en)</string>
+    <string name="open_pdf">Открыть PDF</string>
+    <string name="saved_to_downloads">Сохранено в Загрузки: %s</string>
+    <string name="copy_logs">Копировать логи</string>
+    <string name="retry">Повторить</string>
+    <string name="error_unknown">Неизвестная ошибка</string>
+    <string name="no_error_msg">Нет сообщения об ошибке</string>
+
     <string name="cert_header">МИНИСТЕРСТВО НАУКИ И ОБРАЗОВАНИЯ\nОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ</string>
     <string name="cert_intro">Настоящая справка подтверждает, что</string>
     <string name="cert_title">СПРАВКА С МЕСТА УЧЕБЫ</string>

@@ -71,9 +71,17 @@ fun ProfileScreen(
     val displayPhoto = vm.uiPhoto
     val context = LocalContext.current
     
+    // Get current language from ViewModel to select correct strings from API objects
+    val currentLang = vm.language
+    
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    val facultyName = profile?.studentMovement?.faculty?.let { it.name_en ?: it.name_ru } ?: profile?.studentMovement?.speciality?.faculty?.let { it.name_en ?: it.name_ru } ?: "-"
+    // Updated logic to use getName(currentLang)
+    val facultyName = profile?.studentMovement?.faculty?.getName(currentLang) 
+        ?: profile?.studentMovement?.speciality?.faculty?.getName(currentLang) 
+        ?: "-"
+
+    val specialityName = profile?.studentMovement?.speciality?.getName(currentLang) ?: "-"
 
     val state = rememberPullToRefreshState()
 
@@ -197,7 +205,7 @@ fun ProfileScreen(
                                 Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(8.dp))
                                 Text(
-                                    "Edit Profile",
+                                    stringResource(R.string.edit_profile), // Updated to resource
                                     style = MaterialTheme.typography.labelLarge,
                                     modifier = Modifier.sharedBounds(
                                         sharedContentState = rememberSharedContentState(key = "text_edit_profile"),
@@ -345,7 +353,7 @@ fun ProfileScreen(
                 SectionTitle(stringResource(R.string.academic), Icons.Outlined.School)
                 
                 DetailCard(Icons.Outlined.School, stringResource(R.string.faculty), facultyName)
-                DetailCard(Icons.Outlined.Book, stringResource(R.string.speciality), profile?.studentMovement?.speciality?.name_en ?: "-")
+                DetailCard(Icons.Outlined.Book, stringResource(R.string.speciality), specialityName)
                 
                 Spacer(Modifier.height(32.dp))
                 
@@ -388,12 +396,12 @@ fun ProfileScreen(
                             sdf.format(vm.lastRefreshTime)
                         }
                         Text(
-                            text = "Last updated: $formattedTime",
+                            text = stringResource(R.string.last_updated, formattedTime), // Updated to resource
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
                     Text(
-                        text = "Session: Active", 
+                        text = stringResource(R.string.session_active), // Updated to resource
                         style = MaterialTheme.typography.labelSmall
                     )
                 }
