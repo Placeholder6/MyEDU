@@ -83,6 +83,19 @@
     <string name="current_session">Текущая сессия</string>
     <string name="semester_not_found">Данные семестра не найдены</string>
     <string name="semester_format">%d-й семестр</string>
+    
+    <string name="grades_title">Оценки</string>
+    <string name="semesters_label">Семестры</string>
+    <string name="sort_label">Сортировка</string>
+    <string name="sort_default">По умолч.</string>
+    <string name="sort_az">А-Я</string>
+    <string name="sort_date">Дата</string>
+    <string name="sort_low">Низк.</string>
+    <string name="sort_high">Высок.</string>
+    <string name="status_active">Активно:</string>
+    <string name="status_not_active">Не активно</string>
+    <string name="status_updated">Обновлено:</string>
+
     <string name="profile">Профиль</string>
     <string name="tuition_contract">Контракт на обучение</string>
     <string name="paid">Оплачено</string>

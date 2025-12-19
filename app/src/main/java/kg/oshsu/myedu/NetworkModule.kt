@@ -381,11 +381,60 @@ data class LessonNum(val num: Int)
 data class PayStatusResponse(val paid_summa: Double?, val need_summa: Double?, val access_message: List<String>?) { fun getDebt(): Double = (need_summa ?: 0.0) - (paid_summa ?: 0.0) }
 data class NewsItem(val id: Int, val title: String?, val message: String?, val created_at: String?)
 
-// --- SESSION / GRADES ---
-data class SessionResponse(val semester: SemesterObj?, val subjects: List<SessionSubjectWrapper>?)
-data class SemesterObj(val id: Int, val name_en: String?)
-data class SessionSubjectWrapper(val subject: NameObj?, val marklist: MarkList?)
-data class MarkList(val point1: Double?, val point2: Double?, val point3: Double?, val finally: Double?, val total: Double?)
+// --- SESSION / GRADES (UPDATED) ---
+data class SessionResponse(
+    val semester: SemesterInfo?,
+    val subjects: List<SubjectWrapper>?
+)
+
+data class SemesterInfo(
+    val id: Int,
+    val name_en: String?,
+    val name_ru: String?,
+    val name_kg: String?,
+    val number_name: Int?
+)
+
+data class SubjectWrapper(
+    val subject: SubjectInfo?,
+    val marklist: MarkList?,
+    val exam: ExamInfo?,
+    val graphic: GraphicInfo?
+)
+
+data class SubjectInfo(
+    val id: Int,
+    val name_en: String?,
+    val name_ru: String?,
+    val name_kg: String?,
+    val code: String?
+) {
+    fun get(lang: String = "en"): String {
+        return when (lang) {
+            "ky", "kg" -> name_kg ?: name_ru ?: name_en ?: ""
+            "en" -> name_en ?: name_ru ?: name_kg ?: ""
+            else -> name_ru ?: name_kg ?: name_en ?: ""
+        } ?: name_ru ?: "Unknown"
+    }
+}
+
+data class MarkList(
+    val point1: Double?,
+    val point2: Double?,
+    val point3: Double?,
+    @SerializedName("finally") val finalScore: Double?,
+    val total: Double?,
+    @SerializedName("updated_at") val updated_at: String? // Added for last updated time
+)
+
+data class ExamInfo(
+    val active: Boolean?
+)
+
+data class GraphicInfo(
+    val begin: String?,
+    val end: String?
+)
 
 // --- DOCUMENT MODELS ---
 data class DocIdRequest(val id: Long)

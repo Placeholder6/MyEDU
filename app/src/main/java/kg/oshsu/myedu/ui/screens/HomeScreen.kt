@@ -59,6 +59,8 @@ fun HomeScreen(vm: MainViewModel) {
                 Modifier
                     .fillMaxSize()
                     .widthIn(max = 840.dp)
+                    // FIX: Add Status Bar Padding to content since parent scaffold doesn't apply it anymore
+                    .statusBarsPadding()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp)
             ) {
@@ -91,7 +93,6 @@ fun HomeScreen(vm: MainViewModel) {
                         icon = Icons.Outlined.CalendarToday, 
                         label = stringResource(R.string.semester), 
                         value = profile?.active_semester?.toString() ?: "-", 
-                        // FIXED: Always display "Stream ..." or "Stream -" to maintain card height consistency
                         secondaryValue = "${stringResource(R.string.stream)} ${vm.determinedStream ?: "-"}",
                         bg = MaterialTheme.colorScheme.primaryContainer, 
                         modifier = Modifier.weight(1f)

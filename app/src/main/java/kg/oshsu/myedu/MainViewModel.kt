@@ -26,8 +26,14 @@ import java.util.Calendar
 import java.util.Locale
 import kotlin.math.max
 
+// --- ENUMS ---
+
 enum class AppScreen {
     HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO
+}
+
+enum class SortOption {
+    DEFAULT, UPDATED_TIME, ALPHABETICAL, LOWEST_FIRST, HIGHEST_FIRST
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -109,9 +115,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var todayDayName by mutableStateOf("") 
     var selectedClass by mutableStateOf<ScheduleItem?>(null)
 
-    // --- STATE: GRADES DATA ---
+    // --- STATE: GRADES DATA & UI ---
     var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
     var isGradesLoading by mutableStateOf(false)
+
+    // New state for Grades Screen features
+    var selectedSemesterId by mutableStateOf<Int?>(null)
+    var gradesSortOption by mutableStateOf(SortOption.DEFAULT)
+    var isSortDialogVisible by mutableStateOf(false)
 
     // --- STATE: DOCUMENTS & PDF ---
     var transcriptData by mutableStateOf<List<TranscriptYear>>(emptyList())
@@ -134,7 +145,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var customDictionary: MutableMap<String, String> = mutableMapOf()
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
-    // --- NEW: DICTIONARY LOADING STATE ---
+    // --- DICTIONARY LOADING STATE ---
     var areDictionariesLoaded by mutableStateOf(false)
 
     private var prefs: PrefsManager? = null
@@ -261,7 +272,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             payStatus = p.loadData("pay_status", PayStatusResponse::class.java)
             newsList = p.loadList("news_list")
             fullSchedule = p.loadList("schedule_list")
-            sessionData = p.loadList("session_list")
+            try {
+                sessionData = p.loadList("session_list")
+            } catch (e: Exception) {
+                 // Ignore old cache format
+            }
             transcriptData = p.loadList<TranscriptYear>("transcript_list")
             processScheduleLocally()
         }
@@ -439,15 +454,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- NEW: FETCH FRESH PERSONAL INFO (Bypasses Cache Retrieval) ---
     // Returns fresh objects directly to the caller, ensuring UI doesn't use stale cached data.
     suspend fun getFreshPersonalInfo(): Pair<UserData, StudentInfoResponse> {
-        // We throw exceptions here so the UI can catch them and show an error state
         val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user } ?: throw Exception("User data is null")
         val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() } ?: throw Exception("Profile data is null")
         
         withContext(Dispatchers.Main) {
-            // Update global state and cache for *next* time/other screens
             userData = user
             profileData = profile
             prefs?.saveData("user_data", user)
@@ -549,6 +561,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun fetchSessionSuspend(profile: StudentInfoResponse) {
         try {
             withContext(Dispatchers.Main) { if(!isRefreshing) isGradesLoading = true }
+            // NOTE: Ensure your Retrofit interface returns List<SessionResponse> matching the new structure
             val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
             withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
         } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
