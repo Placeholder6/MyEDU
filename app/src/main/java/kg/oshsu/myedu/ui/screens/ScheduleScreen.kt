@@ -111,15 +111,11 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     
-    // --- LOCALIZATION FIXES ---
     val typeLecture = stringResource(R.string.type_lecture)
     val labelStream = stringResource(R.string.stream)
     val labelGroup = stringResource(R.string.group)
     
-    // Use helper to translate "Practical Class" -> "Практика", etc.
     val localizedSubjectType = getLocalizedSubjectType(item.subject_type?.get())
-    
-    // Logic: If localized type is Lecture, use Stream label, else Group
     val groupLabel = if (localizedSubjectType == typeLecture) labelStream else labelGroup
     val groupValue = item.stream?.numeric?.toString() ?: "?"
     
@@ -145,9 +141,7 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                     
                     Spacer(Modifier.height(16.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { 
-                        // UPDATED: Use localized string in chip
                         AssistChip(onClick = {}, label = { Text(localizedSubjectType) })
-                        
                         if (item.stream?.numeric != null) { 
                             AssistChip(onClick = {}, label = { Text("$groupLabel $groupValue") }, colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.surface)) 
                         } 
@@ -164,7 +158,8 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             ScoreColumn(stringResource(R.string.m1), subjectGrades.marklist?.point1)
                             ScoreColumn(stringResource(R.string.m2), subjectGrades.marklist?.point2)
-                            ScoreColumn(stringResource(R.string.exam_short), subjectGrades.marklist?.finally)
+                            // FIXED: .finally -> .finalScore
+                            ScoreColumn(stringResource(R.string.exam_short), subjectGrades.marklist?.finalScore)
                             ScoreColumn(stringResource(R.string.total_short), subjectGrades.marklist?.total, true)
                         }
                     }
@@ -205,7 +200,6 @@ fun ClassDetailsSheet(vm: MainViewModel, item: ScheduleItem) {
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) { 
                             Text(stringResource(R.string.room), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            // UPDATED: Use helper to translate "Online"
                             Text(getLocalizedRoomName(item.room?.name_en), style = MaterialTheme.typography.bodyLarge) 
                         } 
                     }

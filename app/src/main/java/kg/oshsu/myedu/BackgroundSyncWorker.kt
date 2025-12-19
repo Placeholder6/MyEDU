@@ -61,6 +61,7 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
 
             // 4. Session & Grades Notification
             try {
+                // Note: Ensure PrefsManager can handle the new SessionResponse class structure
                 val oldSession = prefs.loadList<SessionResponse>("session_list")
                 val activeSemester = profile.active_semester ?: 1
                 val newSession = NetworkClient.api.getSession(activeSemester)
@@ -102,7 +103,6 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
     }
 
     private suspend fun attemptBgLogin(prefs: PrefsManager): Boolean {
-        // Updated to use the keys found in your MainViewModel
         val isRemember = prefs.loadData("pref_remember_me", Boolean::class.java) ?: false
         if (!isRemember) return false
         
@@ -128,9 +128,8 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
     }
 
     private fun getLocalizedContext(context: Context, prefs: PrefsManager): Context {
-        // Updated to use "app_language" key from your PrefsManager
         val lang = prefs.getAppLanguage()
-        val locale = Locale.forLanguageTag(lang) // Replaced deprecated constructor
+        val locale = Locale.forLanguageTag(lang) 
         Locale.setDefault(locale)
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
@@ -139,7 +138,6 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
 
     private fun checkForUpdates(oldList: List<SessionResponse>, newList: List<SessionResponse>, context: Context): List<String> {
         val updates = ArrayList<String>()
-        val lang = context.resources.configuration.locales.get(0).language
         val oldMap = oldList.flatMap { it.subjects ?: emptyList() }.associate { (it.subject?.get() ?: context.getString(R.string.unknown)) to it.marklist }
 
         newList.flatMap { it.subjects ?: emptyList() }.forEach { newSub ->
@@ -153,7 +151,8 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
             if (oldMarks != null && newMarks != null) {
                 check(context.getString(R.string.m1), oldMarks.point1, newMarks.point1)
                 check(context.getString(R.string.m2), oldMarks.point2, newMarks.point2)
-                check(context.getString(R.string.exam_short), oldMarks.finally, newMarks.finally)
+                // FIXED: .finally -> .finalScore
+                check(context.getString(R.string.exam_short), oldMarks.finalScore, newMarks.finalScore)
             }
         }
         return updates

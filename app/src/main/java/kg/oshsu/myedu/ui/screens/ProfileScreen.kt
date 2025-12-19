@@ -52,6 +52,7 @@ import coil.request.ImageRequest
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.ui.components.DetailCard
+import kg.oshsu.myedu.ui.components.OshSuLogo
 import kg.oshsu.myedu.AppScreen
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -71,12 +72,10 @@ fun ProfileScreen(
     val displayPhoto = vm.uiPhoto
     val context = LocalContext.current
     
-    // Get current language from ViewModel to select correct strings from API objects
     val currentLang = vm.language
     
     var showSettingsDialog by remember { mutableStateOf(false) }
 
-    // Updated logic to use getName(currentLang)
     val facultyName = profile?.studentMovement?.faculty?.getName(currentLang) 
         ?: profile?.studentMovement?.speciality?.faculty?.getName(currentLang) 
         ?: "-"
@@ -92,321 +91,344 @@ fun ProfileScreen(
     
     val animatedShape = remember(rotation) { CustomRotatingShape(cookiePolygon, rotation) }
 
-    PullToRefreshBox(
-        isRefreshing = vm.isRefreshing,
-        onRefresh = { vm.refresh() },
-        state = state,
-        indicator = {
-            PullToRefreshDefaults.LoadingIndicator(
-                state = state,
-                isRefreshing = vm.isRefreshing,
-                modifier = Modifier.align(Alignment.TopCenter)
+    Scaffold(
+        modifier = Modifier.fillMaxSize(),
+        // Handle status bars padding here
+        contentWindowInsets = WindowInsets.statusBars,
+        topBar = {
+            TopAppBar(
+                title = { 
+                    Text(
+                        text = stringResource(R.string.nav_profile), 
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleLarge
+                    ) 
+                },
+                actions = {
+                    OshSuLogo(modifier = Modifier.width(80.dp).height(32.dp))
+                    Spacer(Modifier.width(8.dp))
+                    IconButton(onClick = { vm.showSettingsScreen = true }) { 
+                        Icon(Icons.Default.Settings, stringResource(R.string.settings)) 
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surface
+                )
             )
-        },
-        modifier = Modifier.fillMaxSize()
-    ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
-            Column(
-                Modifier
-                    .fillMaxSize()
-                    .widthIn(max = 840.dp)
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                horizontalAlignment = Alignment.Start 
-            ) {
-                Spacer(Modifier.height(24.dp))
-                
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                     IconButton(onClick = { vm.showSettingsScreen = true }) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
-                }
-                
-                // --- CENTERED HEADER SECTION ---
+        }
+    ) { innerPadding ->
+        PullToRefreshBox(
+            isRefreshing = vm.isRefreshing,
+            onRefresh = { vm.refresh() },
+            state = state,
+            indicator = {
+                PullToRefreshDefaults.LoadingIndicator(
+                    state = state,
+                    isRefreshing = vm.isRefreshing,
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 840.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    horizontalAlignment = Alignment.Start 
                 ) {
-                    // --- ANIMATED PROFILE PICTURE ---
-                    Box(
-                        contentAlignment = Alignment.Center, 
-                        modifier = Modifier.size(136.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(animatedShape)
-                        ) {
-                            key(displayPhoto, vm.avatarRefreshTrigger) {
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(displayPhoto)
-                                        .crossfade(true)
-                                        .setParameter("retry_hash", vm.avatarRefreshTrigger)
-                                        .build(),
-                                    contentDescription = null, 
-                                    contentScale = ContentScale.Crop, 
-                                    modifier = Modifier.fillMaxSize()
-                                ) 
-                            }
-                        }
-                    }
-                    
                     Spacer(Modifier.height(16.dp))
                     
-                    // --- NAME & EMAIL ---
-                    Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-                    Spacer(Modifier.height(4.dp))
-                    Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    
-                    Spacer(Modifier.height(16.dp))
-                    
-                    // --- EDIT PROFILE & PERSONAL INFO BUTTONS ---
-                    with(sharedTransitionScope) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Personal Info Button
-                            ElevatedButton(
-                                onClick = { vm.currentScreen = AppScreen.PERSONAL_INFO },
-                                shape = CircleShape,
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                                modifier = Modifier
-                                    .height(36.dp)
-                                    .sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "personal_card"),
-                                        animatedVisibilityScope = animatedVisibilityScope
-                                    )
-                            ) {
-                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    stringResource(R.string.personal),
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "text_personal"),
-                                        animatedVisibilityScope = animatedVisibilityScope,
-                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
-                                    )
-                                )
-                            }
-
-                            // Edit Profile Button
-                            ElevatedButton(
-                                onClick = { vm.currentScreen = AppScreen.EDIT_PROFILE },
-                                shape = CircleShape,
-                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                                modifier = Modifier
-                                    .height(36.dp)
-                                    .sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "edit_profile_card"),
-                                        animatedVisibilityScope = animatedVisibilityScope
-                                    )
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    stringResource(R.string.edit_profile), // Updated to resource
-                                    style = MaterialTheme.typography.labelLarge,
-                                    modifier = Modifier.sharedBounds(
-                                        sharedContentState = rememberSharedContentState(key = "text_edit_profile"),
-                                        animatedVisibilityScope = animatedVisibilityScope,
-                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
-                                    )
-                                )
-                            }
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(32.dp))
-                
-                // --- TUITION CONTRACT CARD ---
-                if (pay != null) {
-                    SectionTitle(stringResource(R.string.tuition_contract), Icons.Outlined.AccountBalanceWallet)
-                    
-                    val paid = pay.paid_summa?.toFloat() ?: 0f
-                    val total = pay.need_summa?.toFloat() ?: 1f
-                    val progress = (paid / total).coerceIn(0f, 1f)
-                    val debt = pay.getDebt().toInt()
-
-                    Card(
+                    // --- CENTERED HEADER SECTION ---
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(), 
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) { 
-                                Column {
-                                    Text(stringResource(R.string.paid), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        "${pay.paid_summa?.toInt() ?: 0} ${stringResource(R.string.currency_kgs)}", 
-                                        style = MaterialTheme.typography.titleLarge, 
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                                Icon(
-                                    Icons.Outlined.Payments, 
-                                    contentDescription = null, 
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(24.dp)
-                                ) 
-                            }
-                            
-                            Spacer(Modifier.height(16.dp))
-                            
-                            LinearProgressIndicator(
-                                progress = { progress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                                strokeCap = StrokeCap.Round,
-                            )
-                            
-                            Spacer(Modifier.height(16.dp))
-                            
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column {
-                                    Text(stringResource(R.string.total), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text("${pay.need_summa?.toInt() ?: 0} ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
-                                }
-                                
-                                if (debt > 0) {
-                                    Column(horizontalAlignment = Alignment.End) {
-                                        Text(stringResource(R.string.remaining, debt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
-                                        Text("$debt ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                                    }
-                                } else {
-                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text(stringResource(R.string.remaining, 0), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("0 ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.tertiary)
-                                    }
+                        // --- ANIMATED PROFILE PICTURE ---
+                        Box(
+                            contentAlignment = Alignment.Center, 
+                            modifier = Modifier.size(136.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(animatedShape)
+                            ) {
+                                key(displayPhoto, vm.avatarRefreshTrigger) {
+                                    AsyncImage(
+                                        model = ImageRequest.Builder(context)
+                                            .data(displayPhoto)
+                                            .crossfade(true)
+                                            .setParameter("retry_hash", vm.avatarRefreshTrigger)
+                                            .build(),
+                                        contentDescription = null, 
+                                        contentScale = ContentScale.Crop, 
+                                        modifier = Modifier.fillMaxSize()
+                                    ) 
                                 }
                             }
-                        }
-                    }
-                    Spacer(Modifier.height(24.dp))
-                }
-                
-                // --- DOCUMENTS SECTION ---
-                SectionTitle(stringResource(R.string.documents), Icons.Outlined.Description)
-                
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    with(sharedTransitionScope) {
-                        Button(
-                            onClick = { vm.currentScreen = AppScreen.REFERENCE }, 
-                            modifier = Modifier
-                                .weight(1f)
-                                .sharedBounds(
-                                    sharedContentState = rememberSharedContentState(key = "reference_card"),
-                                    animatedVisibilityScope = animatedVisibilityScope
-                                ), 
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
-                            // Using standard CircleShape for Pill/Stadium look
-                            shape = CircleShape
-                        ) { 
-                            Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                stringResource(R.string.reference),
-                                modifier = Modifier.sharedBounds(
-                                    sharedContentState = rememberSharedContentState(key = "text_reference"),
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
-                                )
-                            )
                         }
                         
-                        Button(
-                            onClick = { vm.fetchTranscript() }, 
-                            modifier = Modifier
-                                .weight(1f)
-                                .sharedBounds(
-                                    sharedContentState = rememberSharedContentState(key = "transcript_card"),
-                                    animatedVisibilityScope = animatedVisibilityScope
-                                ),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
-                            // Using standard CircleShape for Pill/Stadium look
-                            shape = CircleShape
-                        ) { 
-                            // Removed loading indicator logic
-                            Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                stringResource(R.string.transcript),
-                                modifier = Modifier.sharedBounds(
-                                    sharedContentState = rememberSharedContentState(key = "text_transcript"),
-                                    animatedVisibilityScope = animatedVisibilityScope,
-                                    resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                        Spacer(Modifier.height(16.dp))
+                        
+                        // --- NAME & EMAIL ---
+                        Text(fullName, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                        Spacer(Modifier.height(4.dp))
+                        Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        
+                        Spacer(Modifier.height(16.dp))
+                        
+                        // --- EDIT PROFILE & PERSONAL INFO BUTTONS ---
+                        with(sharedTransitionScope) {
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Personal Info Button
+                                ElevatedButton(
+                                    onClick = { vm.currentScreen = AppScreen.PERSONAL_INFO },
+                                    shape = CircleShape,
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    modifier = Modifier
+                                        .height(36.dp)
+                                        .sharedBounds(
+                                            sharedContentState = rememberSharedContentState(key = "personal_card"),
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                ) {
+                                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(R.string.personal),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.sharedBounds(
+                                            sharedContentState = rememberSharedContentState(key = "text_personal"),
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                        )
+                                    )
+                                }
+
+                                // Edit Profile Button
+                                ElevatedButton(
+                                    onClick = { vm.currentScreen = AppScreen.EDIT_PROFILE },
+                                    shape = CircleShape,
+                                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                                    modifier = Modifier
+                                        .height(36.dp)
+                                        .sharedBounds(
+                                            sharedContentState = rememberSharedContentState(key = "edit_profile_card"),
+                                            animatedVisibilityScope = animatedVisibilityScope
+                                        )
+                                ) {
+                                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        stringResource(R.string.edit_profile),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        modifier = Modifier.sharedBounds(
+                                            sharedContentState = rememberSharedContentState(key = "text_edit_profile"),
+                                            animatedVisibilityScope = animatedVisibilityScope,
+                                            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(32.dp))
+                    
+                    // --- TUITION CONTRACT CARD ---
+                    if (pay != null) {
+                        SectionTitle(stringResource(R.string.tuition_contract), Icons.Outlined.AccountBalanceWallet)
+                        
+                        val paid = pay.paid_summa?.toFloat() ?: 0f
+                        val total = pay.need_summa?.toFloat() ?: 1f
+                        val progress = (paid / total).coerceIn(0f, 1f)
+                        val debt = pay.getDebt().toInt()
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+                        ) {
+                            Column(Modifier.padding(16.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(), 
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) { 
+                                    Column {
+                                        Text(stringResource(R.string.paid), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text(
+                                            "${pay.paid_summa?.toInt() ?: 0} ${stringResource(R.string.currency_kgs)}", 
+                                            style = MaterialTheme.typography.titleLarge, 
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Icon(
+                                        Icons.Outlined.Payments, 
+                                        contentDescription = null, 
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    ) 
+                                }
+                                
+                                Spacer(Modifier.height(16.dp))
+                                
+                                LinearProgressIndicator(
+                                    progress = { progress },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    strokeCap = StrokeCap.Round,
                                 )
+                                
+                                Spacer(Modifier.height(16.dp))
+                                
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Column {
+                                        Text(stringResource(R.string.total), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("${pay.need_summa?.toInt() ?: 0} ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                                    }
+                                    
+                                    if (debt > 0) {
+                                        Column(horizontalAlignment = Alignment.End) {
+                                            Text(stringResource(R.string.remaining, debt), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+                                            Text("$debt ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    } else {
+                                         Column(horizontalAlignment = Alignment.End) {
+                                            Text(stringResource(R.string.remaining, 0), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("0 ${stringResource(R.string.currency_kgs)}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.tertiary)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(24.dp))
+                    }
+                    
+                    // --- DOCUMENTS SECTION ---
+                    SectionTitle(stringResource(R.string.documents), Icons.Outlined.Description)
+                    
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        with(sharedTransitionScope) {
+                            Button(
+                                onClick = { vm.currentScreen = AppScreen.REFERENCE }, 
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "reference_card"),
+                                        animatedVisibilityScope = animatedVisibilityScope
+                                    ), 
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                                shape = CircleShape
+                            ) { 
+                                Icon(Icons.Default.Description, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.reference),
+                                    modifier = Modifier.sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "text_reference"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                    )
+                                )
+                            }
+                            
+                            Button(
+                                onClick = { vm.fetchTranscript() }, 
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "transcript_card"),
+                                        animatedVisibilityScope = animatedVisibilityScope
+                                    ),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer),
+                                shape = CircleShape
+                            ) { 
+                                Icon(Icons.Default.School, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    stringResource(R.string.transcript),
+                                    modifier = Modifier.sharedBounds(
+                                        sharedContentState = rememberSharedContentState(key = "text_transcript"),
+                                        animatedVisibilityScope = animatedVisibilityScope,
+                                        resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds()
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+                    
+                    // --- ACADEMIC SECTION ---
+                    SectionTitle(stringResource(R.string.academic), Icons.Outlined.School)
+                    
+                    DetailCard(Icons.Outlined.School, stringResource(R.string.faculty), facultyName)
+                    DetailCard(Icons.Outlined.Book, stringResource(R.string.speciality), specialityName)
+                    
+                    Spacer(Modifier.height(32.dp))
+                    
+                    // --- LOGOUT BUTTON ---
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .clip(CircleShape)
+                            .combinedClickable(
+                                onClick = { vm.logout() },
+                                onLongClick = {
+                                    Toast.makeText(context, "DEBUG: Token Expired. Refreshing...", Toast.LENGTH_SHORT).show()
+                                    vm.debugForceTokenExpiry()
+                                }
+                            ),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        shape = CircleShape
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = stringResource(R.string.log_out), 
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
-                }
+                    
+                    Spacer(Modifier.height(24.dp))
 
-                Spacer(Modifier.height(24.dp))
-                
-                // --- ACADEMIC SECTION ---
-                SectionTitle(stringResource(R.string.academic), Icons.Outlined.School)
-                
-                DetailCard(Icons.Outlined.School, stringResource(R.string.faculty), facultyName)
-                DetailCard(Icons.Outlined.Book, stringResource(R.string.speciality), specialityName)
-                
-                Spacer(Modifier.height(32.dp))
-                
-                // --- LOGOUT BUTTON ---
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp)
-                        .clip(CircleShape)
-                        .combinedClickable(
-                            onClick = { vm.logout() },
-                            onLongClick = {
-                                Toast.makeText(context, "DEBUG: Token Expired. Refreshing...", Toast.LENGTH_SHORT).show()
-                                vm.debugForceTokenExpiry()
+                    // --- FOOTER INFO ---
+                    Column(
+                        modifier = Modifier.fillMaxWidth().alpha(0.6f),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (vm.lastRefreshTime > 0) {
+                            val formattedTime = remember(vm.lastRefreshTime) {
+                                val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
+                                sdf.format(vm.lastRefreshTime)
                             }
-                        ),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                    shape = CircleShape
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = stringResource(R.string.log_out), 
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-                
-                Spacer(Modifier.height(24.dp))
-
-                // --- FOOTER INFO ---
-                Column(
-                    modifier = Modifier.fillMaxWidth().alpha(0.6f),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (vm.lastRefreshTime > 0) {
-                        val formattedTime = remember(vm.lastRefreshTime) {
-                            val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
-                            sdf.format(vm.lastRefreshTime)
+                            Text(
+                                text = stringResource(R.string.last_updated, formattedTime), 
+                                style = MaterialTheme.typography.labelSmall
+                            )
                         }
                         Text(
-                            text = stringResource(R.string.last_updated, formattedTime), // Updated to resource
+                            text = stringResource(R.string.session_active), 
                             style = MaterialTheme.typography.labelSmall
                         )
                     }
-                    Text(
-                        text = stringResource(R.string.session_active), // Updated to resource
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    
+                    Spacer(Modifier.height(80.dp))
                 }
-                
-                Spacer(Modifier.height(80.dp))
             }
         }
     }
@@ -426,7 +448,6 @@ fun ProfileScreen(
     }
 }
 
-// Replicating SettingsSectionTitle locally to match style exactly
 @Composable
 private fun SectionTitle(title: String, icon: ImageVector) {
     Row(

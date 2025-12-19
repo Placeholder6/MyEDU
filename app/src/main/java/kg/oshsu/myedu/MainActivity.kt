@@ -658,7 +658,8 @@ fun MainAppStructure(
                             }
                         }
                     ) { padding ->
-                        Box(Modifier.padding(padding)) {
+                        // FIX: Only apply bottom padding (for Nav Bar), let children handle Top Padding (Status Bar)
+                        Box(Modifier.padding(bottom = padding.calculateBottomPadding())) {
                             when (targetScreen) {
                                 AppScreen.HOME -> HomeScreen(vm)
                                 AppScreen.SCHEDULE -> ScheduleScreen(vm)

@@ -83,6 +83,19 @@
     <string name="current_session">Учурдагы сессия</string>
     <string name="semester_not_found">Семестр маалыматы табылган жок</string>
     <string name="semester_format">%d-семестр</string>
+
+    <string name="grades_title">Баалар</string>
+    <string name="semesters_label">Семестрлер</string>
+    <string name="sort_label">Сорттоо</string>
+    <string name="sort_default">Демейки</string>
+    <string name="sort_az">А-Я</string>
+    <string name="sort_date">Дата</string>
+    <string name="sort_low">Төмөн</string>
+    <string name="sort_high">Жогору</string>
+    <string name="status_active">Активдүү:</string>
+    <string name="status_not_active">Активдүү эмес</string>
+    <string name="status_updated">Жаңыртылды:</string>
+    
     <string name="profile">Профиль</string>
     <string name="tuition_contract">Окуу келишими</string>
     <string name="paid">Төлөндү</string>
