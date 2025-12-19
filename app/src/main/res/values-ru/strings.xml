@@ -216,6 +216,7 @@
     <string name="notif_default_title">Уведомление MyEDU</string>
     <string name="notif_default_msg">У вас новое сообщение</string>
     <string name="notif_channel_name">Будильники MyEDU</string>
+    <string name="notif_portal_opened">Открыт модуль: %s</string>
     
     <string name="notif_tomorrow_title">Расписание на завтра</string>
     <string name="notif_tomorrow_msg">Завтра у вас %1$d пар(ы). Первая: %2$s.</string>

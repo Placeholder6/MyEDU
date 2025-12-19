@@ -1,3 +1,7 @@
+{
+type: file
+fileName: placeholder6/myedu/MyEDU-refactor-code/app/src/main/java/kg/oshsu/myedu/BackgroundSyncWorker.kt
+content:
 package kg.oshsu.myedu
 
 import android.content.Context
@@ -138,12 +142,18 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
 
     private fun checkForUpdates(oldList: List<SessionResponse>, newList: List<SessionResponse>, context: Context): List<String> {
         val updates = ArrayList<String>()
-        val oldMap = oldList.flatMap { it.subjects ?: emptyList() }.associate { (it.subject?.get() ?: context.getString(R.string.unknown)) to it.marklist }
+        // Change: associateBy to keep the whole object so we can access .graphic later
+        val oldMap = oldList.flatMap { it.subjects ?: emptyList() }
+            .associateBy { it.subject?.get() ?: context.getString(R.string.unknown) }
 
         newList.flatMap { it.subjects ?: emptyList() }.forEach { newSub ->
             val name = newSub.subject?.get() ?: return@forEach
-            val oldMarks = oldMap[name]
+            val oldSub = oldMap[name]
+            
+            // 1. Check Grades
+            val oldMarks = oldSub?.marklist
             val newMarks = newSub.marklist
+            
             fun check(label: String, oldVal: Double?, newVal: Double?) {
                 val v2 = newVal ?: 0.0
                 if (v2 > (oldVal ?: 0.0) && v2 > 0) updates.add(context.getString(R.string.notif_grades_msg_single, name, label, v2.toInt()))
@@ -151,8 +161,15 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
             if (oldMarks != null && newMarks != null) {
                 check(context.getString(R.string.m1), oldMarks.point1, newMarks.point1)
                 check(context.getString(R.string.m2), oldMarks.point2, newMarks.point2)
-                // FIXED: .finally -> .finalScore
                 check(context.getString(R.string.exam_short), oldMarks.finalScore, newMarks.finalScore)
+            }
+
+            // 2. Check Portal (Graphic)
+            val oldGraphic = oldSub?.graphic
+            val newGraphic = newSub.graphic
+
+            if (oldGraphic == null && newGraphic != null) {
+                updates.add(context.getString(R.string.notif_portal_opened, name))
             }
         }
         return updates
@@ -166,4 +183,5 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
         }
         context.sendBroadcast(intent)
     }
+}
 }

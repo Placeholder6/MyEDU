@@ -216,6 +216,7 @@
     <string name="notif_default_title">MyEDU Билдирүүсү</string>
     <string name="notif_default_msg">Сизде жаңы билдирүү бар</string>
     <string name="notif_channel_name">MyEDU Ойготкучтар</string>
+    <string name="notif_portal_opened">Сынак порталы ачылды: %s</string>
     
     <string name="notif_tomorrow_title">Эртеңки сабактар</string>
     <string name="notif_tomorrow_msg">Эртең сизде %1$d сабак бар. Биринчиси: %2$s.</string>

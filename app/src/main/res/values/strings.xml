@@ -216,6 +216,7 @@
     <string name="notif_default_title">MyEDU Notification</string>
     <string name="notif_default_msg">You have a new message</string>
     <string name="notif_channel_name">MyEDU Alarms</string>
+    <string name="notif_portal_opened">Exam portal opened: %s</string>
     
     <string name="notif_tomorrow_title">Tomorrow\'s Schedule</string>
     <string name="notif_tomorrow_msg">You have %1$d classes tomorrow. First up: %2$s.</string>
