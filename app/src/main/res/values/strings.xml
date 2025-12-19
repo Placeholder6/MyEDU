@@ -167,6 +167,7 @@
     <string name="retry">Retry</string>
     <string name="error_unknown">Unknown Error</string>
     <string name="no_error_msg">No Error Message</string>
+    <string name="use_web_generator">Use Web Generator</string>
 
     <string name="cert_header">MINISTRY OF SCIENCE AND EDUCATION\nOSH STATE UNIVERSITY</string>
     <string name="cert_intro">This reference is given to</string>

@@ -167,6 +167,7 @@
     <string name="retry">Повторить</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="no_error_msg">Нет сообщения об ошибке</string>
+    <string name="use_web_generator">Использовать веб-генератор</string>
 
     <string name="cert_header">МИНИСТЕРСТВО НАУКИ И ОБРАЗОВАНИЯ\nОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ</string>
     <string name="cert_intro">Настоящая справка подтверждает, что</string>

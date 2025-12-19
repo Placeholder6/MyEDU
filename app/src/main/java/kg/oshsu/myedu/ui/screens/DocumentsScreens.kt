@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.Web
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -51,13 +52,12 @@ fun ReferenceView(
     animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboard.current // Updated to LocalClipboard
-    val scope = rememberCoroutineScope() // Needed for suspend clipboard calls
+    val clipboard = LocalClipboard.current 
+    val scope = rememberCoroutineScope()
     val user = vm.userData
     val profile = vm.profileData
     val mov = profile?.studentMovement
     
-    // Get current language for data localization
     val currentLang = vm.language
 
     DisposableEffect(Unit) {
@@ -131,14 +131,25 @@ fun ReferenceView(
                             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                 when (state) {
                                     PdfUiState.IDLE -> {
-                                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.pdf_ru)) 
+                                        if (vm.downloadMode == "WEBSITE") {
+                                            val title = stringResource(R.string.reference_title)
+                                            Button(
+                                                onClick = { vm.openWebDocument("https://myedu.oshsu.kg/#/studentCertificate", title) }, 
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) { 
+                                                Icon(Icons.Outlined.Web, null); Spacer(Modifier.width(8.dp))
+                                                Text(stringResource(R.string.website_official)) 
                                             }
-                                            Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                                                Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                Text(stringResource(R.string.pdf_en)) 
+                                        } else {
+                                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                Button(onClick = { vm.generateReferencePdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.pdf_ru)) 
+                                                }
+                                                Button(onClick = { vm.generateReferencePdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.pdf_en)) 
+                                                }
                                             }
                                         }
                                     }
@@ -192,7 +203,6 @@ fun ReferenceView(
                                             modifier = Modifier.padding(bottom = 12.dp)
                                         )
                                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                            // FIX: Pre-fetch string resource outside the lambda
                                             val noErrorMsg = stringResource(R.string.no_error_msg)
                                             val errorMessage = vm.pdfStatusMessage ?: noErrorMsg
                                             
@@ -217,6 +227,17 @@ fun ReferenceView(
                                                 Spacer(Modifier.width(8.dp))
                                                 Text(stringResource(R.string.retry))
                                             }
+                                        }
+                                        // NEW: Fallback to Web Generator button
+                                        Spacer(Modifier.height(12.dp))
+                                        val refTitle = stringResource(R.string.reference_title)
+                                        OutlinedButton(
+                                            onClick = { vm.openWebDocument("https://myedu.oshsu.kg/#/studentCertificate", refTitle) },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Icon(Icons.Outlined.Web, null)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(stringResource(R.string.use_web_generator))
                                         }
                                     }
                                 }
@@ -282,8 +303,8 @@ fun TranscriptView(
     animatedVisibilityScope: AnimatedVisibilityScope
 ) {
     val context = LocalContext.current
-    val clipboard = LocalClipboard.current // Updated
-    val scope = rememberCoroutineScope() // Added
+    val clipboard = LocalClipboard.current
+    val scope = rememberCoroutineScope()
     val isTransitionComplete = remember { mutableStateOf(false) }
     
     LaunchedEffect(Unit) {
@@ -346,14 +367,25 @@ fun TranscriptView(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                                     when (state) {
                                         PdfUiState.IDLE -> {
-                                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                                Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
-                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                    Text(stringResource(R.string.pdf_ru)) 
+                                            if (vm.downloadMode == "WEBSITE") {
+                                                val title = stringResource(R.string.transcript_title)
+                                                Button(
+                                                    onClick = { vm.openWebDocument("https://myedu.oshsu.kg/#/Transcript", title) }, 
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) { 
+                                                    Icon(Icons.Outlined.Web, null); Spacer(Modifier.width(8.dp))
+                                                    Text(stringResource(R.string.website_official)) 
                                                 }
-                                                Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
-                                                    Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
-                                                    Text(stringResource(R.string.pdf_en)) 
+                                            } else {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                                    Button(onClick = { vm.generateTranscriptPdf(context, "ru") }, modifier = Modifier.weight(1f)) { 
+                                                        Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.pdf_ru)) 
+                                                    }
+                                                    Button(onClick = { vm.generateTranscriptPdf(context, "en") }, modifier = Modifier.weight(1f)) { 
+                                                        Icon(Icons.Default.Download, null); Spacer(Modifier.width(8.dp))
+                                                        Text(stringResource(R.string.pdf_en)) 
+                                                    }
                                                 }
                                             }
                                         }
@@ -361,8 +393,8 @@ fun TranscriptView(
                                             LinearWavyProgressIndicator(
                                                 progress = { progressAnim.value }, 
                                                 modifier = Modifier.fillMaxWidth().height(10.dp),
-                                                color = MaterialTheme.colorScheme.primary, // Monet Primary
-                                                trackColor = MaterialTheme.colorScheme.secondaryContainer // Monet Track
+                                                color = MaterialTheme.colorScheme.primary,
+                                                trackColor = MaterialTheme.colorScheme.secondaryContainer
                                             )
                                             Spacer(Modifier.height(12.dp))
                                             Text(text = vm.pdfStatusMessage ?: stringResource(R.string.generating_pdf), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -381,7 +413,6 @@ fun TranscriptView(
                                         PdfUiState.ERROR -> {
                                             Text(text = vm.pdfStatusMessage ?: stringResource(R.string.error_unknown), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center, modifier = Modifier.padding(bottom = 12.dp))
                                             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                                // FIX: Pre-fetch string resource outside the lambda
                                                 val noErrorMsg = stringResource(R.string.no_error_msg)
                                                 val errorMessage = vm.pdfStatusMessage ?: noErrorMsg
                                                 
@@ -396,6 +427,17 @@ fun TranscriptView(
                                                 Button(onClick = { vm.resetDocumentState() }, modifier = Modifier.weight(1f)) {
                                                     Icon(Icons.Default.Refresh, null); Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.retry))
                                                 }
+                                            }
+                                            // NEW: Fallback to Web Generator button
+                                            Spacer(Modifier.height(12.dp))
+                                            val transTitle = stringResource(R.string.transcript_title)
+                                            OutlinedButton(
+                                                onClick = { vm.openWebDocument("https://myedu.oshsu.kg/#/Transcript", transTitle) },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Outlined.Web, null)
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(stringResource(R.string.use_web_generator))
                                             }
                                         }
                                     }
