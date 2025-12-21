@@ -1,7 +1,3 @@
-{
-type: file
-fileName: placeholder6/myedu/MyEDU-refactor-code/app/src/main/java/kg/oshsu/myedu/BackgroundSyncWorker.kt
-content:
 package kg.oshsu.myedu
 
 import android.content.Context
@@ -183,5 +179,4 @@ class BackgroundSyncWorker(appContext: Context, workerParams: WorkerParameters) 
         }
         context.sendBroadcast(intent)
     }
-}
 }
