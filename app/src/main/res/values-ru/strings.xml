@@ -167,6 +167,7 @@
     <string name="retry">Повторить</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="no_error_msg">Нет сообщения об ошибке</string>
+    <string name="use_web_generator">Использовать веб-генератор</string>
 
     <string name="cert_header">МИНИСТЕРСТВО НАУКИ И ОБРАЗОВАНИЯ\nОШСКИЙ ГОСУДАРСТВЕННЫЙ УНИВЕРСИТЕТ</string>
     <string name="cert_intro">Настоящая справка подтверждает, что</string>
@@ -215,6 +216,7 @@
     <string name="notif_default_title">Уведомление MyEDU</string>
     <string name="notif_default_msg">У вас новое сообщение</string>
     <string name="notif_channel_name">Будильники MyEDU</string>
+    <string name="notif_portal_opened">Открыт модуль: %s</string>
     
     <string name="notif_tomorrow_title">Расписание на завтра</string>
     <string name="notif_tomorrow_msg">Завтра у вас %1$d пар(ы). Первая: %2$s.</string>

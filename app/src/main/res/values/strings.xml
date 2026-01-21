@@ -167,6 +167,7 @@
     <string name="retry">Retry</string>
     <string name="error_unknown">Unknown Error</string>
     <string name="no_error_msg">No Error Message</string>
+    <string name="use_web_generator">Use Web Generator</string>
 
     <string name="cert_header">MINISTRY OF SCIENCE AND EDUCATION\nOSH STATE UNIVERSITY</string>
     <string name="cert_intro">This reference is given to</string>
@@ -215,6 +216,7 @@
     <string name="notif_default_title">MyEDU Notification</string>
     <string name="notif_default_msg">You have a new message</string>
     <string name="notif_channel_name">MyEDU Alarms</string>
+    <string name="notif_portal_opened">Exam portal opened: %s</string>
     
     <string name="notif_tomorrow_title">Tomorrow\'s Schedule</string>
     <string name="notif_tomorrow_msg">You have %1$d classes tomorrow. First up: %2$s.</string>

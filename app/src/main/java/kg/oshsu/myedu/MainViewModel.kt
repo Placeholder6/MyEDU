@@ -27,9 +27,8 @@ import java.util.Locale
 import kotlin.math.max
 
 // --- ENUMS ---
-
 enum class AppScreen {
-    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO
+    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO, WEB_VIEW
 }
 
 enum class SortOption {
@@ -38,13 +37,14 @@ enum class SortOption {
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     
-    private fun getString(resId: Int, vararg args: Any): String {
+    fun getString(resId: Int, vararg args: Any): String {
         return getApplication<Application>().getString(resId, *args)
     }
 
     // --- STATE: APP STATUS ---
     var appState by mutableStateOf("STARTUP")
     var currentScreen by mutableStateOf(AppScreen.HOME)
+    var returnScreen by mutableStateOf(AppScreen.PROFILE)
     
     var currentTab: Int
         get() = when(currentScreen) {
@@ -91,6 +91,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var downloadMode by mutableStateOf("IN_APP")
     var language by mutableStateOf("en")
     var showDictionaryScreen by mutableStateOf(false)
+    
+    // --- STATE: WEB VIEW ---
+    var webUrl by mutableStateOf("")
+    var webTitle by mutableStateOf("")
+    var webFileName by mutableStateOf("")
 
     // --- STATE: UPDATES & NETWORK ---
     var updateAvailableRelease by mutableStateOf<GitHubRelease?>(null)
@@ -119,7 +124,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var sessionData by mutableStateOf<List<SessionResponse>>(emptyList())
     var isGradesLoading by mutableStateOf(false)
 
-    // New state for Grades Screen features
     var selectedSemesterId by mutableStateOf<Int?>(null)
     var gradesSortOption by mutableStateOf(SortOption.DEFAULT)
     var isSortDialogVisible by mutableStateOf(false)
@@ -145,7 +149,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var customDictionary: MutableMap<String, String> = mutableMapOf()
     var combinedDictionary by mutableStateOf<Map<String, String>>(emptyMap())
 
-    // --- DICTIONARY LOADING STATE ---
     var areDictionariesLoaded by mutableStateOf(false)
 
     private var prefs: PrefsManager? = null
@@ -175,6 +178,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun isOnboardingComplete(): Boolean {
         return prefs?.isOnboardingComplete() == true
+    }
+    
+    // --- HELPER FOR FILE NAMING ---
+    private fun getFormattedFileName(docType: String, lang: String? = null): String {
+        val last = userData?.last_name ?: ""
+        val first = userData?.name ?: ""
+        val cleanName = "$last $first".trim().replace(" ", "_").replace(".", "")
+        val suffix = if (lang != null) "_$lang" else ""
+        return "${cleanName}_${docType}${suffix}.pdf"
+    }
+    
+    fun openWebDocument(url: String, title: String) {
+        webUrl = url
+        webTitle = title
+        
+        // Use the consistent naming convention
+        val docType = if (url.contains("Transcript", true)) "Transcript" else "Reference"
+        webFileName = getFormattedFileName(docType, language)
+        
+        returnScreen = currentScreen
+        currentScreen = AppScreen.WEB_VIEW
     }
 
     fun addOrUpdateDictionaryEntry(original: String, translation: String) {
@@ -264,6 +288,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
     }
+    
+    val prefsManager: PrefsManager? get() = prefs
 
     private fun loadOfflineData() {
         prefs?.let { p ->
@@ -275,7 +301,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 sessionData = p.loadList("session_list")
             } catch (e: Exception) {
-                 // Ignore old cache format
             }
             transcriptData = p.loadList<TranscriptYear>("transcript_list")
             processScheduleLocally()
@@ -454,7 +479,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Returns fresh objects directly to the caller, ensuring UI doesn't use stale cached data.
     suspend fun getFreshPersonalInfo(): Pair<UserData, StudentInfoResponse> {
         val user = withContext(Dispatchers.IO) { NetworkClient.api.getUser().user } ?: throw Exception("User data is null")
         val profile = withContext(Dispatchers.IO) { NetworkClient.api.getProfile() } ?: throw Exception("Profile data is null")
@@ -561,14 +585,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private suspend fun fetchSessionSuspend(profile: StudentInfoResponse) {
         try {
             withContext(Dispatchers.Main) { if(!isRefreshing) isGradesLoading = true }
-            // NOTE: Ensure your Retrofit interface returns List<SessionResponse> matching the new structure
             val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
             withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
         } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
     }
 
     // --- TRANSCRIPT & DOCS LOGIC ---
-
     fun fetchTranscript(forceRefresh: Boolean = false) {
         transcriptJob?.cancel()
         isTranscriptLoading = true
@@ -673,23 +695,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pdfStatusMessage = getString(R.string.status_uploading)
                 withContext(Dispatchers.IO) {
                     try {
-                        uploadPdfOnly(linkId, studentId, bytes, "transcript_$language.pdf", true)
+                        uploadPdfOnly(linkId, studentId, bytes, getFormattedFileName("Transcript", language), true)
                     } catch (e: Exception) { e.printStackTrace() }
                 }
 
                 pdfStatusMessage = "Saving to Downloads..."
                 pdfProgress = 0.9f
                 
-                val lName = userData?.last_name ?: "Student"
-                val fName = userData?.name ?: "Name"
-                val baseName = "${lName}_${fName}_Transcript_$language"
+                val baseName = getFormattedFileName("Transcript", language)
                 
                 val uri = saveToDownloads(context, bytes, baseName)
                 
                 pdfProgress = 1.0f
                 if (uri != null) {
                     savedPdfUri = uri
-                    savedPdfName = getFileNameFromUri(context, uri) ?: "$baseName.pdf"
+                    savedPdfName = getFileNameFromUri(context, uri) ?: baseName
                     pdfStatusMessage = null
                 } else {
                     pdfStatusMessage = "Failed to save to Downloads"
@@ -768,23 +788,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 pdfStatusMessage = getString(R.string.status_uploading)
                 withContext(Dispatchers.IO) {
                     try {
-                        uploadPdfOnly(linkId, studentId, bytes, "reference_$language.pdf", false)
+                        uploadPdfOnly(linkId, studentId, bytes, getFormattedFileName("Reference", language), false)
                     } catch (e: Exception) { e.printStackTrace() }
                 }
 
                 pdfStatusMessage = "Saving to Downloads..."
                 pdfProgress = 0.9f
                 
-                val lName = userData?.last_name ?: "Student"
-                val fName = userData?.name ?: "Name"
-                val baseName = "${lName}_${fName}_Reference_$language"
+                val baseName = getFormattedFileName("Reference", language)
                 
                 val uri = saveToDownloads(context, bytes, baseName)
                 
                 pdfProgress = 1.0f
                 if (uri != null) {
                     savedPdfUri = uri
-                    savedPdfName = getFileNameFromUri(context, uri) ?: "$baseName.pdf"
+                    savedPdfName = getFileNameFromUri(context, uri) ?: baseName
                     pdfStatusMessage = null
                 } else {
                     pdfStatusMessage = "Failed to save to Downloads"
@@ -833,11 +851,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 
-                var finalName = "$baseName.pdf"
+                var finalName = baseName
+                if (!finalName.endsWith(".pdf")) finalName += ".pdf"
+                
                 var count = 0
                 while (checkFileExists(context, finalName)) {
                     count++
-                    finalName = "${baseName}_($count).pdf"
+                    val name = baseName.substringBeforeLast(".")
+                    val ext = baseName.substringAfterLast(".")
+                    finalName = "$name ($count).$ext"
                 }
                 contentValues.put(MediaStore.MediaColumns.DISPLAY_NAME, finalName)
 

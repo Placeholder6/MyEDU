@@ -113,6 +113,7 @@ import kg.oshsu.myedu.ui.screens.ReferenceView
 import kg.oshsu.myedu.ui.screens.ScheduleScreen
 import kg.oshsu.myedu.ui.screens.SettingsScreen
 import kg.oshsu.myedu.ui.screens.TranscriptView
+import kg.oshsu.myedu.ui.screens.WebDocumentScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -571,7 +572,6 @@ fun MainAppStructure(
     }
     // Priority 4: Documents (Transcript/Reference/EditProfile/PersonalInfo -> Profile)
     else if (vm.selectedClass == null && (vm.currentScreen == AppScreen.REFERENCE || vm.currentScreen == AppScreen.TRANSCRIPT || vm.currentScreen == AppScreen.EDIT_PROFILE || vm.currentScreen == AppScreen.PERSONAL_INFO)) {
-        // !!! ADDED PERSONAL_INFO to condition above !!!
         PredictiveBackHandler { progress ->
             try {
                 progress.collect { backEvent ->
@@ -585,7 +585,11 @@ fun MainAppStructure(
             }
         }
     }
-    // Priority 5: Fallback Standard Back
+    // Priority 5: Web View Back -> Return Screen
+    else if (vm.selectedClass == null && vm.currentScreen == AppScreen.WEB_VIEW) {
+        BackHandler { vm.currentScreen = vm.returnScreen }
+    }
+    // Priority 6: Fallback Standard Back
     else if (vm.selectedClass == null && vm.currentScreen != AppScreen.HOME) {
         BackHandler { vm.currentScreen = AppScreen.HOME }
     }
@@ -683,6 +687,16 @@ fun MainAppStructure(
                             // ADDED PERSONAL INFO SCREEN
                             AppScreen.PERSONAL_INFO -> PersonalInfoScreen(vm, { vm.currentScreen = AppScreen.PROFILE }, sharedTransitionScope, this@AnimatedContent)
                             
+                            // ADDED WEB VIEW
+                            AppScreen.WEB_VIEW -> WebDocumentScreen(
+                                url = vm.webUrl, 
+                                title = vm.webTitle,
+                                fileName = vm.webFileName,
+                                authToken = vm.prefsManager?.getToken(),
+                                themeMode = vm.appTheme,
+                                onClose = { vm.currentScreen = vm.returnScreen }
+                            )
+
                             else -> {}
                         }
                     }
