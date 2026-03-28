@@ -28,7 +28,7 @@ import kotlin.math.max
 
 // --- ENUMS ---
 enum class AppScreen {
-    HOME, SCHEDULE, GRADES, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO, WEB_VIEW
+    HOME, SCHEDULE, GRADES, ATTENDANCE, PROFILE, TRANSCRIPT, REFERENCE, EDIT_PROFILE, PERSONAL_INFO, WEB_VIEW
 }
 
 enum class SortOption {
@@ -51,15 +51,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppScreen.HOME -> 0
             AppScreen.SCHEDULE -> 1
             AppScreen.GRADES -> 2
-            AppScreen.PROFILE -> 3
-            else -> 3 
+            AppScreen.ATTENDANCE -> 3
+            AppScreen.PROFILE -> 4
+            else -> 4 
         }
         set(value) {
             currentScreen = when(value) {
                 0 -> AppScreen.HOME
                 1 -> AppScreen.SCHEDULE
                 2 -> AppScreen.GRADES
-                3 -> AppScreen.PROFILE
+                3 -> AppScreen.ATTENDANCE
+                4 -> AppScreen.PROFILE
                 else -> AppScreen.HOME
             }
         }
@@ -271,6 +273,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 launch(Dispatchers.IO) {
                     try { 
+                        // Call 2FA verify on every session init
+                        try { NetworkClient.api.verify2FA() } catch(e: Exception) { e.printStackTrace() }
+                        
                         fetchAllDataSuspend()
                         fetchDictionaryIfNeeded()
                         IdDefinitions.loadAll()
@@ -386,6 +391,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                     try { 
                         withContext(Dispatchers.IO) { 
+                            // Call 2FA verify after login
+                            try { NetworkClient.api.verify2FA() } catch(e: Exception) { e.printStackTrace() }
+                            
                             fetchAllDataSuspend() 
                             IdDefinitions.loadAll()
                         } 
