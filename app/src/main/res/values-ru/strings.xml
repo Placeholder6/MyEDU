@@ -96,6 +96,12 @@
     <string name="status_not_active">Не активно</string>
     <string name="status_updated">Обновлено:</string>
 
+    <string name="open_journal">Открыть журнал</string>
+    <string name="no_journal_data">Данные журнала не найдены</string>
+    <string name="score_title">Балл</string>
+    <string name="status_title">Статус</string>
+    <string name="unknown_date">Неизвестная дата</string>
+
     <string name="profile">Профиль</string>
     <string name="tuition_contract">Контракт на обучение</string>
     <string name="paid">Оплачено</string>

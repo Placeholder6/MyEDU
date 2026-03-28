@@ -95,6 +95,12 @@
     <string name="status_active">Активдүү:</string>
     <string name="status_not_active">Активдүү эмес</string>
     <string name="status_updated">Жаңыртылды:</string>
+
+    <string name="open_journal">Журналды ачуу</string>
+    <string name="no_journal_data">Журнал маалыматы табылган жок</string>
+    <string name="score_title">Балл</string>
+    <string name="status_title">Статус</string>
+    <string name="unknown_date">Белгисиз дата</string>
     
     <string name="profile">Профиль</string>
     <string name="tuition_contract">Окуу келишими</string>
