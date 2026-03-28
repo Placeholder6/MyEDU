@@ -51,17 +51,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppScreen.HOME -> 0
             AppScreen.SCHEDULE -> 1
             AppScreen.GRADES -> 2
-            AppScreen.ATTENDANCE -> 3
-            AppScreen.PROFILE -> 4
-            else -> 4 
+            AppScreen.PROFILE -> 3
+            else -> 0
         }
         set(value) {
             currentScreen = when(value) {
                 0 -> AppScreen.HOME
                 1 -> AppScreen.SCHEDULE
                 2 -> AppScreen.GRADES
-                3 -> AppScreen.ATTENDANCE
-                4 -> AppScreen.PROFILE
+                3 -> AppScreen.PROFILE
                 else -> AppScreen.HOME
             }
         }
