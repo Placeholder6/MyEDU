@@ -381,7 +381,11 @@ data class LessonNum(val num: Int)
 data class PayStatusResponse(val paid_summa: Double?, val need_summa: Double?, val access_message: List<String>?) { fun getDebt(): Double = (need_summa ?: 0.0) - (paid_summa ?: 0.0) }
 data class NewsItem(val id: Int, val title: String?, val message: String?, val created_at: String?)
 
-// --- SESSION / GRADES (UPDATED) ---
+
+// ==========================================
+// --- SESSION / GRADES (UPDATED FOR JOURNAL) ---
+// ==========================================
+
 data class SessionResponse(
     val semester: SemesterInfo?,
     val subjects: List<SubjectWrapper>?
@@ -395,7 +399,11 @@ data class SemesterInfo(
     val number_name: Int?
 )
 
+// Alias so it matches what MainViewModel expects
+typealias SessionSubjectWrapper = SubjectWrapper
+
 data class SubjectWrapper(
+    @SerializedName("id_curricula") val idCurricula: Int?,
     val subject: SubjectInfo?,
     val marklist: MarkList?,
     val exam: ExamInfo?,
@@ -404,6 +412,7 @@ data class SubjectWrapper(
 
 data class SubjectInfo(
     val id: Int,
+    @SerializedName("id_curricula") val idCurricula: Int?,
     val name_en: String?,
     val name_ru: String?,
     val name_kg: String?,
@@ -419,12 +428,14 @@ data class SubjectInfo(
 }
 
 data class MarkList(
+    val id: Long?,
+    @SerializedName("id_curricula") val idCurricula: Int?,
     val point1: Double?,
     val point2: Double?,
     val point3: Double?,
     @SerializedName("finally") val finalScore: Double?,
     val total: Double?,
-    @SerializedName("updated_at") val updated_at: String? // Added for last updated time
+    @SerializedName("updated_at") val updated_at: String?
 )
 
 data class ExamInfo(
@@ -434,6 +445,16 @@ data class ExamInfo(
 data class GraphicInfo(
     val begin: String?,
     val end: String?
+)
+
+// --- JOURNAL MODELS ---
+data class JournalItem(
+    val date: String?,
+    val theme: String?,
+    val mark: String?,
+    val label: Boolean?,
+    val idStream: Long?,
+    val teacherName: String?
 )
 
 // --- DOCUMENT MODELS ---
@@ -485,7 +506,6 @@ data class PeriodItem(
 interface OshSuApi {
     @POST("api/login") suspend fun login(@Body request: LoginRequest): LoginResponse
     
-    // Added 2FA endpoint
     @POST("api/verify2FA") suspend fun verify2FA(): ResponseBody
 
     @GET("api/user") suspend fun getUser(): UserResponse
@@ -497,6 +517,15 @@ interface OshSuApi {
     @GET("api/studentscheduleitem") suspend fun getSchedule(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int, @Query("id_semester") semId: Int): List<ScheduleWrapper>
     @GET("api/studentsession") suspend fun getSession(@Query("id_semester") semesterId: Int): List<SessionResponse>
     @GET("api/studenttranscript") suspend fun getTranscript(@Query("id_student") studentId: Long, @Query("id_movement") movementId: Long): List<TranscriptYear>
+    
+    // Journal Endpoint updated to use GET and Query params
+    @GET("api/student/journal")
+    suspend fun getJournal(
+        @Query("id_semester") idSemester: Int,
+        @Query("id_curricula") idCurricula: Int,
+        @Query("id_subject_type") idSubjectType: Int,
+        @Query("id_edu_year") idEduYear: Int
+    ): List<JournalItem>
 
     // --- DOCS: RAW ENDPOINTS ---
     @GET("api/searchstudentinfo") 
@@ -555,7 +584,6 @@ class UniversalCookieJar : CookieJar {
         cookieStore.removeAll { it.name == "myedu-jwt-token" || it.name == "my_edu_update" || it.name == "have_2fa" }
         cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("myedu-jwt-token").value(token).build())
         cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("my_edu_update").value(sdf.format(Date())).build())
-        // Added 2FA Cookie manually as requested
         cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("have_2fa").value("yes").build())
     }
     fun clear() { cookieStore.clear() }
@@ -583,13 +611,12 @@ object NetworkClient {
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(interceptor)
-            .connectTimeout(60, TimeUnit.SECONDS) // Increased timeout for heavy PDF ops
+            .connectTimeout(60, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build())
         .addConverterFactory(GsonConverterFactory.create(GsonBuilder().setLenient().create()))
         .build().create(OshSuApi::class.java)
 
-    // Separate Client for GitHub
     val githubApi: GitHubApi = Retrofit.Builder().baseUrl("https://api.github.com/")
         .client(OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)

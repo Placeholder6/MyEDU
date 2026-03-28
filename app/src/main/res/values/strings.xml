@@ -96,6 +96,12 @@
     <string name="status_not_active">Not Active</string>
     <string name="status_updated">Updated:</string>
 
+    <string name="open_journal">Open Journal</string>
+    <string name="no_journal_data">No journal data found</string>
+    <string name="score_title">Score</string>
+    <string name="status_title">Status</string>
+    <string name="unknown_date">Unknown Date</string>
+
     <string name="profile">Profile</string>
     <string name="tuition_contract">Tuition Contract</string>
     <string name="paid">Paid</string>

@@ -13,6 +13,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.DateRange
 import androidx.compose.material.icons.outlined.EventBusy
@@ -33,6 +36,7 @@ import kg.oshsu.myedu.GraphicInfo
 import kg.oshsu.myedu.MainViewModel
 import kg.oshsu.myedu.R
 import kg.oshsu.myedu.SortOption
+import kg.oshsu.myedu.JournalItem
 import kg.oshsu.myedu.ui.components.OshSuLogo
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,7 +49,6 @@ fun GradesScreen(vm: MainViewModel) {
     val session = vm.sessionData
     val activeSemId = vm.profileData?.active_semester
 
-    // Set default selected semester if null
     LaunchedEffect(session, activeSemId) {
         if (vm.selectedSemesterId == null && session.isNotEmpty()) {
             vm.selectedSemesterId = activeSemId ?: session.lastOrNull()?.semester?.id
@@ -54,14 +57,12 @@ fun GradesScreen(vm: MainViewModel) {
 
     val state = rememberPullToRefreshState()
     
-    // --- DATA PREPARATION ---
     val currentSem = session.find { it.semester?.id == vm.selectedSemesterId } 
         ?: session.find { it.semester?.id == activeSemId } 
         ?: session.lastOrNull()
 
     val rawSubjects = currentSem?.subjects ?: emptyList()
     
-    // Sort logic
     val sortedSubjects = remember(rawSubjects, vm.gradesSortOption) {
         when (vm.gradesSortOption) {
             SortOption.DEFAULT -> rawSubjects
@@ -100,14 +101,12 @@ fun GradesScreen(vm: MainViewModel) {
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // --- PINNED HEADER SECTION ---
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface)
                     .padding(vertical = 8.dp)
             ) {
-                // 1. Semesters Label (With Icon)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -153,7 +152,6 @@ fun GradesScreen(vm: MainViewModel) {
                     }
                 }
 
-                // 2. Sort Label (With Icon)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
@@ -208,7 +206,6 @@ fun GradesScreen(vm: MainViewModel) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
             }
 
-            // --- SCROLLABLE LIST ---
             PullToRefreshBox(
                 isRefreshing = vm.isRefreshing,
                 onRefresh = { vm.refresh() },
@@ -233,7 +230,7 @@ fun GradesScreen(vm: MainViewModel) {
                 } else {
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 16.dp)
+                        contentPadding = PaddingValues(top = 16.dp, bottom = 16.dp)
                     ) {
                         if (sortedSubjects.isEmpty()) {
                             item {
@@ -250,12 +247,27 @@ fun GradesScreen(vm: MainViewModel) {
                                     exam = sub.marklist?.finalScore,
                                     total = sub.marklist?.total,
                                     updatedAt = sub.marklist?.updated_at,
-                                    graphic = sub.graphic
+                                    graphic = sub.graphic,
+                                    onJournalClick = {
+                                        vm.openJournal(sub, vm.selectedSemesterId)
+                                    }
                                 )
                             }
                         }
                     }
                 }
+            }
+        }
+
+        if (vm.showJournalSheet) {
+            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            
+            ModalBottomSheet(
+                onDismissRequest = { vm.showJournalSheet = false },
+                sheetState = sheetState,
+                containerColor = MaterialTheme.colorScheme.surface,
+            ) {
+                JournalContent(viewModel = vm)
             }
         }
     }
@@ -269,18 +281,17 @@ fun GradeItemCard(
     exam: Double?,
     total: Double?,
     updatedAt: String?,
-    graphic: GraphicInfo?
+    graphic: GraphicInfo?,
+    onJournalClick: () -> Unit
 ) {
     val isUploadActive = remember(graphic) {
         try {
             if (graphic?.begin != null && graphic.end != null) {
                 val parser = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
                 parser.timeZone = TimeZone.getTimeZone("UTC")
-                
                 val start = parser.parse(graphic.begin)
                 val end = parser.parse(graphic.end)
                 val now = Date()
-                
                 now.after(start) && now.before(end)
             } else false
         } catch (e: Exception) { false }
@@ -295,7 +306,6 @@ fun GradeItemCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
     ) {
         Column(Modifier.padding(16.dp)) {
-            // 1. Subject Name
             Text(
                 text = subjectName,
                 style = MaterialTheme.typography.titleMedium,
@@ -311,7 +321,6 @@ fun GradeItemCard(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
 
-            // 2. Scores Row
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -321,7 +330,6 @@ fun GradeItemCard(
                 ScoreItem(stringResource(R.string.m2), p2)
                 ScoreItem(stringResource(R.string.exam_short), exam)
                 
-                // Total Score Item (Color Coded)
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = stringResource(R.string.total_short), 
@@ -330,10 +338,8 @@ fun GradeItemCard(
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(2.dp))
-                    
                     val totalScore = total?.toInt() ?: 0
                     val scoreColor = getGradeColor(total)
-                    
                     Text(
                         text = "$totalScore",
                         style = MaterialTheme.typography.titleLarge,
@@ -343,14 +349,12 @@ fun GradeItemCard(
                 }
             }
 
-            // 3. Status Footer
             Spacer(Modifier.height(16.dp))
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Active / Inactive Status
                 if (isUploadActive && graphic != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(
@@ -385,7 +389,6 @@ fun GradeItemCard(
                     }
                 }
 
-                // Last Updated Text
                 if (updatedAt != null) {
                     Text(
                         text = "${stringResource(R.string.status_updated)} ${formatDateFull(updatedAt)}",
@@ -393,6 +396,21 @@ fun GradeItemCard(
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onJournalClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MenuBook,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = stringResource(R.string.open_journal))
             }
         }
     }
@@ -417,14 +435,221 @@ fun ScoreItem(label: String, score: Double?) {
 }
 
 @Composable
+fun JournalContent(viewModel: MainViewModel) {
+    val subjectName = viewModel.selectedJournalSubject?.subject?.get(viewModel.language) 
+        ?: stringResource(R.string.subject_default)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 32.dp)
+    ) {
+        Text(
+            text = subjectName,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)
+        )
+
+        val types = listOf(
+            1 to stringResource(R.string.type_lecture),
+            2 to stringResource(R.string.type_practice),
+            3 to stringResource(R.string.type_lab)
+        )
+
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(bottom = 16.dp)
+        ) {
+            items(types) { (id, label) ->
+                val isSelected = viewModel.selectedJournalType == id
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.changeJournalType(id) },
+                    label = { Text(label) },
+                    leadingIcon = if (isSelected) {
+                        { Icon(Icons.Default.Check, null, Modifier.size(18.dp)) }
+                    } else null,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(32.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                )
+            }
+        }
+
+        if (viewModel.isJournalLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (viewModel.journalList.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(200.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = stringResource(R.string.no_journal_data),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(viewModel.journalList) { item ->
+                    JournalItemCard(item)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun JournalItemCard(item: JournalItem) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(animationSpec = spring(stiffness = Spring.StiffnessLow)),
+        shape = MaterialTheme.shapes.large,
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(end = 16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Outlined.CalendarMonth,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = item.date ?: stringResource(R.string.unknown_date),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                if (!item.theme.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = item.theme,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                if (!item.teacherName.isNullOrEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Person,
+                            contentDescription = stringResource(R.string.teacher),
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = item.teacherName,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier.defaultMinSize(minWidth = 50.dp)
+            ) {
+                if (!item.mark.isNullOrEmpty() && item.mark != "0") {
+                    Text(
+                        text = stringResource(R.string.score_title), 
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = item.mark,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        color = getGradeColor(item.mark.toDoubleOrNull()) 
+                    )
+                } else if (item.label == true) {
+                    Text(
+                        text = stringResource(R.string.status_title),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Icon(
+                        imageVector = Icons.Default.CheckCircle,
+                        contentDescription = stringResource(R.string.status_title),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(26.dp)
+                    )
+                } else {
+                    Text(
+                        text = stringResource(R.string.status_title),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "-",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun getGradeColor(score: Double?): Color {
     val s = score ?: 0.0
     val isDark = isSystemInDarkTheme()
     return when {
-        s >= 90 -> if (isDark) Color(0xFF82B1FF) else Color(0xFF2962FF) // Blue
-        s >= 70 -> if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32) // Green
-        s >= 60 -> if (isDark) Color(0xFFFFB74D) else Color(0xFFEF6C00) // Orange
-        else -> MaterialTheme.colorScheme.error // Red
+        s >= 90 -> if (isDark) Color(0xFF82B1FF) else Color(0xFF2962FF) 
+        s >= 70 -> if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32) 
+        s >= 60 -> if (isDark) Color(0xFFFFB74D) else Color(0xFFEF6C00) 
+        else -> MaterialTheme.colorScheme.error 
     }
 }
 
@@ -437,9 +662,7 @@ private fun formatDateShort(dateStr: String?): String {
         formatter.timeZone = TimeZone.getDefault()
         val date = parser.parse(dateStr)
         formatter.format(date ?: return dateStr)
-    } catch (e: Exception) {
-        ""
-    }
+    } catch (e: Exception) { "" }
 }
 
 private fun formatDateFull(dateStr: String?): String {
@@ -449,9 +672,7 @@ private fun formatDateFull(dateStr: String?): String {
         val formatter = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
         formatter.timeZone = TimeZone.getDefault()
         formatter.format(date)
-    } catch (e: Exception) {
-        dateStr
-    }
+    } catch (e: Exception) { dateStr }
 }
 
 private fun parseUtcDate(dateStr: String): Date? {
@@ -460,7 +681,5 @@ private fun parseUtcDate(dateStr: String): Date? {
         val parser = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
         parser.timeZone = TimeZone.getTimeZone("UTC")
         return parser.parse(clean)
-    } catch (e: Exception) {
-        return null
-    }
+    } catch (e: Exception) { return null }
 }

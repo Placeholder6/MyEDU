@@ -51,17 +51,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             AppScreen.HOME -> 0
             AppScreen.SCHEDULE -> 1
             AppScreen.GRADES -> 2
-            AppScreen.ATTENDANCE -> 3
-            AppScreen.PROFILE -> 4
-            else -> 4 
+            AppScreen.PROFILE -> 3
+            else -> 0
         }
         set(value) {
             currentScreen = when(value) {
                 0 -> AppScreen.HOME
                 1 -> AppScreen.SCHEDULE
                 2 -> AppScreen.GRADES
-                3 -> AppScreen.ATTENDANCE
-                4 -> AppScreen.PROFILE
+                3 -> AppScreen.PROFILE
                 else -> AppScreen.HOME
             }
         }
@@ -129,6 +127,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     var selectedSemesterId by mutableStateOf<Int?>(null)
     var gradesSortOption by mutableStateOf(SortOption.DEFAULT)
     var isSortDialogVisible by mutableStateOf(false)
+
+    // --- STATE: JOURNAL DATA & UI ---
+    var showJournalSheet by mutableStateOf(false)
+    var journalList by mutableStateOf<List<JournalItem>>(emptyList())
+    var isJournalLoading by mutableStateOf(false)
+    var selectedJournalSubject by mutableStateOf<SessionSubjectWrapper?>(null)
+    var selectedJournalType by mutableStateOf(1) // 1=Lecture, 2=Practice, 3=Lab
 
     // --- STATE: DOCUMENTS & PDF ---
     var transcriptData by mutableStateOf<List<TranscriptYear>>(emptyList())
@@ -446,6 +451,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fullSchedule = emptyList()
         sessionData = emptyList()
         transcriptData = emptyList()
+        journalList = emptyList()
+        showJournalSheet = false
+        selectedJournalSubject = null
+        
         prefs?.clearAll()
         NetworkClient.cookieJar.clear()
         NetworkClient.interceptor.authToken = null
@@ -596,6 +605,99 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val session = NetworkClient.api.getSession(profile.active_semester ?: 1)
             withContext(Dispatchers.Main) { sessionData = session; prefs?.saveList("session_list", session) }
         } catch (_: Exception) {} finally { withContext(Dispatchers.Main) { isGradesLoading = false } }
+    }
+    
+    // --- JOURNAL FUNCTIONS ---
+    fun openJournal(subject: SessionSubjectWrapper, semesterId: Int? = null) {
+        selectedJournalSubject = subject
+        if (semesterId != null) {
+            selectedSemesterId = semesterId
+        }
+        selectedJournalType = 1 // Reset to Lecture
+        showJournalSheet = true
+        fetchJournal()
+    }
+    
+    fun changeJournalType(typeId: Int) {
+        selectedJournalType = typeId
+        fetchJournal()
+    }
+    
+    fun fetchJournal() {
+        val subject = selectedJournalSubject ?: return
+        
+        // STRICTLY look for idCurricula in the parsed JSON models. 
+        // We no longer fall back to the "normal" subject.id.
+        val curriculaId = subject.idCurricula 
+            ?: subject.marklist?.idCurricula 
+            ?: subject.subject?.idCurricula
+        
+        if (curriculaId == null) {
+            // If the API didn't return an id_curricula for this subject, we can't fetch the journal.
+            viewModelScope.launch(Dispatchers.Main) {
+                isJournalLoading = false
+                journalList = emptyList()
+            }
+            return
+        }
+        
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                withContext(Dispatchers.Main) { isJournalLoading = true }
+                
+                val semesterId = selectedSemesterId ?: profileData?.active_semester ?: 1
+                val activeSemester = profileData?.active_semester ?: semesterId
+                
+                // Calculate academic year based on semester
+                val currentActiveYear = 25 // Default fallback analogous to loadScheduleNetwork logic
+                val semesterDiff = activeSemester - semesterId
+                val yearOffset = semesterDiff / 2
+                val eduYearId = currentActiveYear - yearOffset
+                
+                val cacheKey = "journal_${curriculaId}_${semesterId}_${selectedJournalType}_${eduYearId}"
+                
+                // Load cached data first (offline support)
+                val cachedJournal = try {
+                    prefs?.loadList<JournalItem>(cacheKey) ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                
+                // Display cached data immediately if available
+                if (cachedJournal.isNotEmpty()) {
+                    withContext(Dispatchers.Main) { 
+                        journalList = cachedJournal
+                    }
+                }
+                
+                // API Request - Parameters are now sent as URL Query params in the exact requested order
+                val journal = NetworkClient.api.getJournal(
+                    idSemester = semesterId,
+                    idCurricula = curriculaId,
+                    idSubjectType = selectedJournalType,
+                    idEduYear = eduYearId
+                )
+                
+                // Save to SharedPreferences cache
+                try {
+                    prefs?.saveList(cacheKey, journal)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                
+                withContext(Dispatchers.Main) { 
+                    journalList = journal
+                }
+            } catch (e: Exception) {
+                if (e.message?.contains("401") == true || e.toString().contains("401")) {
+                     withContext(Dispatchers.Main) { handleTokenExpiration() }
+                } else {
+                    e.printStackTrace()
+                }
+            } finally {
+                withContext(Dispatchers.Main) { isJournalLoading = false }
+            }
+        }
     }
 
     // --- TRANSCRIPT & DOCS LOGIC ---
