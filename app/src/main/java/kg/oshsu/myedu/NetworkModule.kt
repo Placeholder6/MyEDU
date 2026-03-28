@@ -483,55 +483,59 @@ data class PeriodItem(
 
 // --- API INTERFACE ---
 interface OshSuApi {
-    @POST("public/api/login") suspend fun login(@Body request: LoginRequest): LoginResponse
-    @GET("public/api/user") suspend fun getUser(): UserResponse
-    @GET("public/api/studentinfo") suspend fun getProfile(): StudentInfoResponse
-    @GET("public/api/control/regulations/eduyear") suspend fun getYears(): List<EduYear>
-    @GET("public/api/studentPayStatus") suspend fun getPayStatus(): PayStatusResponse
-    @GET("public/api/appupdate") suspend fun getNews(): List<NewsItem>
-    @GET("public/api/ep/schedule/schedulelessontime") suspend fun getLessonTimes(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int): List<LessonTimeResponse>
-    @GET("public/api/studentscheduleitem") suspend fun getSchedule(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int, @Query("id_semester") semId: Int): List<ScheduleWrapper>
-    @GET("public/api/studentsession") suspend fun getSession(@Query("id_semester") semesterId: Int): List<SessionResponse>
-    @GET("public/api/studenttranscript") suspend fun getTranscript(@Query("id_student") studentId: Long, @Query("id_movement") movementId: Long): List<TranscriptYear>
+    @POST("api/login") suspend fun login(@Body request: LoginRequest): LoginResponse
+    
+    // Added 2FA endpoint
+    @POST("api/verify2FA") suspend fun verify2FA(): ResponseBody
+
+    @GET("api/user") suspend fun getUser(): UserResponse
+    @GET("api/studentinfo") suspend fun getProfile(): StudentInfoResponse
+    @GET("api/control/regulations/eduyear") suspend fun getYears(): List<EduYear>
+    @GET("api/studentPayStatus") suspend fun getPayStatus(): PayStatusResponse
+    @GET("api/appupdate") suspend fun getNews(): List<NewsItem>
+    @GET("api/ep/schedule/schedulelessontime") suspend fun getLessonTimes(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int): List<LessonTimeResponse>
+    @GET("api/studentscheduleitem") suspend fun getSchedule(@Query("id_speciality") specId: Int, @Query("id_edu_form") formId: Int, @Query("id_edu_year") yearId: Int, @Query("id_semester") semId: Int): List<ScheduleWrapper>
+    @GET("api/studentsession") suspend fun getSession(@Query("id_semester") semesterId: Int): List<SessionResponse>
+    @GET("api/studenttranscript") suspend fun getTranscript(@Query("id_student") studentId: Long, @Query("id_movement") movementId: Long): List<TranscriptYear>
 
     // --- DOCS: RAW ENDPOINTS ---
-    @GET("public/api/searchstudentinfo") 
+    @GET("api/searchstudentinfo") 
     suspend fun getStudentInfoRaw(@Query("id_student") studentId: Long): ResponseBody
 
-    @GET("public/api/studenttranscript")
+    @GET("api/studenttranscript")
     suspend fun getTranscriptDataRaw(@Query("id_student") sId: Long, @Query("id_movement") mId: Long): ResponseBody
 
-    @GET("public/api/control/structure/specialitylicense")
+    @GET("api/control/structure/specialitylicense")
     suspend fun getSpecialityLicense(@Query("id_speciality") sId: Int, @Query("id_edu_form") eId: Int): ResponseBody
 
-    @GET("public/api/control/structure/university")
+    @GET("api/control/structure/university")
     suspend fun getUniversityInfo(): ResponseBody
     
     // DOCS: Form 13 (Transcript)
-    @POST("public/api/student/doc/form13link") suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
-    @Multipart @POST("public/api/student/doc/form13") suspend fun uploadPdf(@Part("id") id: RequestBody, @Part("id_student") idStudent: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
+    @POST("api/student/doc/form13link") suspend fun getTranscriptLink(@Body req: DocIdRequest): ResponseBody
+    @Multipart @POST("api/student/doc/form13") suspend fun uploadPdf(@Part("id") id: RequestBody, @Part("id_student") idStudent: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
 
     // DOCS: Form 8 (Reference)
-    @POST("public/api/student/doc/form8link") suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
-    @Multipart @POST("public/api/student/doc/form8") suspend fun uploadReferencePdf(@Part("id") id: RequestBody, @Part("id_student") idStudent: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
+    @POST("api/student/doc/form8link") suspend fun getReferenceLink(@Body req: DocIdRequest): ResponseBody
+    @Multipart @POST("api/student/doc/form8") suspend fun uploadReferencePdf(@Part("id") id: RequestBody, @Part("id_student") idStudent: RequestBody, @Part pdf: MultipartBody.Part): ResponseBody
 
     // DOCS: Shared
-    @POST("public/api/open/doc/showlink") suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
+    @POST("api/open/doc/showlink") suspend fun resolveDocLink(@Body req: DocKeyRequest): ResponseBody
 
     // --- DICTIONARY ENDPOINTS ---
-    @GET("public/api/open/pdscountry")
+    @GET("api/open/pdscountry")
     suspend fun getCountries(): List<DictionaryItem>
-    @GET("public/api/open/pdsoblast")
+    @GET("api/open/pdsoblast")
     suspend fun getOblasts(): List<DictionaryItem>
-    @GET("public/api/open/pdsregion")
+    @GET("api/open/pdsregion")
     suspend fun getRegions(): List<DictionaryItem>
-    @GET("public/api/open/pdsnational")
+    @GET("api/open/pdsnational")
     suspend fun getNationalities(): List<DictionaryItem>
-    @GET("public/api/open/pdsschool")
+    @GET("api/open/pdsschool")
     suspend fun getSchools(): List<DictionaryItem>
-    @GET("public/api/open/pdsmale")
+    @GET("api/open/pdsmale")
     suspend fun getGenders(): List<DictionaryItem>
-    @GET("public/api/control/regulations/period")
+    @GET("api/control/regulations/period")
     suspend fun getPeriods(): List<PeriodItem>
 }
 
@@ -548,9 +552,11 @@ class UniversalCookieJar : CookieJar {
     override fun loadForRequest(url: HttpUrl): List<Cookie> = ArrayList(cookieStore)
     fun injectSessionCookies(token: String) {
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.000000'Z'", Locale.US).apply { timeZone = TimeZone.getTimeZone("UTC") }
-        cookieStore.removeAll { it.name == "myedu-jwt-token" || it.name == "my_edu_update" }
+        cookieStore.removeAll { it.name == "myedu-jwt-token" || it.name == "my_edu_update" || it.name == "have_2fa" }
         cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("myedu-jwt-token").value(token).build())
         cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("my_edu_update").value(sdf.format(Date())).build())
+        // Added 2FA Cookie manually as requested
+        cookieStore.add(Cookie.Builder().domain("myedu.oshsu.kg").path("/").name("have_2fa").value("yes").build())
     }
     fun clear() { cookieStore.clear() }
 }
@@ -573,7 +579,7 @@ object NetworkClient {
     val cookieJar = UniversalCookieJar()
     val interceptor = WindowsInterceptor()
     
-    val api: OshSuApi = Retrofit.Builder().baseUrl("https://api.myedu.oshsu.kg/")
+    val api: OshSuApi = Retrofit.Builder().baseUrl("https://api3.myedu.oshsu.kg/")
         .client(OkHttpClient.Builder()
             .cookieJar(cookieJar)
             .addInterceptor(interceptor)
